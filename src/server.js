@@ -41,9 +41,24 @@ app.use(limiter);
 app.use(compression());
 
 // ===== CORS configuration =====
+
+
+
+const allowedOrigins = [
+  CLIENT_URL,
+  "http://localhost:3000",
+];
+
 app.use(
   cors({
-    origin: CLIENT_URL,
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true); // allow non-browser requests
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
   })
 );
