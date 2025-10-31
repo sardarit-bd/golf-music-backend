@@ -39,6 +39,11 @@ EMAIL_USERNAME=your_email@gmail.com
 EMAIL_PASSWORD=your_app_password
 CLIENT_URL=http://localhost:3000
 
+
+CLOUDINARY_NAME=your-clodunary-name
+CLOUDINARY_API_KEY=your-clodunary-api-key
+CLOUDINARY_API_SECRET=your-clodunary-api-secret
+
 ```
 
 
