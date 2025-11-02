@@ -1,25 +1,23 @@
 import { validationResult } from "express-validator";
 import News from "../models/model.news.js";
 import { v2 as cloudinary } from "cloudinary";
+import { ErrorResponse } from "../middleware/errorHandler.js";
 
-// CREATE NEWS
-
-export const createNews = async (req, res) => {
+/* ========================================
+   CREATE NEWS
+======================================== */
+export const createNews = async (req, res, next) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: "Validation failed",
-        errors: errors.array(),
-      });
+      return next(
+        new ErrorResponse("Validation failed", 400, { details: errors.array() })
+      );
     }
 
     const { title, description, location, credit } = req.body;
 
-
-
-
+    // Upload images to Cloudinary (if any)
     const uploadedPhotos = req.files?.length
       ? await Promise.all(
           req.files.map(async (file) => {
@@ -49,17 +47,14 @@ export const createNews = async (req, res) => {
       data: { news },
     });
   } catch (error) {
-    console.error("Create news error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while creating news",
-    });
+    next(error);
   }
 };
 
-// GET ALL NEWS (optionally by location)
-
-export const getNewsByLocation = async (req, res) => {
+/* ========================================
+   GET ALL NEWS (optionally by location)
+======================================== */
+export const getNewsByLocation = async (req, res, next) => {
   try {
     const { location } = req.query;
     const query = { isActive: true };
@@ -77,17 +72,14 @@ export const getNewsByLocation = async (req, res) => {
       data: { news },
     });
   } catch (error) {
-    console.error("Get news error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while fetching news",
-    });
+    next(error);
   }
 };
 
-// GET SINGLE NEWS BY ID
-
-export const getNews = async (req, res) => {
+/* ========================================
+   GET SINGLE NEWS BY ID
+======================================== */
+export const getNews = async (req, res, next) => {
   try {
     const news = await News.findById(req.params.id).populate(
       "journalist",
@@ -95,10 +87,7 @@ export const getNews = async (req, res) => {
     );
 
     if (!news) {
-      return res.status(404).json({
-        success: false,
-        message: "News not found",
-      });
+      return next(new ErrorResponse("News not found", 404));
     }
 
     res.status(200).json({
@@ -106,17 +95,14 @@ export const getNews = async (req, res) => {
       data: { news },
     });
   } catch (error) {
-    console.error("Get single news error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while fetching news",
-    });
+    next(error);
   }
 };
 
-// GET MY NEWS (for logged-in journalist)
-
-export const getMyNews = async (req, res) => {
+/* ========================================
+   GET MY NEWS (for logged-in journalist)
+======================================== */
+export const getMyNews = async (req, res, next) => {
   try {
     const news = await News.find({ journalist: req.user.id, isActive: true })
       .sort({ createdAt: -1 })
@@ -127,45 +113,35 @@ export const getMyNews = async (req, res) => {
       data: { news },
     });
   } catch (error) {
-    console.error("Get my news error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while fetching journalist news",
-    });
+    next(error);
   }
 };
 
-// UPDATE NEWS
-
-export const updateNews = async (req, res) => {
+/* ========================================
+   UPDATE NEWS
+======================================== */
+export const updateNews = async (req, res, next) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: "Validation failed",
-        errors: errors.array(),
-      });
+      return next(
+        new ErrorResponse("Validation failed", 400, { details: errors.array() })
+      );
     }
 
     const { title, description, location, credit } = req.body;
 
     let news = await News.findById(req.params.id);
     if (!news) {
-      return res.status(404).json({
-        success: false,
-        message: "News not found",
-      });
+      return next(new ErrorResponse("News not found", 404));
     }
 
+    // Authorization check
     if (news.journalist.toString() !== req.user.id) {
-      return res.status(403).json({
-        success: false,
-        message: "Not authorized to update this news",
-      });
+      return next(new ErrorResponse("Not authorized to update this news", 403));
     }
 
-    // If new photos are uploaded, upload to Cloudinary
+    // Upload new photos (if provided)
     let updatedPhotos = news.photos;
     if (req.files?.length) {
       updatedPhotos = await Promise.all(
@@ -195,35 +171,26 @@ export const updateNews = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: " News updated successfully",
+      message: "News updated successfully",
       data: { news },
     });
   } catch (error) {
-    console.error("Update news error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while updating news",
-    });
+    next(error);
   }
 };
 
-// DELETE NEWS (Soft Delete + Cloudinary Cleanup)
-
-export const deleteNews = async (req, res) => {
+/* ========================================
+   DELETE NEWS (Soft Delete + Cloudinary Cleanup)
+======================================== */
+export const deleteNews = async (req, res, next) => {
   try {
     const news = await News.findById(req.params.id);
     if (!news) {
-      return res.status(404).json({
-        success: false,
-        message: "News not found",
-      });
+      return next(new ErrorResponse("News not found", 404));
     }
 
     if (news.journalist.toString() !== req.user.id) {
-      return res.status(403).json({
-        success: false,
-        message: "Not authorized to delete this news",
-      });
+      return next(new ErrorResponse("Not authorized to delete this news", 403));
     }
 
     // Delete photos from Cloudinary
@@ -241,13 +208,9 @@ export const deleteNews = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: " News deleted successfully",
+      message: "News deleted successfully",
     });
   } catch (error) {
-    console.error("Delete news error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while deleting news",
-    });
+    next(error);
   }
 };

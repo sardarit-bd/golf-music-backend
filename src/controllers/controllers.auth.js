@@ -80,7 +80,7 @@ export const register = async (req, res) => {
 
     // Create user
     const user = await User.create(userData);
-
+    console.log(user)
     // Send verification email (except for fan)
     if (userType !== "fan") {
       try {

@@ -2,6 +2,7 @@ import { validationResult } from "express-validator";
 import Venue from "../models/model.venue.js";
 import { cloudinary } from "../config/cloudinary.js";
 import dotenv from "dotenv";
+import { ErrorResponse } from "../middleware/errorHandler.js";
 
 dotenv.config();
 
@@ -11,9 +12,10 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Create or Update Venue Profile
-
-export const createOrUpdateProfile = async (req, res) => {
+/* =====================================================
+   CREATE or UPDATE Venue Profile
+===================================================== */
+export const createOrUpdateProfile = async (req, res, next) => {
   const colorMap = {
     1: "Blue",
     2: "Green",
@@ -30,11 +32,10 @@ export const createOrUpdateProfile = async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: "Validation failed",
-        errors: errors.array(),
-      });
+      console.log(errors.array());
+      return next(
+        new ErrorResponse("Validation failed", 400, { details: errors.array() })
+      );
     }
 
     const {
@@ -52,13 +53,13 @@ export const createOrUpdateProfile = async (req, res) => {
     // Upload images to Cloudinary (if any)
     const uploadedPhotos = req.files?.photos?.length
       ? await Promise.all(
-          req.files.photos.map(async (file) => {
-            const result = await cloudinary.uploader.upload(file.path, {
-              folder: "gulf-music/venues",
-            });
-            return { url: result.secure_url, filename: result.public_id };
-          })
-        )
+        req.files.photos.map(async (file) => {
+          const result = await cloudinary.uploader.upload(file.path, {
+            folder: "gulf-music/venues",
+          });
+          return { url: result.secure_url, filename: result.public_id };
+        })
+      )
       : [];
 
     // === Update or Create ===
@@ -78,24 +79,22 @@ export const createOrUpdateProfile = async (req, res) => {
         { new: true, runValidators: true }
       );
     } else {
-      if (!venue) {
-        const count = await Venue.countDocuments({ city });
-        const verifiedOrder = count + 1;
-        const colorCode = colorMap[verifiedOrder] || "Gray";
-        venue = await Venue.create({
-          user: req.user.id,
-          venueName,
-          city,
-          address,
-          seatingCapacity,
-          biography,
-          openHours,
-          openDays,
-          verifiedOrder,
-          colorCode,
-          photos: uploadedPhotos,
-        });
-      }
+      const count = await Venue.countDocuments({ city });
+      const verifiedOrder = count + 1;
+      const colorCode = colorMap[verifiedOrder] || "Gray";
+      venue = await Venue.create({
+        user: req.user.id,
+        venueName,
+        city,
+        address,
+        seatingCapacity,
+        biography,
+        openHours,
+        openDays,
+        verifiedOrder,
+        colorCode,
+        photos: uploadedPhotos,
+      });
     }
 
     res.status(200).json({
@@ -104,23 +103,19 @@ export const createOrUpdateProfile = async (req, res) => {
       data: { venue },
     });
   } catch (error) {
-    console.error("Venue profile error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while saving venue profile",
-    });
+    next(error);
   }
 };
 
-export const getMyVenueProfile = async (req, res) => {
+/* =====================================================
+   GET My Venue Profile
+===================================================== */
+export const getMyVenueProfile = async (req, res, next) => {
   try {
     const venue = await Venue.findOne({ user: req.user.id });
 
     if (!venue) {
-      return res.status(404).json({
-        success: false,
-        message: "Venue profile not found",
-      });
+      return next(new ErrorResponse("Venue profile not found", 404));
     }
 
     res.status(200).json({
@@ -128,25 +123,21 @@ export const getMyVenueProfile = async (req, res) => {
       data: { venue },
     });
   } catch (error) {
-    console.error("Get my venue profile error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while fetching venue profile",
-    });
+    next(error);
   }
 };
 
-// Update Venue Profile (PUT)
 
-export const updateVenueProfile = async (req, res) => {
+  //  UPDATE Venue Profile (PUT)
+
+
+export const updateVenueProfile = async (req, res, next) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: "Validation failed",
-        errors: errors.array(),
-      });
+      return next(
+        new ErrorResponse("Validation failed", 400, { details: errors.array() })
+      );
     }
 
     const {
@@ -157,18 +148,16 @@ export const updateVenueProfile = async (req, res) => {
       biography,
       openHours,
       openDays,
+      removePhotos = [] 
     } = req.body;
 
     let venue = await Venue.findOne({ user: req.user.id });
 
     if (!venue) {
-      return res.status(404).json({
-        success: false,
-        message: "Venue profile not found",
-      });
+      return next(new ErrorResponse("Venue profile not found", 404));
     }
 
-    // Update data
+    // Update basic data
     venue.venueName = venueName || venue.venueName;
     venue.city = city || venue.city;
     venue.address = address || venue.address;
@@ -177,15 +166,62 @@ export const updateVenueProfile = async (req, res) => {
     venue.openHours = openHours || venue.openHours;
     venue.openDays = openDays || venue.openDays;
 
-    // Update photos (Cloudinary)
-    if (req.files?.photos) {
-      venue.photos = req.files.photos.map((file) => ({
-        url: file.path,
-        filename: file.filename,
-      }));
+    // Handle photo removal first
+    if (removePhotos && removePhotos.length > 0) {
+      const removePhotoIds = Array.isArray(removePhotos) ? removePhotos : [removePhotos];
+      
+      // Delete from Cloudinary
+      for (const photoId of removePhotoIds) {
+        const photoToRemove = venue.photos.find(p => p._id.toString() === photoId || p.filename === photoId);
+        if (photoToRemove) {
+          try {
+            await cloudinary.uploader.destroy(photoToRemove.filename);
+          } catch (err) {
+            console.warn("Failed to delete image from Cloudinary:", photoToRemove.filename);
+          }
+        }
+      }
+      
+      // Remove from venue photos array
+      venue.photos = venue.photos.filter(p => 
+        !removePhotoIds.includes(p._id?.toString()) && !removePhotoIds.includes(p.filename)
+      );
     }
 
+    // Handle new photo uploads
+    if (req.files?.photos?.length) {
+      console.log(`Uploading ${req.files.photos.length} new photos to Cloudinary...`);
+      
+      const uploadedPhotos = await Promise.all(
+        req.files.photos.map(async (file) => {
+          try {
+            const result = await cloudinary.uploader.upload(file.path, {
+              folder: "gulf-music/venues",
+            });
+            console.log(`Successfully uploaded: ${result.secure_url}`);
+            return { 
+              url: result.secure_url, 
+              filename: result.public_id 
+            };
+          } catch (uploadError) {
+            console.error("Cloudinary upload failed:", uploadError);
+            throw uploadError;
+          }
+        })
+      );
+
+      // Add new photos to existing photos array
+      venue.photos = [...(venue.photos || []), ...uploadedPhotos];
+      console.log(`Total photos after upload: ${venue.photos.length}`);
+    }
+
+    // Ensure photos array exists
+    venue.photos = venue.photos || [];
+
+    // Save the venue with updated data
     await venue.save();
+
+    console.log("Venue profile updated successfully with photos:", venue.photos.length);
 
     res.status(200).json({
       success: true,
@@ -193,36 +229,33 @@ export const updateVenueProfile = async (req, res) => {
       data: { venue },
     });
   } catch (error) {
-    console.error("Update venue error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while updating venue profile",
-    });
+    console.error("Update venue profile error:", error);
+    next(error);
   }
 };
 
-// Delete Venue Profile
-
-export const deleteVenueProfile = async (req, res) => {
+/* =====================================================
+   DELETE Venue Profile
+===================================================== */
+export const deleteVenueProfile = async (req, res, next) => {
   try {
     const venue = await Venue.findOne({ user: req.user.id });
 
     if (!venue) {
-      return res.status(404).json({
-        success: false,
-        message: "Venue profile not found",
-      });
+      return next(new ErrorResponse("Venue profile not found", 404));
     }
 
-    if (venue.photos?.length) {
-      for (const photo of venue.photos) {
+    // Delete photos from Cloudinary
+    if (req.files?.photos?.length && venue.photos?.length) {
+      for (const p of venue.photos) {
         try {
-          await cloudinary.uploader.destroy(photo.filename);
+          await cloudinary.uploader.destroy(p.filename);
         } catch (err) {
-          console.warn(`Failed to delete Cloudinary image: ${photo.filename}`);
+          console.warn("Failed to delete old image:", p.filename);
         }
       }
     }
+
 
     await venue.deleteOne();
 
@@ -231,17 +264,14 @@ export const deleteVenueProfile = async (req, res) => {
       message: "Venue profile deleted successfully",
     });
   } catch (error) {
-    console.error("Delete venue error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while deleting venue profile",
-    });
+    next(error);
   }
 };
 
-// Get Venues by City (Filter)
-
-export const getVenuesByCity = async (req, res) => {
+/* =====================================================
+   GET Venues by City (Filter)
+===================================================== */
+export const getVenuesByCity = async (req, res, next) => {
   try {
     const { city } = req.query;
     const query = { isActive: true };
@@ -259,17 +289,14 @@ export const getVenuesByCity = async (req, res) => {
       data: { venues },
     });
   } catch (error) {
-    console.error("Get venues error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while fetching venues",
-    });
+    next(error);
   }
 };
 
-//  Get Single Venue by ID
-
-export const getVenue = async (req, res) => {
+/* =====================================================
+   GET Single Venue by ID
+===================================================== */
+export const getVenue = async (req, res, next) => {
   try {
     const venue = await Venue.findById(req.params.id).populate(
       "user",
@@ -277,10 +304,7 @@ export const getVenue = async (req, res) => {
     );
 
     if (!venue) {
-      return res.status(404).json({
-        success: false,
-        message: "Venue not found",
-      });
+      return next(new ErrorResponse("Venue not found", 404));
     }
 
     res.status(200).json({
@@ -288,24 +312,20 @@ export const getVenue = async (req, res) => {
       data: { venue },
     });
   } catch (error) {
-    console.error("Get venue error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while fetching venue",
-    });
+    next(error);
   }
 };
 
-export const addShow = async (req, res) => {
+/* =====================================================
+   ADD Show to Venue
+===================================================== */
+export const addShow = async (req, res, next) => {
   try {
     const { artist, date, time } = req.body;
     const venue = await Venue.findOne({ user: req.user.id });
 
     if (!venue) {
-      return res.status(404).json({
-        success: false,
-        message: "Venue not found",
-      });
+      return next(new ErrorResponse("Venue not found", 404));
     }
 
     venue.shows.push({ artist, date, time });
@@ -317,21 +337,18 @@ export const addShow = async (req, res) => {
       data: venue,
     });
   } catch (error) {
-    console.error("Add show error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while adding show",
-    });
+    next(error);
   }
 };
 
-export const getCalendarByCity = async (req, res) => {
+/* =====================================================
+   GET Calendar by City
+===================================================== */
+export const getCalendarByCity = async (req, res, next) => {
   try {
     const { city } = req.query;
     if (!city) {
-      return res
-        .status(400)
-        .json({ success: false, message: "City is required" });
+      return next(new ErrorResponse("City is required", 400));
     }
 
     const venues = await Venue.find({ city: city.toLowerCase() }).select(
@@ -343,10 +360,6 @@ export const getCalendarByCity = async (req, res) => {
       data: { venues },
     });
   } catch (error) {
-    console.error("Calendar fetch error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while fetching calendar data",
-    });
+    next(error);
   }
 };
