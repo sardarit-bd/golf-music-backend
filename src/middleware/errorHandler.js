@@ -1,6 +1,5 @@
 import { NODE_ENV } from "../config/environment.js";
 
-
 class ErrorResponse extends Error {
   constructor(message, statusCode) {
     super(message);
@@ -12,35 +11,42 @@ const errorHandler = (err, req, res, next) => {
   let error = { ...err };
   error.message = err.message;
 
-  // Log error in console
-  console.error(err);
+  // Log error for debugging
+  console.error("❌ Error:", err);
 
-  // Handle Mongoose bad ObjectId
-  if (err.name === 'CastError') {
-    const message = 'Resource not found';
+  // Handle Mongoose bad ObjectId (CastError)
+  if (err.name === "CastError") {
+    const message = `Resource not found with id of ${err.value}`;
     error = new ErrorResponse(message, 404);
   }
 
-  // Handle Mongoose duplicate key error
+  // Handle Mongoose duplicate key (unique index violation)
   if (err.code === 11000) {
-    const message = 'Duplicate field value entered';
+    const fields = Object.keys(err.keyValue);
+    const message = `Duplicate value for field(s): ${fields.join(", ")}`;
     error = new ErrorResponse(message, 400);
   }
 
   // Handle Mongoose validation errors
-  if (err.name === 'ValidationError') {
-    const message = Object.values(err.errors)
-      .map((val) => val.message)
-      .join(', ');
-    error = new ErrorResponse(message, 400);
+  if (err.name === "ValidationError") {
+    const errors = Object.values(err.errors).map((val) => ({
+      field: val.path,
+      message: val.message,
+    }));
+
+    error = new ErrorResponse("Validation failed", 400);
+    error.details = errors;
   }
 
-  // Send JSON response
+
+  // Send unified error response
   res.status(error.statusCode || 500).json({
     success: false,
-    message: error.message || 'Server Error',
-    ...(NODE_ENV === 'development' && { stack: err.stack }),
+    message: error.message || "Server Error",
+    errors: error.details || null,
+    ...(NODE_ENV === "development" && { stack: err.stack }),
   });
+
 };
 
 export { ErrorResponse, errorHandler };

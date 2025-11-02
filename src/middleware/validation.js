@@ -256,3 +256,89 @@ export const validateAdminActions = [
     .isIn(["super_admin", "content_admin", "moderator"])
     .withMessage("Role must be super_admin, content_admin, or moderator"),
 ];
+
+// MERCH VALIDATION
+
+export const validateMerch = [
+  body("name")
+    .notEmpty()
+    .withMessage("Product name is required")
+    .isLength({ max: 100 })
+    .withMessage("Product name cannot exceed 100 characters"),
+
+  body("price")
+    .notEmpty()
+    .withMessage("Price is required")
+    .custom((value) => {
+      // allow prices like "$25" or "25"
+      const cleanValue = value.replace("$", "").trim();
+      if (isNaN(cleanValue) || Number(cleanValue) <= 0) {
+        throw new Error("Price must be a valid positive number");
+      }
+      return true;
+    }),
+
+  body("image")
+    .optional()
+    .isURL()
+    .withMessage("Image must be a valid URL"),
+
+  body("printifyId")
+    .optional()
+    .isLength({ max: 100 })
+    .withMessage("Printify ID cannot exceed 100 characters"),
+
+  body("description")
+    .optional()
+    .isLength({ max: 1000 })
+    .withMessage("Description cannot exceed 1000 characters"),
+
+];
+
+
+
+//  CAST (PODCAST) VALIDATION
+
+export const validateCast = [
+  body("title")
+    .notEmpty()
+    .withMessage("Podcast title is required")
+    .isLength({ max: 200 })
+    .withMessage("Title cannot exceed 200 characters"),
+
+  body("thumbnail")
+    .notEmpty()
+    .withMessage("Thumbnail URL is required")
+    .isURL()
+    .withMessage("Thumbnail must be a valid URL"),
+
+  body("youtubeUrl")
+    .notEmpty()
+    .withMessage("YouTube URL is required")
+    .matches(/^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.?be)\/.+$/)
+    .withMessage("Please provide a valid YouTube link"),
+
+  body("description")
+    .optional()
+    .isLength({ max: 1000 })
+    .withMessage("Description cannot exceed 1000 characters"),
+];
+
+const youTubeUrlRegex =
+  /^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([A-Za-z0-9_-]{11})([&?].*)?$/i;
+
+export const validateWave = [
+  body("title")
+    .trim()
+    .notEmpty().withMessage("Title is required")
+    .isLength({ max: 200 }).withMessage("Title cannot exceed 200 characters"),
+
+  body("thumbnail")
+    .notEmpty().withMessage("Thumbnail URL is required")
+    .isURL({ require_protocol: true }).withMessage("Thumbnail must be a valid URL"),
+
+  body("youtubeUrl")
+    .notEmpty().withMessage("YouTube URL is required")
+    .matches(youTubeUrlRegex)
+    .withMessage("Invalid YouTube link format"),
+];
