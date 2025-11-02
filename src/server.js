@@ -87,7 +87,10 @@ app.use("/api/casts", castRoutes);
 app.use("/api/waves", waveRoutes);
 // app.use('/api/calendar', calendarRoutes);
 app.use('/api/contact', contactRoutes);
-app.use('/api/admin', adminRoutes); // ===== Health check =====
+app.use('/api/admin', adminRoutes); 
+
+
+// ===== Health check =====
 app.get('/api/up', (req, res) => {
   res.json({
     success: true,
