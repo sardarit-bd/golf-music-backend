@@ -1,7 +1,7 @@
 import express from "express";
 import { protect, authorize } from "../middleware/auth.js";
 import { validateVenueProfile } from "../middleware/validation.js";
-import { uploadVenuePhotos, handleUploadErrors } from "../middleware/upload.js";
+import { handleUploadErrors, uploadVenuePhotos } from "../middleware/upload.js";
 import {
   addShow,
   createOrUpdateProfile,
