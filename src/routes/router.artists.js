@@ -1,8 +1,9 @@
 import express from 'express';
 import { authorize, protect } from '../middleware/auth.js';
 import { validateArtistProfile } from '../middleware/validation.js';
-import { createOrUpdateProfile, deleteArtistProfile, getArtist, getArtistsByGenre, getMyArtistProfile, updateArtistProfile } from '../controllers/controllers.artist.js';
+import { createOrUpdateProfile, deleteArtistByAdmin, deleteArtistProfile, getArtist, getArtistsByGenre, getMyArtistProfile, updateArtistByAdmin, updateArtistProfile } from '../controllers/controllers.artist.js';
 import { handleUploadErrors, uploadArtistFiles } from '../middleware/upload.js';
+
 
 
 const router = express.Router();
@@ -39,5 +40,20 @@ router.put(
 
 // Delete
 router.delete('/profile', protect, authorize('artist'), deleteArtistProfile);
+
+// Admin routes for artist management
+router.put(
+  '/admin/:id',
+  protect,
+  authorize('admin'),
+  updateArtistByAdmin
+);
+
+router.delete(
+  '/admin/:id',
+  protect,
+  authorize('admin'),
+  deleteArtistByAdmin
+);
 
 export default router;

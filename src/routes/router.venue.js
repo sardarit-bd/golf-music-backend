@@ -5,11 +5,14 @@ import { handleUploadErrors, uploadVenuePhotos } from "../middleware/upload.js";
 import {
   addShow,
   createOrUpdateProfile,
+  deleteVenueByAdmin,
   deleteVenueProfile,
   getCalendarByCity,
   getMyVenueProfile,
   getVenue,
   getVenuesByCity,
+  getVenuesForAdmin,
+  updateVenueByAdmin,
   updateVenueProfile,
 } from "../controllers/controllers.venue.js";
 
@@ -50,5 +53,11 @@ router.get("/", getVenuesByCity);
 
 // Get single venue by ID
 router.get("/:id", getVenue);
+
+
+//NEW: Admin routes for venue management
+router.get("/admin/venues", protect, authorize("admin"), getVenuesForAdmin);
+router.put("/admin/:id", protect, authorize("admin"), updateVenueByAdmin);
+router.delete("/admin/:id", protect, authorize("admin"), deleteVenueByAdmin);
 
 export default router;

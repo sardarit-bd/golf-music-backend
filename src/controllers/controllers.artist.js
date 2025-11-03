@@ -174,3 +174,60 @@ export const deleteArtistProfile = asyncHandler(async (req, res, next) => {
     message: "Artist profile deleted successfully",
   });
 });
+
+
+ //  UPDATE Artist by Admin
+
+export const updateArtistByAdmin = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+  const { name, city, genre, biography, website, phone, isActive } = req.body;
+  
+  const normalizedGenre = genre?.toLowerCase();
+
+  const updateData = {
+    ...(name && { name }),
+    ...(city && { city }),
+    ...(genre && { genre: normalizedGenre }),
+    ...(biography && { biography }),
+    ...(website && { website }),
+    ...(phone && { phone }),
+    ...(isActive !== undefined && { isActive }),
+    updatedAt: Date.now()
+  };
+
+  const artist = await Artist.findByIdAndUpdate(
+    id,
+    updateData,
+    { new: true, runValidators: true }
+  ).populate("user", "username email");
+
+  if (!artist) {
+    return next(new ErrorResponse("Artist not found", 404));
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "Artist profile updated successfully",
+    data: { artist },
+  });
+});
+
+
+//  DELETE Artist by Admin
+
+export const deleteArtistByAdmin = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+
+  const artist = await Artist.findById(id);
+
+  if (!artist) {
+    return next(new ErrorResponse("Artist not found", 404));
+  }
+
+  await artist.deleteOne();
+
+  res.status(200).json({
+    success: true,
+    message: "Artist profile deleted successfully",
+  });
+});
