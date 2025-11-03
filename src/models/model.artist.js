@@ -37,7 +37,7 @@ const artistSchema = new mongoose.Schema({
             filename: String
         }
     ],
-    mp3File: {
+    mp3Files: {
         url: String,
         filename: String,
         originalName: String

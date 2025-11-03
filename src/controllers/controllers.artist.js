@@ -3,9 +3,9 @@ import Artist from "../models/model.artist.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
-/* =====================================================
-   CREATE or UPDATE Artist Profile
-===================================================== */
+
+  //  CREATE or UPDATE Artist Profile
+
 export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -30,24 +30,24 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
     biography,
     photos: req.files?.photos
       ? req.files.photos.map((file) => ({
-          url: file.path,
-          filename: file.filename,
-        }))
+        url: file.path,
+        filename: file.filename,
+      }))
       : artist?.photos || [],
-    mp3File: req.files?.mp3File
-      ? {
-          url: req.files.mp3File[0].path,
-          filename: req.files.mp3File[0].filename,
-          originalName: req.files.mp3File[0].originalname,
-        }
-      : artist?.mp3File || null,
+    mp3Files: req.files?.mp3Files
+      ? req.files.mp3Files.map((file) => ({
+        url: file.path,
+        filename: file.filename,
+        originalName: file.originalname,
+      }))
+      : artist?.mp3Files || [],
   };
 
   artist = artist
     ? await Artist.findByIdAndUpdate(artist._id, artistData, {
-        new: true,
-        runValidators: true,
-      })
+      new: true,
+      runValidators: true,
+    })
     : await Artist.create({ user: req.user.id, ...artistData });
 
   res.status(200).json({
@@ -57,9 +57,9 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
   });
 });
 
-/* =====================================================
-   GET My Artist Profile
-===================================================== */
+
+  //  GET My Artist Profile
+
 export const getMyArtistProfile = asyncHandler(async (req, res, next) => {
   const artist = await Artist.findOne({ user: req.user.id }).populate(
     "user",
@@ -73,9 +73,9 @@ export const getMyArtistProfile = asyncHandler(async (req, res, next) => {
   res.status(200).json({ success: true, data: { artist } });
 });
 
-/* =====================================================
-   GET Artists by Genre
-===================================================== */
+
+  //  GET Artists by Genre
+
 export const getArtistsByGenre = asyncHandler(async (req, res, next) => {
   const { genre } = req.query;
   let query = { isActive: true };
@@ -94,9 +94,9 @@ export const getArtistsByGenre = asyncHandler(async (req, res, next) => {
   });
 });
 
-/* =====================================================
-   GET Single Artist by ID
-===================================================== */
+
+//  GET Single Artist by ID
+
 export const getArtist = asyncHandler(async (req, res, next) => {
   const artist = await Artist.findById(req.params.id).populate(
     "user",
@@ -113,9 +113,9 @@ export const getArtist = asyncHandler(async (req, res, next) => {
   });
 });
 
-/* =====================================================
-   UPDATE Artist Profile
-===================================================== */
+
+//  UPDATE Artist Profile
+
 export const updateArtistProfile = asyncHandler(async (req, res, next) => {
   const { name, city, genre, biography } = req.body;
   const normalizedGenre = genre?.toLowerCase();
@@ -127,16 +127,16 @@ export const updateArtistProfile = asyncHandler(async (req, res, next) => {
     biography,
     photos: req.files?.photos
       ? req.files.photos.map((file) => ({
-          url: `/uploads/${file.filename}`,
-          filename: file.filename,
-        }))
+        url: `/uploads/${file.filename}`,
+        filename: file.filename,
+      }))
       : undefined,
-    mp3File: req.files?.mp3File
-      ? {
-          url: `/uploads/${req.files.mp3File[0].filename}`,
-          filename: req.files.mp3File[0].filename,
-          originalName: req.files.mp3File[0].originalname,
-        }
+    mp3Files: req.files?.mp3Files
+      ? req.files.mp3Files.map((file) => ({
+        url: `/uploads/${file.filename}`,
+        filename: file.filename,
+        originalName: file.originalname,
+      }))
       : undefined,
   };
 
@@ -157,9 +157,9 @@ export const updateArtistProfile = asyncHandler(async (req, res, next) => {
   });
 });
 
-/* =====================================================
-   DELETE Artist Profile
-===================================================== */
+
+//  DELETE Artist Profile
+
 export const deleteArtistProfile = asyncHandler(async (req, res, next) => {
   const artist = await Artist.findOne({ user: req.user.id });
 
@@ -176,12 +176,12 @@ export const deleteArtistProfile = asyncHandler(async (req, res, next) => {
 });
 
 
- //  UPDATE Artist by Admin
+//  UPDATE Artist by Admin
 
 export const updateArtistByAdmin = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
   const { name, city, genre, biography, website, phone, isActive } = req.body;
-  
+
   const normalizedGenre = genre?.toLowerCase();
 
   const updateData = {
