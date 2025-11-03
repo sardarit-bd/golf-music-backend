@@ -279,6 +279,65 @@ export const markContactAsRead = async (req, res, next) => {
   }
 };
 
+
+export const updateUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { username, email, userType, isVerified } = req.body;
+
+    // Find user and update
+    const user = await User.findByIdAndUpdate(
+      id,
+      { 
+        username, 
+        email, 
+        userType, 
+        isVerified,
+        updatedAt: Date.now()
+      },
+      { new: true, runValidators: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'User updated successfully',
+      data: { user }
+    });
+  } catch (error) {
+    console.error('Update user error:', error);
+    
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors
+      });
+    }
+    
+    // Handle duplicate key error
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email or username already exists'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Error updating user'
+    });
+  }
+};
+
 // @desc    Delete contact
 export const deleteContactMessage = async (req, res, next) => {
   try {
@@ -315,5 +374,170 @@ export const getSystemSettings = async (req, res, next) => {
     res.status(200).json({ success: true, data: { settings } });
   } catch (error) {
     next(new ErrorResponse("Failed to fetch system settings", 500));
+  }
+};
+
+
+  //  GET NEWS FOR ADMIN
+
+export const getNewsForAdmin = async (req, res, next) => {
+  try {
+    const { page = 1, limit = 10, search = "", status = "all", location = "" } = req.query;
+    
+    let query = {};
+    
+    // Search filter
+    if (search) {
+      query.$or = [
+        { title: { $regex: search, $options: "i" } },
+        { description: { $regex: search, $options: "i" } },
+        { location: { $regex: search, $options: "i" } }
+      ];
+    }
+    
+    // Status filter
+    if (status !== "all") {
+      query.isActive = status === "active";
+    }
+
+    // Location filter
+    if (location && location !== "all") {
+      query.location = location.toLowerCase();
+    }
+
+    const news = await News.find(query)
+      .populate("journalist", "fullName email username")
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await News.countDocuments(query);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        news,
+        pagination: {
+          current: page,
+          pages: Math.ceil(total / limit),
+          total
+        }
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+  //  UPDATE NEWS BY ADMIN
+
+export const updateNewsByAdmin = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { title, description, location, credit, isActive } = req.body;
+
+    let news = await News.findById(id);
+    if (!news) {
+      return next(new ErrorResponse("News not found", 404));
+    }
+
+    // Upload new photos (if provided)
+    let updatedPhotos = news.photos;
+    if (req.files?.length) {
+      updatedPhotos = await Promise.all(
+        req.files.map(async (file) => {
+          const uploadRes = await cloudinary.uploader.upload(file.path, {
+            folder: "gulf-music/news",
+          });
+          return {
+            url: uploadRes.secure_url,
+            filename: uploadRes.public_id,
+          };
+        })
+      );
+    }
+
+    const updateData = {
+      ...(title && { title }),
+      ...(description && { description }),
+      ...(location && { location: location.toLowerCase() }),
+      ...(credit && { credit }),
+      ...(isActive !== undefined && { isActive }),
+      ...(req.files?.length && { photos: updatedPhotos })
+    };
+
+    news = await News.findByIdAndUpdate(
+      id,
+      updateData,
+      { new: true, runValidators: true }
+    ).populate("journalist", "fullName email username");
+
+    res.status(200).json({
+      success: true,
+      message: "News updated successfully",
+      data: { news },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+  //  TOGGLE NEWS STATUS (ACTIVE/INACTIVE)
+
+export const toggleNewsStatus = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const news = await News.findById(id);
+    if (!news) {
+      return next(new ErrorResponse("News not found", 404));
+    }
+
+    news.isActive = !news.isActive;
+    await news.save();
+
+    res.status(200).json({
+      success: true,
+      message: `News ${news.isActive ? 'activated' : 'deactivated'} successfully`,
+      data: { news },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+  //  DELETE NEWS BY ADMIN
+
+export const deleteNewsByAdmin = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const news = await News.findById(id);
+    if (!news) {
+      return next(new ErrorResponse("News not found", 404));
+    }
+
+    // Delete photos from Cloudinary
+    if (news.photos?.length) {
+      for (const photo of news.photos) {
+        try {
+          await cloudinary.uploader.destroy(photo.filename);
+        } catch (err) {
+          console.warn(`Failed to delete image: ${photo.filename}`);
+        }
+      }
+    }
+
+    await News.findByIdAndDelete(id);
+
+    res.status(200).json({
+      success: true,
+      message: "News permanently deleted successfully",
+    });
+  } catch (error) {
+    next(error);
   }
 };

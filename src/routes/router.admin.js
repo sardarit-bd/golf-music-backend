@@ -9,6 +9,7 @@ import {
     getSystemSettings, 
     markContactAsRead, 
     toggleContentStatus, 
+    updateUser, 
     verifyUser 
 } from '../controllers/controller.admin.js';
 import { validateAdminActions } from '../middleware/validation.js';
@@ -25,6 +26,7 @@ router.get('/dashboard', getDashboardStats);
 // User management
 router.get('/users', getAllUsers);
 router.put('/users/:id/verify', validateAdminActions, verifyUser);
+router.put('/users/:id', updateUser);
 router.delete('/users/:id', deleteUser);
 
 // Content moderation

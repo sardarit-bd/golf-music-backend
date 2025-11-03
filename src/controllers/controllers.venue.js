@@ -237,3 +237,123 @@ export const getCalendarByCity = asyncHandler(async (req, res, next) => {
     data: { venues },
   });
 });
+
+
+
+  //  GET Venues for Admin
+
+export const getVenuesForAdmin = asyncHandler(async (req, res, next) => {
+  const { page = 1, limit = 10, search = "", status = "all" } = req.query;
+  
+  let query = {};
+  
+  // Search filter
+  if (search) {
+    query.$or = [
+      { venueName: { $regex: search, $options: "i" } },
+      { city: { $regex: search, $options: "i" } },
+      { address: { $regex: search, $options: "i" } }
+    ];
+  }
+  
+  // Status filter
+  if (status !== "all") {
+    query.isActive = status === "active";
+  }
+
+  const venues = await Venue.find(query)
+    .populate("user", "username email")
+    .sort({ createdAt: -1 })
+    .limit(limit * 1)
+    .skip((page - 1) * limit);
+
+  const total = await Venue.countDocuments(query);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      venues,
+      pagination: {
+        current: page,
+        pages: Math.ceil(total / limit),
+        total
+      }
+    }
+  });
+});
+
+
+  //  UPDATE Venue by Admin
+
+export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+  const { 
+    venueName, 
+    city, 
+    address, 
+    seatingCapacity, 
+    biography, 
+    openHours, 
+    openDays, 
+    isActive 
+  } = req.body;
+
+  const updateData = {
+    ...(venueName && { venueName }),
+    ...(city && { city }),
+    ...(address && { address }),
+    ...(seatingCapacity && { seatingCapacity: parseInt(seatingCapacity) }),
+    ...(biography && { biography }),
+    ...(openHours && { openHours }),
+    ...(openDays && { openDays }),
+    ...(isActive !== undefined && { isActive }),
+    updatedAt: Date.now()
+  };
+
+  const venue = await Venue.findByIdAndUpdate(
+    id,
+    updateData,
+    { new: true, runValidators: true }
+  ).populate("user", "username email");
+
+  if (!venue) {
+    return next(new ErrorResponse("Venue not found", 404));
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "Venue profile updated successfully",
+    data: { venue },
+  });
+});
+
+
+  //  DELETE Venue by Admin
+
+export const deleteVenueByAdmin = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+
+  const venue = await Venue.findById(id);
+
+  if (!venue) {
+    return next(new ErrorResponse("Venue not found", 404));
+  }
+
+  // Delete photos from Cloudinary
+  if (venue.photos?.length) {
+    for (const photo of venue.photos) {
+      try {
+        await cloudinary.uploader.destroy(photo.filename);
+      } catch (err) {
+        console.warn("Failed to delete image from Cloudinary:", photo.filename);
+      }
+    }
+  }
+
+  await venue.deleteOne();
+
+  res.status(200).json({
+    success: true,
+    message: "Venue profile deleted successfully",
+  });
+});

@@ -16,9 +16,9 @@ const venueColors = [
   "#000000",
 ];
 
-/* =====================================
-   CREATE EVENT
-===================================== */
+
+  //  CREATE EVENT
+
 export const createEvent = async (req, res, next) => {
   try {
     const errors = validationResult(req);
@@ -65,9 +65,9 @@ export const createEvent = async (req, res, next) => {
   }
 };
 
-/* =====================================
-   GET EVENTS BY CITY
-===================================== */
+
+  //  GET EVENTS BY CITY
+
 export const getEventsByCity = async (req, res, next) => {
   try {
     const { city } = req.query;
@@ -95,9 +95,9 @@ export const getEventsByCity = async (req, res, next) => {
   }
 };
 
-/* =====================================
-   GET SINGLE EVENT BY ID
-===================================== */
+
+  //  GET SINGLE EVENT BY ID
+
 export const getEvent = async (req, res, next) => {
   try {
     const event = await Event.findById(req.params.id).populate(
@@ -118,9 +118,9 @@ export const getEvent = async (req, res, next) => {
   }
 };
 
-/* =====================================
-   GET EVENTS OF CURRENT VENUE OWNER
-===================================== */
+
+  //  GET EVENTS OF CURRENT VENUE OWNER
+
 export const getMyEvents = async (req, res, next) => {
   try {
     const venue = await Venue.findOne({ user: req.user.id });
@@ -141,9 +141,9 @@ export const getMyEvents = async (req, res, next) => {
   }
 };
 
-/* =====================================
-   UPDATE EVENT
-===================================== */
+
+  //  UPDATE EVENT
+
 export const updateEvent = async (req, res, next) => {
   try {
     const errors = validationResult(req);
@@ -183,9 +183,9 @@ export const updateEvent = async (req, res, next) => {
   }
 };
 
-/* =====================================
-   DELETE (SOFT DELETE)
-===================================== */
+
+  //  DELETE (SOFT DELETE)
+
 export const deleteEvent = async (req, res, next) => {
   try {
     const event = await Event.findById(req.params.id).populate("venue");
@@ -211,9 +211,9 @@ export const deleteEvent = async (req, res, next) => {
   }
 };
 
-/* =====================================
-   UPCOMING EVENTS
-===================================== */
+
+  //  UPCOMING EVENTS
+
 export const getUpcomingEvents = async (req, res, next) => {
   try {
     const { limit = 10 } = req.query;
@@ -229,6 +229,144 @@ export const getUpcomingEvents = async (req, res, next) => {
     res.status(200).json({
       success: true,
       data: { events },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/* =====================================
+   GET EVENTS FOR ADMIN
+===================================== */
+export const getEventsForAdmin = async (req, res, next) => {
+  try {
+    const { page = 1, limit = 10, search = "", status = "all", city = "" } = req.query;
+    
+    let query = {};
+    
+    // Search filter
+    if (search) {
+      query.$or = [
+        { artistBandName: { $regex: search, $options: "i" } },
+        { description: { $regex: search, $options: "i" } },
+        { city: { $regex: search, $options: "i" } }
+      ];
+    }
+    
+    // Status filter
+    if (status !== "all") {
+      query.isActive = status === "active";
+    }
+
+    // City filter
+    if (city && city !== "all") {
+      query.city = city.toLowerCase();
+    }
+
+    const events = await Event.find(query)
+      .populate("venue", "venueName city address seatingCapacity")
+      .sort({ date: -1, time: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await Event.countDocuments(query);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        events,
+        pagination: {
+          current: page,
+          pages: Math.ceil(total / limit),
+          total
+        }
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+  //  UPDATE EVENT BY ADMIN
+
+export const updateEventByAdmin = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { artistBandName, time, date, description, city, isActive } = req.body;
+
+    let event = await Event.findById(id);
+    if (!event) {
+      return next(new ErrorResponse("Event not found", 404));
+    }
+
+    const updateData = {
+      ...(artistBandName && { artistBandName }),
+      ...(time && { time }),
+      ...(date && { date }),
+      ...(description && { description }),
+      ...(city && { city: city.toLowerCase() }),
+      ...(isActive !== undefined && { isActive })
+    };
+
+    event = await Event.findByIdAndUpdate(
+      id,
+      updateData,
+      { new: true, runValidators: true }
+    ).populate("venue", "venueName city address seatingCapacity");
+
+    res.status(200).json({
+      success: true,
+      message: "Event updated successfully",
+      data: { event },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+  //  TOGGLE EVENT STATUS (ACTIVE/INACTIVE)
+
+export const toggleEventStatus = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const event = await Event.findById(id);
+    if (!event) {
+      return next(new ErrorResponse("Event not found", 404));
+    }
+
+    event.isActive = !event.isActive;
+    await event.save();
+
+    res.status(200).json({
+      success: true,
+      message: `Event ${event.isActive ? 'activated' : 'deactivated'} successfully`,
+      data: { event },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+  //  DELETE EVENT BY ADMIN
+
+export const deleteEventByAdmin = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const event = await Event.findById(id);
+    if (!event) {
+      return next(new ErrorResponse("Event not found", 404));
+    }
+
+    await Event.findByIdAndDelete(id);
+
+    res.status(200).json({
+      success: true,
+      message: "Event permanently deleted successfully",
     });
   } catch (error) {
     next(error);
