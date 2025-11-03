@@ -60,25 +60,29 @@ export const validateArtistProfile = [
   body("city").notEmpty().withMessage("City is required"),
 
   body("genre")
-    .isIn([
-      "rap",
-      "country",
-      "pop",
-      "rock",
-      "jazz",
-      "reggae",
-      "edm",
-      "classical",
-      "other",
-    ])
-    .withMessage("Please select a valid genre"),
+    .custom((value) => {
+      const validGenres = [
+        "rap",
+        "country",
+        "pop",
+        "rock",
+        "jazz",
+        "reggae",
+        "edm",
+        "classical",
+        "other",
+      ];
+      if (!validGenres.includes(value?.toLowerCase())) {
+        throw new Error("Please select a valid genre");
+      }
+      return true;
+    }),
 
   body("biography")
     .optional()
     .isLength({ max: 2000 })
     .withMessage("Biography cannot exceed 2000 characters"),
 ];
-
 export const validateVenueProfile = [
   body("venueName")
     .notEmpty()

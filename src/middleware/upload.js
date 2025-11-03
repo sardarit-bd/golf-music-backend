@@ -34,7 +34,7 @@ export const uploadJournalistPhoto = upload.single("profilePhoto");
 
 export const handleUploadErrors = (error, req, res, next) => {
   if (error instanceof multer.MulterError) {
-    // Multer-specific errors
+    console.log('Multer Error:', error);
     if (error.code === "LIMIT_FILE_SIZE") {
       return res.status(400).json({
         success: false,
@@ -44,18 +44,11 @@ export const handleUploadErrors = (error, req, res, next) => {
     if (error.code === "LIMIT_FILE_COUNT") {
       return res.status(400).json({
         success: false,
-        message: "Too many files uploaded.",
+        message: "Too many files uploaded. Maximum 5 photos allowed.",
       });
     }
   }
 
-  // Generic upload error
-  if (error) {
-    return res.status(400).json({
-      success: false,
-      message: error.message || "Upload failed.",
-    });
-  }
-
-  next();
+  console.log('Upload Error:', error);
+  next(error);
 };

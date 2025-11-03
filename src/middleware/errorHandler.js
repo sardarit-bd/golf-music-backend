@@ -1,5 +1,6 @@
 import { NODE_ENV } from "../config/environment.js";
 
+// Custom Error Class
 class ErrorResponse extends Error {
   constructor(message, statusCode) {
     super(message);
@@ -7,16 +8,21 @@ class ErrorResponse extends Error {
   }
 }
 
+// Global Error Handler Middleware
 const errorHandler = (err, req, res, next) => {
   let error = { ...err };
   error.message = err.message;
 
-  // Log error for debugging
-  console.error("❌ Error:", err);
+  // Console Log (development only)
+  if (NODE_ENV === "development") {
+    console.error("❌ Error Stack:", err.stack);
+  } else {
+    console.error("❌ Error:", err.message);
+  }
 
   // Handle Mongoose bad ObjectId (CastError)
   if (err.name === "CastError") {
-    const message = `Resource not found with id of ${err.value}`;
+    const message = `Resource not found with id: ${err.value}`;
     error = new ErrorResponse(message, 404);
   }
 
@@ -38,6 +44,14 @@ const errorHandler = (err, req, res, next) => {
     error.details = errors;
   }
 
+  // JWT / Auth Errors (optional but helpful)
+  if (err.name === "JsonWebTokenError") {
+    error = new ErrorResponse("Invalid token, authorization denied", 401);
+  }
+
+  if (err.name === "TokenExpiredError") {
+    error = new ErrorResponse("Token expired, please log in again", 401);
+  }
 
   // Send unified error response
   res.status(error.statusCode || 500).json({
@@ -46,7 +60,6 @@ const errorHandler = (err, req, res, next) => {
     errors: error.details || null,
     ...(NODE_ENV === "development" && { stack: err.stack }),
   });
-
 };
 
 export { ErrorResponse, errorHandler };
