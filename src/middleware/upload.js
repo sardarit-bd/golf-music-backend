@@ -12,7 +12,7 @@ const upload = multer({
 
 export const uploadArtistFiles = upload.fields([
   { name: "photos", maxCount: 5 },
-  { name: "mp3File", maxCount: 1 }, 
+  { name: "mp3Files", maxCount: 5 }, 
 ]);
 
 
@@ -21,6 +21,8 @@ export const uploadArtistFiles = upload.fields([
 export const uploadVenuePhotos = upload.array("photos", 5);
 
 //  NEWS UPLOADS
+
+
 
 export const uploadNewsPhotos = upload.array("photos", 5);
 
