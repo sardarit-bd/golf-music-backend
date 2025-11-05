@@ -4,7 +4,7 @@ import { storage } from "../config/cloudinary.js";
 // === Multer with Cloudinary Storage ===
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB per file
+  limits: { fileSize: 20 * 1024 * 1024 },
 });
 
 
@@ -14,6 +14,7 @@ export const uploadArtistFiles = upload.fields([
   { name: "photos", maxCount: 5 },
   { name: "mp3Files", maxCount: 5 }, 
 ]);
+
 
 
 //  VENUE UPLOADS

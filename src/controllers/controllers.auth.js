@@ -1,12 +1,16 @@
 import { validationResult } from "express-validator";
-import { sendVerificationEmail } from "../utils/emailService.js";
+import { sendResetPasswordEmail, sendVerificationEmail } from "../utils/emailService.js";
 import { generateToken } from "../utils/helpers.js";
 import User from "../models/model.user.js";
 import { formatValidationErrors } from "../utils/validationFormatter.js";
+import Journalist from "../models/model.journalist.js";
+import Venue from "../models/model.venue.js";
+import Artist from './../models/model.artist.js';
+import crypto from "crypto";
+
 
 export const register = async (req, res) => {
   try {
-    // Step 1: Validate input
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({
@@ -16,10 +20,8 @@ export const register = async (req, res) => {
       });
     }
 
-    // Destructure body
     const { username, email, password, userType, genre, location } = req.body;
 
-    // Duplicate check
     const existingUser = await User.findOne({
       $or: [{ email }, { username }],
     });
@@ -28,83 +30,66 @@ export const register = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "User with this email or username already exists",
-        errors: [
-          {
-            field: existingUser.email === email ? "email" : "username",
-            message:
-              existingUser.email === email
-                ? "This email is already registered"
-                : "This username is already taken",
-          },
-        ],
       });
     }
 
-    // Build user object
-    const userData = {
+    // Create User
+    const user = await User.create({
       username,
       email,
       password,
       userType,
+      genre: genre?.toLowerCase(),
+      location: location?.toLowerCase(),
       verificationRequested: userType !== "fan",
-    };
+    });
 
-    // Conditional validations
-    if (userType === "artist" && !genre) {
-      return res.status(400).json({
-        success: false,
-        message: "Genre is required for artists",
-        errors: [{ field: "genre", message: "Please select a genre" }],
+    // Auto Create Profile Based on userType
+    if (userType === "artist") {
+      await Artist.create({
+        user: user._id,
+        name: user.username,
+        city: user.location || "new orleans",
+        genre: user.genre,
+        biography: "",
+        photos: [],
+        mp3Files: [],
       });
     }
 
-    if (
-      (userType === "venue" || userType === "journalist") &&
-      !location
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Location is required for venues and journalists",
-        errors: [
-          {
-            field: "location",
-            message: "Please select a valid location",
-          },
-        ],
+    if (userType === "venue") {
+      await Venue.create({
+        user: user._id,
+        venueName: user.username,
+        city: user.location || "new orleans",
+        address: "",
+        seatingCapacity: 10,
+        openHours: "",
+        openDays: "",
+        photos: [],
       });
     }
 
-    // Attach genre/location if provided
-    if (genre) userData.genre = genre;
-    if (location) userData.location = location;
+    if (userType === "journalist") {
+      await Journalist.create({
+        user: user._id,
+        fullName: user.username,
+        bio: "",
+        profilePhoto: null,
+        areasOfCoverage: user.location ? [user.location] : [],
+      });
+    }
 
-    // Create user
-    const user = await User.create(userData);
-    console.log(user)
-    // Send verification email (except for fan)
+    // (Optional) Send verification email
     if (userType !== "fan") {
-      try {
-        await sendVerificationEmail(user.email, user.userType);
-      } catch (emailError) {
-        console.error("Email sending failed:", emailError);
-        await User.findByIdAndDelete(user._id);
-        return res.status(500).json({
-          success: false,
-          message: "Failed to send verification email. Please try again.",
-        });
-      }
+      await sendVerificationEmail(user.email, user.userType);
     }
 
-    // Generate JWT
     const token = generateToken(user._id);
 
-    // Success response
     res.status(201).json({
       success: true,
-      message:
-        userType === "fan"
-          ? "Registration successful"
-          : "Registration successful. Please check your email for verification instructions.",
+      message: "Registration successful and profile created automatically!",
       data: {
         token,
         user: {
@@ -114,17 +99,14 @@ export const register = async (req, res) => {
           userType: user.userType,
           genre: user.genre,
           location: user.location,
-          isVerified: user.isVerified,
         },
       },
     });
-  } catch (error) {
-    console.error("Registration error:", error);
-
-    // Fallback server error response
+  } catch (err) {
+    console.error("Registration Error:", err);
     res.status(500).json({
       success: false,
-      message: "Something went wrong during registration. Please try again later.",
+      message: "Something went wrong during registration.",
     });
   }
 };
@@ -238,5 +220,85 @@ export const getMe = async (req, res, next) => {
   } catch (error) {
     console.error("GetMe Error:", error);
     next(new ErrorResponse("Server error while fetching user profile.", 500));
+  }
+};
+
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "No account found with this email",
+      });
+    }
+
+    // Generate token
+    const resetToken = user.getResetPasswordToken();
+
+    // Save hashed token in DB
+    await user.save({ validateBeforeSave: false });
+
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+    
+    // Send email
+    await sendResetPasswordEmail(user.email, resetUrl);
+
+    res.status(200).json({
+      success: true,
+      message: "Password reset link sent to your email!",
+    });
+  } catch (error) {
+    console.error("Forgot Password Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while sending reset link.",
+    });
+  }
+};
+
+export const resetPassword = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    // Hash token again to match with DB
+    const resetPasswordToken = crypto
+      .createHash("sha256")
+      .update(token)
+      .digest("hex");
+
+    // Find user by token and check expiry
+    const user = await User.findOne({
+      resetPasswordToken,
+      resetPasswordExpire: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired reset token",
+      });
+    }
+
+    // Update password
+    user.password = password;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpire = undefined;
+
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Password reset successful. You can now log in.",
+    });
+  } catch (error) {
+    console.error("Reset Password Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while resetting password.",
+    });
   }
 };

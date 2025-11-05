@@ -43,3 +43,28 @@ export const sendVerificationEmail = async (userEmail, userType) => {
     throw new Error('Failed to send verification email');
   }
 };
+
+
+export const sendResetPasswordEmail = async (email, resetUrl) => {
+  const transporter = nodemailer.createTransport({
+    service: EMAIL_SERVICE,
+    auth: {
+      user: EMAIL_USERNAME,
+      pass: EMAIL_PASSWORD
+    }
+  });
+
+  const message = {
+    from: `"Gulf Music" <${process.env.SMTP_EMAIL}>`,
+    to: email,
+    subject: "Password Reset Request",
+    html: `
+      <h2>Password Reset Request</h2>
+      <p>Click the link below to reset your password:</p>
+      <a href="${resetUrl}" target="_blank">${resetUrl}</a>
+      <p>This link is valid for 15 minutes.</p>
+    `,
+  };
+
+  await transporter.sendMail(message);
+};

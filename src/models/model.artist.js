@@ -37,11 +37,14 @@ const artistSchema = new mongoose.Schema({
             filename: String
         }
     ],
-    mp3Files: {
-        url: String,
-        filename: String,
-        originalName: String
-    },
+    mp3Files: [
+        {
+            url: String,
+            filename: String,
+            originalName: String
+        }
+    ],
+
     isActive: {
         type: Boolean,
         default: true
@@ -56,7 +59,7 @@ const artistSchema = new mongoose.Schema({
     }
 });
 
-artistSchema.pre('save', function(next){
+artistSchema.pre('save', function (next) {
     this.updatedAt = Date.now();
     next();
 })
