@@ -75,7 +75,7 @@ const userSchema = new mongoose.Schema({
   resetPasswordExpire: { type: Date },
 
   // Status Fields
-  isActive: { type: Boolean, default: true },
+  isActive: { type: Boolean, default: false },
   isVerified: { type: Boolean, default: false },
   verificationRequested: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },

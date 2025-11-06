@@ -2,9 +2,13 @@ import { NODE_ENV } from "../config/environment.js";
 
 // Custom Error Class
 class ErrorResponse extends Error {
-  constructor(message, statusCode) {
+  constructor(message, statusCode, errorDetails = null) {
     super(message);
     this.statusCode = statusCode;
+    this.details = errorDetails;
+    this.isOperational = true;
+    
+    Error.captureStackTrace(this, this.constructor);
   }
 }
 
@@ -16,6 +20,7 @@ const errorHandler = (err, req, res, next) => {
   // Console Log (development only)
   if (NODE_ENV === "development") {
     console.error("❌ Error Stack:", err.stack);
+    console.error("❌ Error Details:", err.details);
   } else {
     console.error("❌ Error:", err.message);
   }
@@ -53,11 +58,18 @@ const errorHandler = (err, req, res, next) => {
     error = new ErrorResponse("Token expired, please log in again", 401);
   }
 
+  // FIX: Preserve the details from ErrorResponse
+  if (err.details) {
+    error.details = err.details;
+  }
+
   // Send unified error response
   res.status(error.statusCode || 500).json({
     success: false,
     message: error.message || "Server Error",
-    errors: error.details || null,
+    errors: {
+      details: error.details || null,
+    },
     ...(NODE_ENV === "development" && { stack: err.stack }),
   });
 };
