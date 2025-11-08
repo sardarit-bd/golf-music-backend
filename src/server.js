@@ -34,10 +34,21 @@ const app = express();
 app.use(helmet());
 
 // ===== Rate limiting =====
+app.set('trust proxy', 1);
+
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: 100,
+  standardHeaders: true, // Return rate limit info in headers
+  legacyHeaders: false,  // Disable deprecated headers
+  keyGenerator: (req, res) => {
+    // Use Forwarded or X-Forwarded-For if available
+    const forwarded = req.headers['x-forwarded-for'] || req.ip;
+    return forwarded.split(',')[0].trim();
+  },
 });
+
 app.use(limiter);
 
 // ===== Compression middleware =====
