@@ -36,66 +36,49 @@ app.use(helmet());
 // ===== Rate limiting =====
 app.set('trust proxy', 1);
 
-// Vercel-compatible rate limiter
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => {
-    // Vercel-specific IP detection
-    const forwarded = req.headers['x-forwarded-for'];
-    const realIP = req.headers['x-real-ip'];
-    const cfConnectingIP = req.headers['cf-connecting-ip'];
-    
-    if (forwarded) {
-      return forwarded.split(',')[0].trim();
-    }
-    if (realIP) {
-      return realIP;
-    }
-    if (cfConnectingIP) {
-      return cfConnectingIP;
-    }
-    
-    // Fallback to regular IP
-    return req.ip || 'unknown';
-  },
-  // Skip rate limiting for health checks
-  skip: (req) => req.url === '/api/up',
-});
 
-app.use(limiter);
+// const limiter = rateLimit({
+//   windowMs: 15 * 60 * 1000, // 15 minutes
+//   max: 100,
+//   standardHeaders: true, // Return rate limit info in headers
+//   legacyHeaders: false,  // Disable deprecated headers
+//   keyGenerator: (req, res) => {
+//     // Use Forwarded or X-Forwarded-For if available
+//     const forwarded = req.headers['x-forwarded-for'] || req.ip;
+//     return forwarded.split(',')[0].trim();
+//   },
+// });
+
+// app.use(limiter);
 
 // ===== Compression middleware =====
 app.use(compression());
 
 // ===== CORS configuration =====
+
+
+
 const allowedOrigins = [
   CLIENT_URL,
   "http://localhost:3000",
-  "https://gulf-coast-music.vercel.app", // Add your Vercel frontend URL
+  "https://gulf-cost-music.vercel.app"
 ];
 
 app.use(
   cors({
     origin: function (origin, callback) {
-      // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) return callback(null, true);
-      
-      if (allowedOrigins.indexOf(origin) !== -1) {
+      if (!origin) return callback(null, true); // allow non-browser requests
+      if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        // Log the blocked origin for debugging
-        console.log('CORS blocked origin:', origin);
         callback(new Error("Not allowed by CORS"));
       }
     },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   })
 );
+
+
 
 // ===== Body parser middleware =====
 app.use(express.json({ limit: '20mb' }));
@@ -114,8 +97,10 @@ app.use('/api/news', newsRoutes);
 app.use("/api/merch", merchRoutes);
 app.use("/api/casts", castRoutes);
 app.use("/api/waves", waveRoutes);
+// app.use('/api/calendar', calendarRoutes);
 app.use('/api/contact', contactRoutes);
-app.use('/api/admin', adminRoutes);
+app.use('/api/admin', adminRoutes); 
+
 
 // ===== Health check =====
 app.get('/api/up', (req, res) => {
@@ -124,25 +109,6 @@ app.get('/api/up', (req, res) => {
     message: 'Gulf Coast Music API is UP and running!',
     environment: NODE_ENV,
     timestamp: new Date().toISOString(),
-  });
-});
-
-// ===== Root route for Vercel =====
-app.get('/', (req, res) => {
-  res.json({
-    success: true,
-    message: 'Gulf Coast Music API Server',
-    version: '1.0.0',
-    environment: NODE_ENV,
-    docs: `${CLIENT_URL}/api-docs` // Optional: Add your docs URL
-  });
-});
-
-// ===== Handle 404 =====
-app.use('*', (req, res) => {
-  res.status(404).json({
-    success: false,
-    message: `Route ${req.originalUrl} not found`
   });
 });
 
@@ -155,4 +121,19 @@ process.on('unhandledRejection', (err, promise) => {
   process.exit(1);
 });
 
+// cloudinary.api.ping()
+//   .then(res => console.log("Cloudinary connected:", res))
+//   .catch(err => console.error("Cloudinary connection failed:", err));
+
+
+// ===== Start server =====
+// const server = app.listen(PORT, () => {
+//   console.log(`Server running in ${NODE_ENV} mode on port ${PORT}`);
+// });
+
+
+
+// export default server;
+
+//added for vercel hosting
 export default app;
