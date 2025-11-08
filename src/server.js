@@ -2,10 +2,10 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { CLIENT_URL, NODE_ENV, PORT } from './config/environment.js';
+import { CLIENT_URL, NODE_ENV } from './config/environment.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import connectDB from './config/database.js';
 import authRoutes from './routes/router.auth.js';
@@ -16,12 +16,11 @@ import eventRoutes from './routes/router.events.js';
 import newsRoutes from './routes/router.news.js';
 import contactRoutes from './routes/router.contact.js';
 import adminRoutes from './routes/router.admin.js';
-import { cloudinary } from './config/cloudinary.js';
 import merchRoutes from './routes/router.merch.js';
 import castRoutes from './routes/route.cast.js';
 import waveRoutes from './routes/route.wave.js';
 
-// Fix for __dirname in ES Modules
+// Fix for __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -30,22 +29,17 @@ await connectDB();
 
 const app = express();
 
-// ===== Security middleware =====
+// Security
 app.use(helmet());
 
-// ===== Rate limiting =====
-app.set('trust proxy', 1); // Very important for Vercel or Render deployments
-
+// Rate Limiting
+app.set('trust proxy', 1);
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 500, // max requests per IP
+  windowMs: 15 * 60 * 1000,
+  max: 500,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
-    // Handle both Forwarded and X-Forwarded-For headers
-    const forwarded = req.headers['x-forwarded-for'] || req.headers['forwarded'] || req.ip;
-    return forwarded.split(',')[0].trim();
-  },
+  keyGenerator: (req, res) => ipKeyGenerator(req),
   handler: (req, res) => {
     res.status(429).json({
       success: false,
@@ -53,62 +47,47 @@ const limiter = rateLimit({
     });
   },
 });
-
 app.use(limiter);
 
-
-// ===== Compression middleware =====
+// Compression
 app.use(compression());
 
-// ===== CORS configuration =====
-
-
-
+// CORS
 const allowedOrigins = [
   CLIENT_URL,
   "http://localhost:3000",
   "https://gulf-cost-music.vercel.app"
 ];
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true,
+}));
 
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      if (!origin) return callback(null, true); // allow non-browser requests
-      if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
-    credentials: true,
-  })
-);
-
-
-
-// ===== Body parser middleware =====
+// Body Parser
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// ===== Static files =====
+// Static Files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// ===== API Routes =====
+// Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/artists', artistRoutes);
 app.use('/api/journalists', journalistRoutes);
 app.use('/api/venues', venueRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/news', newsRoutes);
-app.use("/api/merch", merchRoutes);
-app.use("/api/casts", castRoutes);
-app.use("/api/waves", waveRoutes);
-// app.use('/api/calendar', calendarRoutes);
+app.use('/api/merch', merchRoutes);
+app.use('/api/casts', castRoutes);
+app.use('/api/waves', waveRoutes);
 app.use('/api/contact', contactRoutes);
-app.use('/api/admin', adminRoutes); 
+app.use('/api/admin', adminRoutes);
 
-
-// ===== Health check =====
+// Health Check
 app.get('/api/up', (req, res) => {
   res.json({
     success: true,
@@ -118,7 +97,11 @@ app.get('/api/up', (req, res) => {
   });
 });
 
-// ===== Error handler =====
+app.all("*", (req, res) => {
+  res.status(404).json({ success: false, message: "Route not found" });
+});
+
+// Error Handler
 app.use(errorHandler);
 
 // ===== Handle unhandled promise rejections =====
