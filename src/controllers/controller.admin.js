@@ -1,10 +1,54 @@
 import { ErrorResponse } from "../middleware/errorHandler.js";
+import Admin from "../models/model.admin.js";
 import Artist from "../models/model.artist.js";
 import News from "../models/model.news.js";
 import User from "../models/model.user.js";
 import Venue from "../models/model.venue.js";
 import Contact from "../models/models.contact.js";
 import Event from "../models/models.event.js";
+
+
+
+
+
+// Promote User To Admin
+
+export const promoteUserToAdmin = async (req, res, next) => {
+  try {
+    const { id } = req.params; // user ID to promote
+    const { role = "content_admin", permissions = [] } = req.body;
+
+    // Check if user exists
+    const user = await User.findById(id);
+    if (!user) return next(new ErrorResponse("User not found", 404));
+
+    // Prevent duplicate admin
+    const existingAdmin = await Admin.findOne({ user: id });
+    if (existingAdmin) {
+      return next(new ErrorResponse("User is already an admin", 400));
+    }
+
+    // Create admin record
+    const admin = await Admin.create({
+      user: id,
+      fullName: user.username,
+      role,
+      permissions: permissions.length ? permissions : ["manage_users", "manage_content"]
+    });
+
+    // Update user role to 'admin'
+    user.userType = "admin";
+    await user.save();
+
+    res.status(201).json({
+      success: true,
+      message: "User promoted to admin successfully",
+      data: { admin }
+    });
+  } catch (error) {
+    next(new ErrorResponse("Failed to promote user to admin", 500));
+  }
+};
 
 // @desc    Get dashboard statistics
 export const getDashboardStats = async (req, res, next) => {
