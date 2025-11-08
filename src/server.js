@@ -41,11 +41,7 @@ const limiter = rateLimit({
   max: 500, // max requests per IP
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
-    // Handle both Forwarded and X-Forwarded-For headers
-    const forwarded = req.headers['x-forwarded-for'] || req.headers['forwarded'] || req.ip;
-    return forwarded.split(',')[0].trim();
-  },
+  // Remove custom keyGenerator - let express-rate-limit handle it automatically
   handler: (req, res) => {
     res.status(429).json({
       success: false,
@@ -56,14 +52,10 @@ const limiter = rateLimit({
 
 app.use(limiter);
 
-
 // ===== Compression middleware =====
 app.use(compression());
 
 // ===== CORS configuration =====
-
-
-
 const allowedOrigins = [
   CLIENT_URL,
   "http://localhost:3000",
@@ -84,8 +76,6 @@ app.use(
   })
 );
 
-
-
 // ===== Body parser middleware =====
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -103,10 +93,8 @@ app.use('/api/news', newsRoutes);
 app.use("/api/merch", merchRoutes);
 app.use("/api/casts", castRoutes);
 app.use("/api/waves", waveRoutes);
-// app.use('/api/calendar', calendarRoutes);
 app.use('/api/contact', contactRoutes);
-app.use('/api/admin', adminRoutes); 
-
+app.use('/api/admin', adminRoutes);
 
 // ===== Health check =====
 app.get('/api/up', (req, res) => {
@@ -118,6 +106,16 @@ app.get('/api/up', (req, res) => {
   });
 });
 
+// ===== Root route =====
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Gulf Coast Music API Server',
+    version: '1.0.0',
+    environment: NODE_ENV,
+  });
+});
+
 // ===== Error handler =====
 app.use(errorHandler);
 
@@ -126,11 +124,6 @@ process.on('unhandledRejection', (err, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', err);
   process.exit(1);
 });
-
-// cloudinary.api.ping()
-//   .then(res => console.log("Cloudinary connected:", res))
-//   .catch(err => console.error("Cloudinary connection failed:", err));
-
 
 // ===== Start server =====
 // const server = app.listen(PORT, () => {
