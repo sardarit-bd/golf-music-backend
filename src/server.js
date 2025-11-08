@@ -48,7 +48,6 @@ app.use(compression());
 
 
 const allowedOrigins = [
-  "https://gulf-cost-music.vercel.app",
   CLIENT_URL,
   "http://localhost:3000",
 ];
@@ -56,7 +55,7 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: function (origin, callback) {
-      if (!origin) return callback(null, true);
+      if (!origin) return callback(null, true); // allow non-browser requests
       if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
@@ -64,11 +63,8 @@ app.use(
       }
     },
     credentials: true,
-     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
-
 
 
 
