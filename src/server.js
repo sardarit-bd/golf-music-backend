@@ -50,6 +50,7 @@ app.use(compression());
 const allowedOrigins = [
   CLIENT_URL,
   "http://localhost:3000",
+  "https://gulf-cost-music.vercel.app"
 ];
 
 app.use(
