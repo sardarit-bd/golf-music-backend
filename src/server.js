@@ -34,22 +34,28 @@ const app = express();
 app.use(helmet());
 
 // ===== Rate limiting =====
-// app.set('trust proxy', 1);
+app.set('trust proxy', 1); // Very important for Vercel or Render deployments
 
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // max requests per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    // Handle both Forwarded and X-Forwarded-For headers
+    const forwarded = req.headers['x-forwarded-for'] || req.headers['forwarded'] || req.ip;
+    return forwarded.split(',')[0].trim();
+  },
+  handler: (req, res) => {
+    res.status(429).json({
+      success: false,
+      message: "Too many requests, please try again later.",
+    });
+  },
+});
 
-// const limiter = rateLimit({
-//   windowMs: 15 * 60 * 1000, // 15 minutes
-//   max: 100,
-//   standardHeaders: true, // Return rate limit info in headers
-//   legacyHeaders: false,  // Disable deprecated headers
-//   keyGenerator: (req, res) => {
-//     // Use Forwarded or X-Forwarded-For if available
-//     const forwarded = req.headers['x-forwarded-for'] || req.ip;
-//     return forwarded.split(',')[0].trim();
-//   },
-// });
+app.use(limiter);
 
-// app.use(limiter);
 
 // ===== Compression middleware =====
 app.use(compression());
