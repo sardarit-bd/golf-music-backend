@@ -4,7 +4,7 @@ import { ErrorResponse } from "../middleware/errorHandler.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
 
-  //  CREATE or UPDATE Artist Profile
+//  CREATE or UPDATE Artist Profile
 
 export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
   const errors = validationResult(req);
@@ -23,24 +23,35 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
 
   let artist = await Artist.findOne({ user: req.user.id });
 
+  const oldPhotos = artist?.photos || [];
+  const oldAudios = artist?.mp3Files || [];
+
+  const newPhotos = req.files?.photos
+    ? req.files.photos.map((file) => ({
+      url: file.path,
+      filename: file.filename,
+    }))
+    : [];
+
+  const newAudios = req.files?.mp3Files
+    ? req.files.mp3Files.map((file) => ({
+      url: file.path,
+      filename: file.filename,
+      originalName: file.originalname,
+    }))
+    : [];
+
+  // Merge (but limit total to 5)
+  const mergedPhotos = [...oldPhotos, ...newPhotos].slice(0, 5);
+  const mergedAudios = [...oldAudios, ...newAudios].slice(0, 5);
+
   const artistData = {
     name,
     city,
     genre: normalizedGenre,
     biography,
-    photos: req.files?.photos
-      ? req.files.photos.map((file) => ({
-        url: file.path,
-        filename: file.filename,
-      }))
-      : artist?.photos || [],
-    mp3Files: req.files?.mp3Files
-      ? req.files.mp3Files.map((file) => ({
-        url: file.path,
-        filename: file.filename,
-        originalName: file.originalname,
-      }))
-      : artist?.mp3Files || [],
+    photos: mergedPhotos,
+    mp3Files: mergedAudios,
   };
 
   artist = artist
@@ -58,7 +69,7 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
 });
 
 
-  //  GET My Artist Profile
+//  GET My Artist Profile
 
 export const getMyArtistProfile = asyncHandler(async (req, res, next) => {
   const artist = await Artist.findOne({ user: req.user.id }).populate(
@@ -74,7 +85,7 @@ export const getMyArtistProfile = asyncHandler(async (req, res, next) => {
 });
 
 
-  //  GET Artists by Genre
+//  GET Artists by Genre
 
 export const getArtistsByGenre = asyncHandler(async (req, res, next) => {
   const { genre } = req.query;

@@ -8,7 +8,7 @@ const journalistSchema = new mongoose.Schema({
   },
   fullName: {
     type: String,
-    required: [true, 'Full name is required'],
+    // required: [true, 'Full name is required'],
     trim: true,
     maxlength: [100, 'Full name cannot exceed 100 characters']
   },
@@ -23,7 +23,7 @@ const journalistSchema = new mongoose.Schema({
   areasOfCoverage: [
     {
       type: String,
-      enum: ['new orleans', 'biloxi', 'mobile', 'pensacola', 'regional', 'national']
+      enum: ['new orleans', 'biloxi', 'mobile', 'pensacola']
     }
   ],
   isVerified: {

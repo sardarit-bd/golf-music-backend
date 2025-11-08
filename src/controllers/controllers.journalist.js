@@ -5,9 +5,9 @@ import News from "../models/model.news.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
-/* =====================================================
-   CREATE or UPDATE Journalist Profile
-===================================================== */
+
+  //  CREATE or UPDATE Journalist Profile
+
 export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -15,32 +15,47 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
       field: e.path,
       message: e.msg,
     }));
-    return next(new ErrorResponse("Validation failed", 400, { details: formattedErrors }));
+    return next(
+      new ErrorResponse("Validation failed", 400, { details: formattedErrors })
+    );
   }
 
-  const { fullName, bio, areasOfCoverage } = req.body;
+  const { bio, areasOfCoverage } = req.body;
+
 
   let parsedAreas = [];
   try {
     parsedAreas = areasOfCoverage ? JSON.parse(areasOfCoverage) : [];
   } catch (err) {
     return next(
-      new ErrorResponse("Invalid format for areasOfCoverage. Must be a valid JSON array.", 400)
+      new ErrorResponse(
+        "Invalid format for areasOfCoverage. Must be a valid JSON array.",
+        400
+      )
     );
   }
+
+
+  const user = await User.findById(req.user.id).select("username email location");
+  if (!user) {
+    return next(new ErrorResponse("User not found", 404));
+  }
+
 
   let journalist = await Journalist.findOne({ user: req.user.id });
 
   const data = {
-    fullName,
+    fullName: user.username,
     bio,
-    areasOfCoverage: parsedAreas.length
-      ? parsedAreas
-      : journalist?.areasOfCoverage || [],
+    areasOfCoverage:
+      parsedAreas.length > 0
+        ? parsedAreas
+        : journalist?.areasOfCoverage || [user.location],
     profilePhoto: req.file
       ? { url: req.file.path, filename: req.file.filename }
       : journalist?.profilePhoto || null,
   };
+
 
   if (journalist) {
     journalist = await Journalist.findByIdAndUpdate(journalist._id, data, {
@@ -54,16 +69,22 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
     });
   }
 
+
   res.status(200).json({
     success: true,
     message: "Journalist profile saved successfully",
-    data: { journalist },
+    data: {
+      journalist: {
+        ...journalist.toObject(),
+        email: user.email,
+      },
+    },
   });
 });
 
-/* =====================================================
-   UPDATE Journalist Profile (PUT)
-===================================================== */
+
+  //  UPDATE Journalist Profile (PUT)
+
 export const updateJournalistProfile = asyncHandler(async (req, res, next) => {
   const { fullName, bio, areasOfCoverage } = req.body;
 
@@ -107,9 +128,9 @@ export const updateJournalistProfile = asyncHandler(async (req, res, next) => {
   });
 });
 
-/* =====================================================
-   DELETE Journalist Profile
-===================================================== */
+
+  //  DELETE Journalist Profile
+
 export const deleteJournalistProfile = asyncHandler(async (req, res, next) => {
   const journalist = await Journalist.findOne({ user: req.user.id });
   if (!journalist) {
@@ -124,9 +145,9 @@ export const deleteJournalistProfile = asyncHandler(async (req, res, next) => {
   });
 });
 
-/* =====================================================
-   GET Logged-in Journalist Profile
-===================================================== */
+
+  //  GET Logged-in Journalist Profile
+
 export const getProfile = asyncHandler(async (req, res, next) => {
   const journalist = await Journalist.findOne({ user: req.user.id }).populate(
     "user",
@@ -143,9 +164,9 @@ export const getProfile = asyncHandler(async (req, res, next) => {
   });
 });
 
-/* =====================================================
-   GET Journalist by ID (Public)
-===================================================== */
+
+  //  GET Journalist by ID (Public)
+
 export const getJournalist = asyncHandler(async (req, res, next) => {
   const journalist = await Journalist.findById(req.params.id).populate(
     "user",
@@ -162,9 +183,9 @@ export const getJournalist = asyncHandler(async (req, res, next) => {
   });
 });
 
-/* =====================================================
-   GET All Journalists (Public)
-===================================================== */
+
+  //  GET All Journalists (Public)
+
 export const getAllJournalists = asyncHandler(async (req, res, next) => {
   const journalists = await Journalist.find({ isActive: true })
     .populate("user", "username email userType isVerified")
@@ -177,9 +198,9 @@ export const getAllJournalists = asyncHandler(async (req, res, next) => {
   });
 });
 
-/* =====================================================
-   GET News Articles by Journalist (Public)
-===================================================== */
+
+  //  GET News Articles by Journalist (Public)
+
 export const getJournalistNews = asyncHandler(async (req, res, next) => {
   const news = await News.find({
     journalist: req.params.id,
@@ -195,9 +216,9 @@ export const getJournalistNews = asyncHandler(async (req, res, next) => {
   });
 });
 
-/* =====================================================
-   VERIFY Journalist (Admin Only)
-===================================================== */
+
+  //  VERIFY Journalist (Admin Only)
+
 export const verifyJournalist = asyncHandler(async (req, res, next) => {
   const journalist = await Journalist.findByIdAndUpdate(
     req.params.id,

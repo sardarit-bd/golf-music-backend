@@ -50,6 +50,16 @@ export const validateLogin = [
   body("password").notEmpty().withMessage("Password is required"),
 ];
 
+export const validateForgotPassword = [
+  body("email").isEmail().withMessage("Valid email required"),
+]
+
+export const validateResetPassword = [
+   body("password")
+      .isLength({ min: 6 })
+      .withMessage("Password must be at least 6 characters"),
+]
+
 export const validateArtistProfile = [
   body("name")
     .notEmpty()
@@ -106,6 +116,7 @@ export const validateVenueProfile = [
   body("address").notEmpty().withMessage("Address is required"),
 
   body("seatingCapacity")
+    .optional()
     .isInt({ min: 1 })
     .withMessage("Seating capacity must be a positive number"),
 
@@ -222,10 +233,11 @@ export const validateContact = [
     .withMessage("Message cannot exceed 2000 characters"),
 ];
 
+
 export const validateJournalistProfile = [
+
   body("fullName")
-    .notEmpty()
-    .withMessage("Full name is required")
+    .optional()
     .isLength({ max: 100 })
     .withMessage("Full name cannot exceed 100 characters"),
 
@@ -248,6 +260,7 @@ export const validateJournalistProfile = [
       }
     }),
 ];
+
 
 export const validateAdminActions = [
   body("isActive")

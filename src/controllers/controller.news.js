@@ -3,9 +3,9 @@ import News from "../models/model.news.js";
 import { v2 as cloudinary } from "cloudinary";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 
-/* ========================================
-   CREATE NEWS
-======================================== */
+
+  //  CREATE NEWS
+
 export const createNews = async (req, res, next) => {
   try {
     const errors = validationResult(req);
@@ -51,9 +51,73 @@ export const createNews = async (req, res, next) => {
   }
 };
 
-/* ========================================
-   GET ALL NEWS (optionally by location)
-======================================== */
+
+//  UPDATE NEWS (FIXED)
+export const updateNews = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return next(
+        new ErrorResponse("Validation failed", 400, { details: errors.array() })
+      );
+    }
+
+    const { title, description, location, credit } = req.body;
+
+    let news = await News.findById(req.params.id);
+    if (!news) return next(new ErrorResponse("News not found", 404));
+
+    // Authorization check
+    if (news.journalist.toString() !== req.user.id) {
+      return next(new ErrorResponse("Not authorized to update this news", 403));
+    }
+
+    // Upload new photos (if provided)
+    const oldPhotos = news.photos || [];
+    const newPhotos = req.files?.length
+      ? await Promise.all(
+          req.files.map(async (file) => {
+            const uploadRes = await cloudinary.uploader.upload(file.path, {
+              folder: "gulf-music/news",
+            });
+            return {
+              url: uploadRes.secure_url,
+              filename: uploadRes.public_id,
+            };
+          })
+        )
+      : [];
+
+    // Merge photos, max 5
+    const mergedPhotos = [...oldPhotos, ...newPhotos].slice(0, 5);
+
+    // Dynamically build update object
+    const updateData = {};
+
+    if (title !== undefined) updateData.title = title;
+    if (description !== undefined) updateData.description = description;
+    if (location !== undefined) updateData.location = location.toLowerCase();
+    if (credit !== undefined) updateData.credit = credit;
+    if (req.files?.length) updateData.photos = mergedPhotos;
+
+    // Update record
+    news = await News.findByIdAndUpdate(req.params.id, updateData, {
+      new: true,
+      runValidators: true,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "News updated successfully",
+      data: { news },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+  //  GET ALL NEWS (optionally by location)
+
 export const getNewsByLocation = async (req, res, next) => {
   try {
     const { location } = req.query;
@@ -76,15 +140,15 @@ export const getNewsByLocation = async (req, res, next) => {
   }
 };
 
-/* ========================================
-   GET SINGLE NEWS BY ID
-======================================== */
+
+  //  GET SINGLE NEWS BY ID
+
 export const getNews = async (req, res, next) => {
   try {
-    const news = await News.findById(req.params.id).populate(
-      "journalist",
-      "fullName email"
-    );
+    const news = await News.findById(req.params.id)
+  .populate("journalist", "username email profilePhoto bio");
+
+  console.log(news)
 
     if (!news) {
       return next(new ErrorResponse("News not found", 404));
@@ -99,9 +163,9 @@ export const getNews = async (req, res, next) => {
   }
 };
 
-/* ========================================
-   GET MY NEWS (for logged-in journalist)
-======================================== */
+
+  //  GET MY NEWS (for logged-in journalist)
+
 export const getMyNews = async (req, res, next) => {
   try {
     const news = await News.find({ journalist: req.user.id, isActive: true })
@@ -117,71 +181,12 @@ export const getMyNews = async (req, res, next) => {
   }
 };
 
-/* ========================================
-   UPDATE NEWS
-======================================== */
-export const updateNews = async (req, res, next) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return next(
-        new ErrorResponse("Validation failed", 400, { details: errors.array() })
-      );
-    }
 
-    const { title, description, location, credit } = req.body;
 
-    let news = await News.findById(req.params.id);
-    if (!news) {
-      return next(new ErrorResponse("News not found", 404));
-    }
 
-    // Authorization check
-    if (news.journalist.toString() !== req.user.id) {
-      return next(new ErrorResponse("Not authorized to update this news", 403));
-    }
 
-    // Upload new photos (if provided)
-    let updatedPhotos = news.photos;
-    if (req.files?.length) {
-      updatedPhotos = await Promise.all(
-        req.files.map(async (file) => {
-          const uploadRes = await cloudinary.uploader.upload(file.path, {
-            folder: "gulf-music/news",
-          });
-          return {
-            url: uploadRes.secure_url,
-            filename: uploadRes.public_id,
-          };
-        })
-      );
-    }
+  //  DELETE NEWS (Soft Delete + Cloudinary Cleanup)
 
-    news = await News.findByIdAndUpdate(
-      req.params.id,
-      {
-        title,
-        description,
-        location: location?.toLowerCase() || news.location,
-        credit,
-        photos: updatedPhotos,
-      },
-      { new: true, runValidators: true }
-    );
-
-    res.status(200).json({
-      success: true,
-      message: "News updated successfully",
-      data: { news },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/* ========================================
-   DELETE NEWS (Soft Delete + Cloudinary Cleanup)
-======================================== */
 export const deleteNews = async (req, res, next) => {
   try {
     const news = await News.findById(req.params.id);

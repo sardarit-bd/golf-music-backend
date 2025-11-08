@@ -30,13 +30,14 @@ const venueSchema = new mongoose.Schema({
   },
   address: {
     type: String,
-    required: [true, "Address is required"],
+    required: [false, "Address is required"],
     trim: true,
   },
   seatingCapacity: {
     type: Number,
-    required: [true, "Seating capacity is required"],
+    required: [false, "Seating capacity is required"],
     min: [1, "Seating capacity must be at least 1"],
+    default: 0,
   },
   biography: {
     type: String,
@@ -44,11 +45,11 @@ const venueSchema = new mongoose.Schema({
   },
   openHours: {
     type: String,
-    required: [true, "Open hours are required"],
+    required: [false, "Open hours are required"],
   },
   openDays: {
     type: String,
-    required: [true, "Open days are required"],
+    required: [false, "Open days are required"],
   },
   photos: [
     {

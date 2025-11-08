@@ -1,242 +1,290 @@
 import { validationResult } from "express-validator";
-import { sendVerificationEmail } from "../utils/emailService.js";
-import { generateToken } from "../utils/helpers.js";
+import crypto from "crypto";
 import User from "../models/model.user.js";
+import Artist from "../models/model.artist.js";
+import Venue from "../models/model.venue.js";
+import Journalist from "../models/model.journalist.js";
+import { sendResetPasswordEmail, sendVerificationEmail } from "../utils/emailService.js";
+import { generateToken } from "../utils/helpers.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 import { formatValidationErrors } from "../utils/validationFormatter.js";
+import { ErrorResponse } from "../middleware/errorHandler.js";
 
-export const register = async (req, res) => {
-  try {
-    // Step 1: Validate input
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: "Please correct the highlighted fields",
-        errors: formatValidationErrors(errors.array()),
-      });
-    }
 
-    // Destructure body
-    const { username, email, password, userType, genre, location } = req.body;
+/* ========================================================
+   REGISTER
+======================================================== */
+export const register = asyncHandler(async (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return next(
+      new ErrorResponse("Please correct the highlighted fields", 400, formatValidationErrors(errors.array()))
+    );
+  }
 
-    // Duplicate check
-    const existingUser = await User.findOne({
-      $or: [{ email }, { username }],
-    });
+  const { username, email, password, userType, genre, location } = req.body;
 
-    if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: "User with this email or username already exists",
-        errors: [
-          {
-            field: existingUser.email === email ? "email" : "username",
-            message:
-              existingUser.email === email
-                ? "This email is already registered"
-                : "This username is already taken",
-          },
-        ],
-      });
-    }
+  const existingUser = await User.findOne({
+    $or: [{ email }, { username }],
+  });
 
-    // Build user object
-    const userData = {
-      username,
-      email,
-      password,
-      userType,
-      verificationRequested: userType !== "fan",
-    };
+  if (existingUser) {
+    return next(new ErrorResponse("User with this email or username already exists", 400));
+  }
 
-    // Conditional validations
-    if (userType === "artist" && !genre) {
-      return res.status(400).json({
-        success: false,
-        message: "Genre is required for artists",
-        errors: [{ field: "genre", message: "Please select a genre" }],
-      });
-    }
+  // Create User
+  const user = await User.create({
+    username,
+    email,
+    password,
+    userType,
+    genre: genre?.toLowerCase(),
+    location: location?.toLowerCase(),
+    verificationRequested: userType !== "fan",
+  });
 
-    if (
-      (userType === "venue" || userType === "journalist") &&
-      !location
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Location is required for venues and journalists",
-        errors: [
-          {
-            field: "location",
-            message: "Please select a valid location",
-          },
-        ],
-      });
-    }
-
-    // Attach genre/location if provided
-    if (genre) userData.genre = genre;
-    if (location) userData.location = location;
-
-    // Create user
-    const user = await User.create(userData);
-    console.log(user)
-    // Send verification email (except for fan)
-    if (userType !== "fan") {
-      try {
-        await sendVerificationEmail(user.email, user.userType);
-      } catch (emailError) {
-        console.error("Email sending failed:", emailError);
-        await User.findByIdAndDelete(user._id);
-        return res.status(500).json({
-          success: false,
-          message: "Failed to send verification email. Please try again.",
-        });
-      }
-    }
-
-    // Generate JWT
-    const token = generateToken(user._id);
-
-    // Success response
-    res.status(201).json({
-      success: true,
-      message:
-        userType === "fan"
-          ? "Registration successful"
-          : "Registration successful. Please check your email for verification instructions.",
-      data: {
-        token,
-        user: {
-          id: user._id,
-          username: user.username,
-          email: user.email,
-          userType: user.userType,
-          genre: user.genre,
-          location: user.location,
-          isVerified: user.isVerified,
-        },
-      },
-    });
-  } catch (error) {
-    console.error("Registration error:", error);
-
-    // Fallback server error response
-    res.status(500).json({
-      success: false,
-      message: "Something went wrong during registration. Please try again later.",
+  // Auto-create Profile Based on userType
+  if (userType === "artist") {
+    await Artist.create({
+      user: user._id,
+      name: user.username,
+      city: user.location || "new orleans",
+      genre: user.genre,
+      biography: "",
+      photos: [],
+      mp3Files: [],
     });
   }
-};
 
+  if (userType === "venue") {
+    await Venue.create({
+      user: user._id,
+      venueName: user.username,
+      city: user.location || "new orleans",
+      address: "",
+      seatingCapacity: 10,
+      openHours: "",
+      openDays: "",
+      photos: [],
+    });
+  }
 
-// Log-in 
+  if (userType === "journalist") {
+    await Journalist.create({
+      user: user._id,
+      fullName: user.username,
+      bio: "",
+      profilePhoto: null,
+      areasOfCoverage: user.location ? [user.location] : [],
+    });
+  }
 
-export const login = async (req, res) => {
-  try {
-    // Handle express-validator errors
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: "Please correct the highlighted fields",
-        errors: formatValidationErrors(errors.array()),
-      });
-    }
+  // Send verification email (non-fans only)
+  if (userType !== "fan") {
+    await sendVerificationEmail(user.email, user.userType);
+  }
 
-    // Extract data
-    const { email, password } = req.body;
+  const token = generateToken(user._id);
 
-    // Find user and check password
-    const user = await User.findOne({ email }).select("+password");
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid email or password",
-        errors: [
+  res.status(201).json({
+    success: true,
+    message: "Registration successful! Please verify your email to activate your account.",
+    data: {
+      token,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        userType: user.userType,
+        genre: user.genre,
+        location: user.location,
+      },
+    },
+  });
+});
+
+/* ========================================================
+   LOGIN
+======================================================== */
+export const login = asyncHandler(async (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return next(
+      new ErrorResponse("Please correct the highlighted fields", 400, {
+        details: formatValidationErrors(errors.array())
+      })
+    );
+  }
+
+  const { email, password } = req.body;
+
+  // Find user - don't include password field initially
+  const user = await User.findOne({ email });
+  
+  // User not found case
+  if (!user) {
+    return next(
+      new ErrorResponse("Invalid email or password", 401, {
+        details: [
+          { 
+            field: "email", 
+            message: "No account found with this email address" 
+          }
+        ]
+      })
+    );
+  }
+
+  // Now get user with password for verification
+  const userWithPassword = await User.findOne({ email }).select("+password");
+
+  // Check if user is active
+  if (!user.isActive) {
+    return next(
+      new ErrorResponse("Account deactivated", 403, {
+        details: [
           {
             field: "email",
-            message: "No account found with this email",
-          },
-        ],
-      });
-    }
+            message: "Your account has been deactivated by administrator"
+          }
+        ]
+      })
+    );
+  }
 
-    const isMatch = await user.matchPassword(password);
-    if (!isMatch) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid email or password",
-        errors: [
+  // Require admin verification for specific user types
+  const requiresVerification = ["artist", "venue", "journalist"].includes(user.userType);
+  if (requiresVerification && !user.isVerified) {
+    return next(
+      new ErrorResponse("Account pending verification", 403, {
+        details: [
           {
-            field: "password",
-            message: "Incorrect password",
-          },
-        ],
-      });
-    }
-
-    // Generate JWT token
-    const token = generateToken(user._id);
-
-    // Successful response
-    res.status(200).json({
-      success: true,
-      message: "Login successful",
-      data: {
-        token,
-        user: {
-          id: user._id,
-          username: user.username,
-          email: user.email,
-          userType: user.userType,
-          isVerified: user.isVerified,
-        },
-      },
-    });
-  } catch (error) {
-    console.error("Login error:", error);
-
-    // Handle unknown server error
-    res.status(500).json({
-      success: false,
-      message:
-        "Something went wrong during login. Please try again later.",
-    });
+            field: "email",
+            message: "Your account is pending admin verification"
+          }
+        ]
+      })
+    );
   }
-};
 
-export const getMe = async (req, res, next) => {
-  try {
-
-    if (!req.user?.id) {
-      return next(new ErrorResponse("Unauthorized access. Please log in.", 401));
-    }
-
-    const user = await User.findById(req.user.id);
-
-    if (!user) {
-      return next(new ErrorResponse("User not found or account deleted.", 404));
-    }
-
-    res.status(200).json({
-      success: true,
-      message: "User profile fetched successfully",
-      data: {
-        user: {
-          id: user._id,
-          username: user.username,
-          email: user.email,
-          userType: user.userType,
-          genre: user.genre,
-          location: user.location,
-          isVerified: user.isVerified,
-          createdAt: user.createdAt,
-        },
-      },
-    });
-  } catch (error) {
-    console.error("GetMe Error:", error);
-    next(new ErrorResponse("Server error while fetching user profile.", 500));
+  // Check password - THIS IS THE MAIN FIX
+  const isMatch = await userWithPassword.matchPassword(password);
+  if (!isMatch) {
+    return next(
+      new ErrorResponse("Invalid email or password", 401, {
+        details: [
+          { 
+            field: "password", 
+            message: "The password you entered is incorrect" 
+          }
+        ]
+      })
+    );
   }
-};
+
+  // Generate token
+  const token = generateToken(user._id);
+
+  res.status(200).json({
+    success: true,
+    message: "Login successful! Redirecting...",
+    data: {
+      token,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        userType: user.userType,
+        isVerified: user.isVerified,
+        isActive: user.isActive,
+      },
+    },
+  });
+});
+
+/*========================================================
+   GET CURRENT USER
+======================================================== */
+export const getMe = asyncHandler(async (req, res, next) => {
+  if (!req.user?.id) {
+    return next(new ErrorResponse("Unauthorized access. Please log in.", 401));
+  }
+
+  const user = await User.findById(req.user.id);
+  if (!user) {
+    return next(new ErrorResponse("User not found or account deleted.", 404));
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "User profile fetched successfully",
+    data: {
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        userType: user.userType,
+        genre: user.genre,
+        location: user.location,
+        isVerified: user.isVerified,
+        createdAt: user.createdAt,
+      },
+    },
+  });
+});
+
+/* ========================================================
+   FORGOT PASSWORD
+======================================================== */
+export const forgotPassword = asyncHandler(async (req, res, next) => {
+  const { email } = req.body;
+
+  const user = await User.findOne({ email });
+  if (!user) {
+    return next(new ErrorResponse("No account found with this email", 404));
+  }
+
+  const resetToken = user.getResetPasswordToken();
+  await user.save({ validateBeforeSave: false });
+
+  const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+  await sendResetPasswordEmail(user.email, resetUrl);
+
+  res.status(200).json({
+    success: true,
+    message: "Password reset link sent to your email!",
+  });
+});
+
+/* ========================================================
+   RESET PASSWORD
+======================================================== */
+export const resetPassword = asyncHandler(async (req, res, next) => {
+  const { token } = req.params;
+  const { password } = req.body;
+
+  const resetPasswordToken = crypto
+    .createHash("sha256")
+    .update(token)
+    .digest("hex");
+
+  const user = await User.findOne({
+    resetPasswordToken,
+    resetPasswordExpire: { $gt: Date.now() },
+  });
+
+  if (!user) {
+    return next(new ErrorResponse("Invalid or expired reset token", 400));
+  }
+
+  user.password = password;
+  user.resetPasswordToken = undefined;
+  user.resetPasswordExpire = undefined;
+
+  await user.save();
+
+  res.status(200).json({
+    success: true,
+    message: "Password reset successful. You can now log in.",
+  });
+});

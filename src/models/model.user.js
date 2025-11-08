@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 
 const userSchema = new mongoose.Schema({
   username: {
@@ -34,7 +35,6 @@ const userSchema = new mongoose.Schema({
     select: false,
   },
 
-
   userType: {
     type: String,
     required: [true, "User type is required"],
@@ -61,7 +61,6 @@ const userSchema = new mongoose.Schema({
     },
   },
 
-
   location: {
     type: String,
     enum: ["new orleans", "biloxi", "mobile", "pensacola"],
@@ -71,13 +70,18 @@ const userSchema = new mongoose.Schema({
     },
   },
 
-  isActive: { type: Boolean, default: true },
+  // Password Reset Fields
+  resetPasswordToken: { type: String },
+  resetPasswordExpire: { type: Date },
+
+  // Status Fields
+  isActive: { type: Boolean, default: false },
   isVerified: { type: Boolean, default: false },
   verificationRequested: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
 });
 
-
+// Hash password before saving
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
   const salt = await bcrypt.genSalt(10);
@@ -85,9 +89,27 @@ userSchema.pre("save", async function (next) {
   next();
 });
 
-
+// Match entered password
 userSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
+};
+
+// Generate reset password token (used in forgot password flow)
+userSchema.methods.getResetPasswordToken = function () {
+  // Generate plain token
+  const resetToken = crypto.randomBytes(20).toString("hex");
+
+  // Hash token before saving to DB
+  this.resetPasswordToken = crypto
+    .createHash("sha256")
+    .update(resetToken)
+    .digest("hex");
+
+  // Set expiry time (15 mins)
+  this.resetPasswordExpire = Date.now() + 15 * 60 * 1000;
+
+  // Return the plain token (will be sent in email)
+  return resetToken;
 };
 
 const User = mongoose.model("User", userSchema);
