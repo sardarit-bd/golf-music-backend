@@ -37,8 +37,8 @@ app.use(helmet());
 app.set('trust proxy', 1); // Very important for Vercel or Render deployments
 
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 500, // max requests per IP
+  windowMs: 2 * 60 * 60 * 1000,
+  max: 2000, // max requests per IP
   standardHeaders: true,
   legacyHeaders: false,
   // Remove custom keyGenerator - let express-rate-limit handle it automatically
