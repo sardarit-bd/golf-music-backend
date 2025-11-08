@@ -34,7 +34,7 @@ const app = express();
 app.use(helmet());
 
 // ===== Rate limiting =====
-app.set('trust proxy', 1);
+// app.set('trust proxy', 1);
 
 
 // const limiter = rateLimit({
