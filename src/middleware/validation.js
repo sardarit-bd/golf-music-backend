@@ -323,18 +323,6 @@ export const validateCast = [
     .isLength({ max: 200 })
     .withMessage("Title cannot exceed 200 characters"),
 
-  body("thumbnail")
-    .notEmpty()
-    .withMessage("Thumbnail URL is required")
-    .isURL()
-    .withMessage("Thumbnail must be a valid URL"),
-
-  body("youtubeUrl")
-    .notEmpty()
-    .withMessage("YouTube URL is required")
-    .matches(/^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.?be)\/.+$/)
-    .withMessage("Please provide a valid YouTube link"),
-
   body("description")
     .optional()
     .isLength({ max: 1000 })
@@ -350,12 +338,12 @@ export const validateWave = [
     .notEmpty().withMessage("Title is required")
     .isLength({ max: 200 }).withMessage("Title cannot exceed 200 characters"),
 
-  body("thumbnail")
-    .notEmpty().withMessage("Thumbnail URL is required")
-    .isURL({ require_protocol: true }).withMessage("Thumbnail must be a valid URL"),
+  // body("thumbnail")
+  //   .notEmpty().withMessage("Thumbnail URL is required")
+  //   .isURL({ require_protocol: true }).withMessage("Thumbnail must be a valid URL"),
 
-  body("youtubeUrl")
-    .notEmpty().withMessage("YouTube URL is required")
-    .matches(youTubeUrlRegex)
-    .withMessage("Invalid YouTube link format"),
+  // body("youtubeUrl")
+  //   .notEmpty().withMessage("YouTube URL is required")
+  //   .matches(youTubeUrlRegex)
+  //   .withMessage("Invalid YouTube link format"),
 ];

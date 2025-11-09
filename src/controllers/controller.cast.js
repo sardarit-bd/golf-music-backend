@@ -27,7 +27,16 @@ export const createCast = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Validation failed", 400));
   }
 
-  const { title, thumbnail, youtubeUrl, description } = req.body;
+  const { title, youtubeUrl, description } = req.body;
+  let thumbnailUrl = "";
+
+  if (req.file && req.file.path) {
+    thumbnailUrl = req.file.path;
+  } else if (req.body.thumbnail) {
+    thumbnailUrl = req.body.thumbnail;
+  } else {
+    return next(new ErrorResponse("Thumbnail is required", 400));
+  }
 
   // Duplicate checks
   const existingTitle = await Cast.findOne({ title: new RegExp(`^${title}$`, "i") });
@@ -41,7 +50,12 @@ export const createCast = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Podcast YouTube link already exists", 400));
   }
 
-  const newCast = await Cast.create({ title, thumbnail, youtubeUrl, description });
+  const newCast = await Cast.create({
+    title,
+    youtubeUrl,
+    description,
+    thumbnail: thumbnailUrl,
+  });
 
   res.status(201).json({
     success: true,
@@ -50,10 +64,17 @@ export const createCast = asyncHandler(async (req, res, next) => {
   });
 });
 
+
 // Update cast (Admin Only)
 export const updateCast = async (req, res) => {
   try {
-    const updated = await Cast.findByIdAndUpdate(req.params.id, req.body, {
+    const updateData = { ...req.body };
+
+    if (req.file && req.file.path) {
+      updateData.thumbnail = req.file.path;
+    }
+
+    const updated = await Cast.findByIdAndUpdate(req.params.id, updateData, {
       new: true,
       runValidators: true,
     });

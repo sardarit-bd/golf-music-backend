@@ -16,6 +16,14 @@ export const uploadArtistFiles = upload.fields([
 ]);
 
 
+// === Wave (PODCAST) UPLOAD ===
+
+export const uploadWaveThumbnail = upload.single("thumbnail");
+
+// === CAST (PODCAST) UPLOAD ===
+
+export const uploadCastThumbnail = upload.single("thumbnail");
+
 
 //  VENUE UPLOADS
 
