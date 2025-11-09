@@ -68,7 +68,7 @@ const venueSchema = new mongoose.Schema({
   shows: [showSchema],
   isActive: {
     type: Boolean,
-    default: true,
+    default: false,
   },
   createdAt: {
     type: Date,

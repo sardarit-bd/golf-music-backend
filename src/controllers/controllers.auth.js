@@ -43,7 +43,7 @@ export const register = asyncHandler(async (req, res, next) => {
     verificationRequested: userType !== "fan",
   });
 
-  // Auto-create Profile Based on userType
+
   if (userType === "artist") {
     await Artist.create({
       user: user._id,
@@ -53,8 +53,10 @@ export const register = asyncHandler(async (req, res, next) => {
       biography: "",
       photos: [],
       mp3Files: [],
+      isActive: false,
     });
   }
+
 
   if (userType === "venue") {
     await Venue.create({
@@ -66,8 +68,10 @@ export const register = asyncHandler(async (req, res, next) => {
       openHours: "",
       openDays: "",
       photos: [],
+      isActive: false,
     });
   }
+
 
   if (userType === "journalist") {
     await Journalist.create({
@@ -76,6 +80,8 @@ export const register = asyncHandler(async (req, res, next) => {
       bio: "",
       profilePhoto: null,
       areasOfCoverage: user.location ? [user.location] : [],
+      isActive: false,
+      isVerified: false,
     });
   }
 
@@ -120,15 +126,15 @@ export const login = asyncHandler(async (req, res, next) => {
 
   // Find user - don't include password field initially
   const user = await User.findOne({ email });
-  
+
   // User not found case
   if (!user) {
     return next(
       new ErrorResponse("Invalid email or password", 401, {
         details: [
-          { 
-            field: "email", 
-            message: "No account found with this email address" 
+          {
+            field: "email",
+            message: "No account found with this email address"
           }
         ]
       })
@@ -173,9 +179,9 @@ export const login = asyncHandler(async (req, res, next) => {
     return next(
       new ErrorResponse("Invalid email or password", 401, {
         details: [
-          { 
-            field: "password", 
-            message: "The password you entered is incorrect" 
+          {
+            field: "password",
+            message: "The password you entered is incorrect"
           }
         ]
       })

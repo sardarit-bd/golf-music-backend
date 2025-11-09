@@ -1,5 +1,6 @@
 import { body } from "express-validator";
 
+
 export const validateRegistration = [
   body("username")
     .isLength({ min: 3, max: 30 })
@@ -17,29 +18,36 @@ export const validateRegistration = [
     .withMessage("Password must be at least 6 characters long"),
 
   body("userType")
+    .customSanitizer((value) => value?.toLowerCase())
     .isIn(["artist", "venue", "journalist", "fan"])
     .withMessage("User type must be artist, venue, journalist, or fan"),
 
   body("genre")
     .if(body("userType").equals("artist"))
-    .isIn([
-      "Rap",
-      "Country",
-      "Pop",
-      "Rock",
-      "Jazz",
-      "Reggae",
-      "EDM",
-      "Classical",
-      "Other",
-    ])
-    .withMessage("Invalid genre selected"),
+    .customSanitizer((value) => value?.toLowerCase())
+    .custom((value) => {
+      const validGenres = [
+        "rap", "country", "pop", "rock", "jazz", 
+        "reggae", "edm", "classical", "other"
+      ];
+      if (!validGenres.includes(value)) {
+        throw new Error("Invalid genre selected");
+      }
+      return true;
+    }),
 
   body("location")
     .if(body("userType").isIn(["venue", "journalist"]))
-    .isIn(["New Orleans", "Biloxi", "Mobile", "Pensacola"])
-    .withMessage("Invalid location selected"),
+    .customSanitizer((value) => value?.toLowerCase())
+    .custom((value) => {
+      const validLocations = ["new orleans", "biloxi", "mobile", "pensacola"];
+      if (!validLocations.includes(value)) {
+        throw new Error("Invalid location selected");
+      }
+      return true;
+    }),
 ];
+
 
 export const validateLogin = [
   body("email")
@@ -55,9 +63,9 @@ export const validateForgotPassword = [
 ]
 
 export const validateResetPassword = [
-   body("password")
-      .isLength({ min: 6 })
-      .withMessage("Password must be at least 6 characters"),
+  body("password")
+    .isLength({ min: 6 })
+    .withMessage("Password must be at least 6 characters"),
 ]
 
 export const validateArtistProfile = [
