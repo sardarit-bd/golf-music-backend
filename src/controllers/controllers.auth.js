@@ -15,12 +15,6 @@ import { ErrorResponse } from "../middleware/errorHandler.js";
    REGISTER
 ======================================================== */
 export const register = asyncHandler(async (req, res, next) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return next(
-      new ErrorResponse("Please correct the highlighted fields", 400, formatValidationErrors(errors.array()))
-    );
-  }
 
   const { username, email, password, userType, genre, location } = req.body;
 
@@ -113,14 +107,6 @@ export const register = asyncHandler(async (req, res, next) => {
    LOGIN
 ======================================================== */
 export const login = asyncHandler(async (req, res, next) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return next(
-      new ErrorResponse("Please correct the highlighted fields", 400, {
-        details: formatValidationErrors(errors.array())
-      })
-    );
-  }
 
   const { email, password } = req.body;
 
@@ -151,7 +137,7 @@ export const login = asyncHandler(async (req, res, next) => {
         details: [
           {
             field: "email",
-            message: "Your account has been deactivated by administrator"
+            message: "Your account has been deactivated by administrator(Please check your mail)"
           }
         ]
       })

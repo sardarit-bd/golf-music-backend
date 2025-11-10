@@ -45,7 +45,6 @@ export const uploadJournalistPhoto = upload.single("profilePhoto");
 
 export const handleUploadErrors = (error, req, res, next) => {
   if (error instanceof multer.MulterError) {
-    console.log('Multer Error:', error);
     if (error.code === "LIMIT_FILE_SIZE") {
       return res.status(400).json({
         success: false,

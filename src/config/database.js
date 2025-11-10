@@ -3,7 +3,6 @@ import { MONGODB_URI } from './environment.js';
 
 const connectDB = async () => {
   if (!MONGODB_URI) {
-    console.log(MONGODB_URI)
     console.error('❌ MONGODB_URI is missing in environment variables');
     process.exit(1);
   }
