@@ -8,6 +8,7 @@ import {
     getDashboardStats, 
     getSystemSettings, 
     markContactAsRead, 
+    promoteUserToAdmin, 
     toggleContentStatus, 
     updateUser, 
     verifyUser 
@@ -23,6 +24,7 @@ router.use(protect, authorize('admin'));
 // Dashboard
 router.get('/dashboard', getDashboardStats);
 
+router.post('/users/:id/promote', authorize('super_admin'), promoteUserToAdmin);
 // User management
 router.get('/users', getAllUsers);
 router.put('/users/:id/verify', validateAdminActions, verifyUser);

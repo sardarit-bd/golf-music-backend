@@ -21,9 +21,19 @@ export const createWave = asyncHandler(async (req, res, next) => {
     );
   }
 
-  const { title, thumbnail, youtubeUrl } = req.body;
+  const { title, youtubeUrl } = req.body;
+  let thumbnailUrl = "";
 
-  // Duplicate check (title or YouTube URL)
+
+  if (req.file && req.file.path) {
+    thumbnailUrl = req.file.path;
+  } else if (req.body.thumbnail) {
+    thumbnailUrl = req.body.thumbnail;
+  } else {
+    return next(new ErrorResponse("Thumbnail is required", 400));
+  }
+
+  // Duplicate checks
   const [titleExists, videoExists] = await Promise.all([
     Wave.findOne({ title: new RegExp(`^${title}$`, "i") }),
     Wave.findOne({ youtubeUrl }),
@@ -36,7 +46,11 @@ export const createWave = asyncHandler(async (req, res, next) => {
   if (videoExists)
     return next(new ErrorResponse("This YouTube video already exists", 400));
 
-  const newWave = await Wave.create({ title, thumbnail, youtubeUrl });
+  const newWave = await Wave.create({
+    title,
+    youtubeUrl,
+    thumbnail: thumbnailUrl,
+  });
 
   res.status(201).json({
     success: true,
@@ -44,6 +58,7 @@ export const createWave = asyncHandler(async (req, res, next) => {
     data: { newWave },
   });
 });
+
 
 // UPDATE wave (admin)
 export const updateWave = asyncHandler(async (req, res, next) => {
@@ -54,32 +69,16 @@ export const updateWave = asyncHandler(async (req, res, next) => {
     );
   }
 
-  const { title, thumbnail, youtubeUrl } = req.body;
+  const updateData = { ...req.body };
 
-  // Duplicate check (excluding self)
-  if (title) {
-    const existing = await Wave.findOne({
-      title: new RegExp(`^${title}$`, "i"),
-      _id: { $ne: req.params.id },
-    });
-    if (existing)
-      return next(new ErrorResponse("Wave title already exists", 400));
+  if (req.file && req.file.path) {
+    updateData.thumbnail = req.file.path;
   }
 
-  if (youtubeUrl) {
-    const existing = await Wave.findOne({
-      youtubeUrl,
-      _id: { $ne: req.params.id },
-    });
-    if (existing)
-      return next(new ErrorResponse("This YouTube video already exists", 400));
-  }
-
-  const updated = await Wave.findByIdAndUpdate(
-    req.params.id,
-    { title, thumbnail, youtubeUrl },
-    { new: true, runValidators: true }
-  );
+  const updated = await Wave.findByIdAndUpdate(req.params.id, updateData, {
+    new: true,
+    runValidators: true,
+  });
 
   if (!updated) return next(new ErrorResponse("Wave not found", 404));
 
@@ -89,6 +88,7 @@ export const updateWave = asyncHandler(async (req, res, next) => {
     data: { updated },
   });
 });
+
 
 // DELETE wave (admin)
 export const deleteWave = asyncHandler(async (req, res, next) => {

@@ -6,16 +6,25 @@ import { ErrorResponse } from "../middleware/errorHandler.js";
 
 
 
-  //  CREATE or UPDATE Venue Profile
+//  CREATE or UPDATE Venue Profile
 
 export const createOrUpdateProfile = async (req, res) => {
   try {
 
     // Process photos from Cloudinary
-    const photos = req.files ? req.files.map(file => ({
-      url: file.path,
-      filename: file.filename
-    })) : [];
+    const newPhotos = req.files
+      ? req.files.map(file => ({
+        url: file.path,
+        filename: file.filename
+      }))
+      : [];
+
+    let venues = await Venue.findOne({ user: req.user._id });
+
+    // Merge old + new photos (max limit 5)
+    const mergedPhotos = venues
+      ? [...venues.photos, ...newPhotos].slice(0, 5)  // keep up to 5
+      : newPhotos.slice(0, 5);
 
     const venueData = {
       venueName: req.body.venueName,
@@ -25,22 +34,19 @@ export const createOrUpdateProfile = async (req, res) => {
       biography: req.body.biography,
       openHours: req.body.openHours,
       openDays: req.body.openDays,
-      photos: photos,
+      photos: mergedPhotos,
       updatedAt: Date.now()
     };
 
     // Find existing venue for this user
     let venue = await Venue.findOne({ user: req.user._id });
-    console.log('Found existing venue:', venue);
 
-    if (venue) {      
-
+    if (venue) {
       Object.keys(venueData).forEach(key => {
         venue[key] = venueData[key];
       });
       await venue.save();
     } else {
-
       venue = new Venue({
         user: req.user._id,
         ...venueData
@@ -50,7 +56,6 @@ export const createOrUpdateProfile = async (req, res) => {
 
     // Fetch the updated venue to return
     const updatedVenue = await Venue.findOne({ user: req.user._id });
-    console.log('Final venue data:', updatedVenue);
 
     res.status(200).json({
       success: true,
@@ -68,7 +73,7 @@ export const createOrUpdateProfile = async (req, res) => {
 };
 
 
-  //  GET My Venue Profile
+//  GET My Venue Profile
 
 export const getMyVenueProfile = asyncHandler(async (req, res, next) => {
   const venue = await Venue.findOne({ user: req.user.id });
@@ -84,7 +89,7 @@ export const getMyVenueProfile = asyncHandler(async (req, res, next) => {
 });
 
 
-  //  UPDATE Venue Profile (PUT)
+//  UPDATE Venue Profile (PUT)
 
 export const updateVenueProfile = asyncHandler(async (req, res, next) => {
   const errors = validationResult(req);
@@ -108,9 +113,9 @@ export const updateVenueProfile = asyncHandler(async (req, res, next) => {
     openDays,
     photos: req.files?.photos
       ? req.files.photos.map((file) => ({
-          url: `/uploads/${file.filename}`,
-          filename: file.filename,
-        }))
+        url: `/uploads/${file.filename}`,
+        filename: file.filename,
+      }))
       : undefined,
   };
 
@@ -134,7 +139,7 @@ export const updateVenueProfile = asyncHandler(async (req, res, next) => {
 
 
 
-  //  DELETE Venue Profile
+//  DELETE Venue Profile
 
 export const deleteVenueProfile = asyncHandler(async (req, res, next) => {
   const venue = await Venue.findOne({ user: req.user.id });
@@ -162,7 +167,7 @@ export const deleteVenueProfile = asyncHandler(async (req, res, next) => {
 });
 
 
-  //  GET Venues by City (Filter)
+//  GET Venues by City (Filter)
 
 export const getVenuesByCity = asyncHandler(async (req, res, next) => {
   const { city } = req.query;
@@ -183,7 +188,7 @@ export const getVenuesByCity = asyncHandler(async (req, res, next) => {
 });
 
 
-  //  GET Single Venue by ID
+//  GET Single Venue by ID
 
 export const getVenue = asyncHandler(async (req, res, next) => {
   const venue = await Venue.findById(req.params.id).populate("user", "username email");
@@ -199,7 +204,7 @@ export const getVenue = asyncHandler(async (req, res, next) => {
 });
 
 
-  //  ADD Show to Venue
+//  ADD Show to Venue
 
 export const addShow = asyncHandler(async (req, res, next) => {
   const { artist, date, time } = req.body;
@@ -220,7 +225,7 @@ export const addShow = asyncHandler(async (req, res, next) => {
 });
 
 
-  //  GET Calendar by City
+//  GET Calendar by City
 
 export const getCalendarByCity = asyncHandler(async (req, res, next) => {
   const { city } = req.query;
@@ -240,13 +245,13 @@ export const getCalendarByCity = asyncHandler(async (req, res, next) => {
 
 
 
-  //  GET Venues for Admin
+//  GET Venues for Admin
 
 export const getVenuesForAdmin = asyncHandler(async (req, res, next) => {
   const { page = 1, limit = 10, search = "", status = "all" } = req.query;
-  
+
   let query = {};
-  
+
   // Search filter
   if (search) {
     query.$or = [
@@ -255,7 +260,7 @@ export const getVenuesForAdmin = asyncHandler(async (req, res, next) => {
       { address: { $regex: search, $options: "i" } }
     ];
   }
-  
+
   // Status filter
   if (status !== "all") {
     query.isActive = status === "active";
@@ -283,19 +288,19 @@ export const getVenuesForAdmin = asyncHandler(async (req, res, next) => {
 });
 
 
-  //  UPDATE Venue by Admin
+//  UPDATE Venue by Admin
 
 export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
-  const { 
-    venueName, 
-    city, 
-    address, 
-    seatingCapacity, 
-    biography, 
-    openHours, 
-    openDays, 
-    isActive 
+  const {
+    venueName,
+    city,
+    address,
+    seatingCapacity,
+    biography,
+    openHours,
+    openDays,
+    isActive
   } = req.body;
 
   const updateData = {
@@ -328,7 +333,7 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
 });
 
 
-  //  DELETE Venue by Admin
+//  DELETE Venue by Admin
 
 export const deleteVenueByAdmin = asyncHandler(async (req, res, next) => {
   const { id } = req.params;

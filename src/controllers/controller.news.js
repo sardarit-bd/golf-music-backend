@@ -147,9 +147,6 @@ export const getNews = async (req, res, next) => {
   try {
     const news = await News.findById(req.params.id)
   .populate("journalist", "username email profilePhoto bio");
-
-  console.log(news)
-
     if (!news) {
       return next(new ErrorResponse("News not found", 404));
     }

@@ -1,10 +1,55 @@
 import { ErrorResponse } from "../middleware/errorHandler.js";
+import Admin from "../models/model.admin.js";
 import Artist from "../models/model.artist.js";
+import Journalist from "../models/model.journalist.js";
 import News from "../models/model.news.js";
 import User from "../models/model.user.js";
 import Venue from "../models/model.venue.js";
 import Contact from "../models/models.contact.js";
 import Event from "../models/models.event.js";
+
+
+
+
+
+// Promote User To Admin
+
+export const promoteUserToAdmin = async (req, res, next) => {
+  try {
+    const { id } = req.params; // user ID to promote
+    const { role = "content_admin", permissions = [] } = req.body;
+
+    // Check if user exists
+    const user = await User.findById(id);
+    if (!user) return next(new ErrorResponse("User not found", 404));
+
+    // Prevent duplicate admin
+    const existingAdmin = await Admin.findOne({ user: id });
+    if (existingAdmin) {
+      return next(new ErrorResponse("User is already an admin", 400));
+    }
+
+    // Create admin record
+    const admin = await Admin.create({
+      user: id,
+      fullName: user.username,
+      role,
+      permissions: permissions.length ? permissions : ["manage_users", "manage_content"]
+    });
+
+    // Update user role to 'admin'
+    user.userType = "admin";
+    await user.save();
+
+    res.status(201).json({
+      success: true,
+      message: "User promoted to admin successfully",
+      data: { admin }
+    });
+  } catch (error) {
+    next(new ErrorResponse("Failed to promote user to admin", 500));
+  }
+};
 
 // @desc    Get dashboard statistics
 export const getDashboardStats = async (req, res, next) => {
@@ -101,21 +146,34 @@ export const verifyUser = async (req, res, next) => {
   try {
     const user = await User.findByIdAndUpdate(
       req.params.id,
-      { isVerified: true, verificationRequested: false },
+      { isVerified: true, isActive: true, verificationRequested: false },
       { new: true, runValidators: true }
     ).select("-password");
 
     if (!user) return next(new ErrorResponse("User not found", 404));
 
+    if (user.userType === "artist") {
+      await Artist.findOneAndUpdate({ user: user._id }, { isActive: true });
+    }
+
+    if (user.userType === "venue") {
+      await Venue.findOneAndUpdate({ user: user._id }, { isActive: true });
+    }
+
+    if (user.userType === "journalist") {
+      await Journalist.findOneAndUpdate({ user: user._id }, { isActive: true });
+    }
+
     res.status(200).json({
       success: true,
-      message: "User verified successfully",
+      message: `${user.userType} verified successfully!`,
       data: { user },
     });
   } catch (error) {
     next(new ErrorResponse("Error verifying user", 500));
   }
 };
+
 
 // @desc    Delete user (soft delete)
 export const deleteUser = async (req, res, next) => {
@@ -125,19 +183,26 @@ export const deleteUser = async (req, res, next) => {
 
     await User.findByIdAndUpdate(req.params.id, { isActive: false });
 
-    if (user.userType === "artist")
-      await Artist.findOneAndUpdate({ user: req.params.id }, { isActive: false });
-    if (user.userType === "venue")
-      await Venue.findOneAndUpdate({ user: req.params.id }, { isActive: false });
+    const modelMap = {
+      artist: Artist,
+      venue: Venue,
+      journalist: Journalist,
+    };
+
+    const ProfileModel = modelMap[user.userType];
+    if (ProfileModel) {
+      await ProfileModel.findOneAndUpdate({ user: req.params.id }, { isActive: false });
+    }
 
     res.status(200).json({
       success: true,
-      message: "User deleted successfully",
+      message: "User and associated profile deactivated successfully",
     });
   } catch (error) {
     next(new ErrorResponse("Error deleting user", 500));
   }
 };
+
 
 // @desc    Get all content for moderation
 export const getContentForModeration = async (req, res, next) => {
