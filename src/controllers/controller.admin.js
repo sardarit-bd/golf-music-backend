@@ -121,14 +121,30 @@ export const getAllUsers = async (req, res, next) => {
       .select("-password")
       .sort({ createdAt: -1 })
       .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .skip((page - 1) * limit)
+      .lean();
 
     const total = await User.countDocuments(query);
+
+    const usersWithArtistUpdated = await Promise.all(
+      users.map(async (user) => {
+        if (user.userType === "artist") {
+          const artist = await Artist.findOne({ user: user._id })
+            .select("updatedAt")
+            .lean();
+
+          if (artist?.updatedAt) {
+            user.updatedAt = artist.updatedAt;
+          }
+        }
+        return user;
+      })
+    );
 
     res.status(200).json({
       success: true,
       data: {
-        users,
+        users: usersWithArtistUpdated,
         pagination: {
           current: parseInt(page),
           pages: Math.ceil(total / limit),
@@ -137,6 +153,7 @@ export const getAllUsers = async (req, res, next) => {
       },
     });
   } catch (error) {
+    console.error(error);
     next(new ErrorResponse("Failed to fetch users", 500));
   }
 };

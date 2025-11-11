@@ -17,8 +17,8 @@ const createAdminUser = async () => {
     // Create admin user
     const adminUser = await User.create({
       username: 'admin',
-      email: 'admin@gulfcoastmusic.com',
-      password: 'admin123',
+      email: 'thegulfcoastmusic@gmail.com',
+      password: 'GcM!2025@Rhythm#943',
       userType: 'admin',
       isVerified: true
     });
@@ -37,3 +37,6 @@ const createAdminUser = async () => {
 };
 
 createAdminUser();
+
+
+// admin@gulfcoastmusic.com
