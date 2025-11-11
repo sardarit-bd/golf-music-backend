@@ -5,3 +5,4 @@ uploads/
 .env.development
 .DS_Store
 *.log
+src/utils/seedAdmin.js
