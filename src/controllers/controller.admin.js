@@ -224,9 +224,10 @@ export const deleteUser = async (req, res, next) => {
 // @desc    Get all content for moderation
 export const getContentForModeration = async (req, res, next) => {
   try {
-    const { type, page = 1, limit = 10 } = req.query;
+    const { type, page = 1, limit = 10, status = "all", search = "" } = req.query;
     let model, populateField;
 
+    // Model mapping
     switch (type) {
       case "artists":
         model = Artist;
@@ -248,14 +249,28 @@ export const getContentForModeration = async (req, res, next) => {
         return next(new ErrorResponse("Invalid content type", 400));
     }
 
+    let query = {};
+
+    // Filter by active/inactive
+    if (status === "active") query.isActive = true;
+    else if (status === "inactive") query.isActive = false;
+
+    // Search filter
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { city: { $regex: search, $options: "i" } },
+        { genre: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const total = await model.countDocuments(query);
     const content = await model
-      .find({ isActive: true })
+      .find(query)
       .populate(populateField)
       .sort({ createdAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit);
-
-    const total = await model.countDocuments({ isActive: true });
 
     res.status(200).json({
       success: true,
@@ -272,6 +287,7 @@ export const getContentForModeration = async (req, res, next) => {
     next(new ErrorResponse("Failed to fetch moderation content", 500));
   }
 };
+
 
 // @desc    Toggle content status
 export const toggleContentStatus = async (req, res, next) => {
