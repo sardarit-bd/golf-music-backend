@@ -285,6 +285,7 @@ export const validateAdminActions = [
 // MERCH VALIDATION
 
 export const validateMerch = [
+  // Product name validation
   body("name")
     .notEmpty()
     .withMessage("Product name is required")
@@ -295,30 +296,44 @@ export const validateMerch = [
     .notEmpty()
     .withMessage("Price is required")
     .custom((value) => {
-      // allow prices like "$25" or "25"
-      const cleanValue = value.replace("$", "").trim();
+      const cleanValue =
+        typeof value === "string"
+          ? value.replace("$", "").trim()
+          : value;
+
       if (isNaN(cleanValue) || Number(cleanValue) <= 0) {
         throw new Error("Price must be a valid positive number");
       }
       return true;
     }),
 
-  body("image")
-    .optional()
-    .isURL()
-    .withMessage("Image must be a valid URL"),
-
-  body("printifyId")
-    .optional()
-    .isLength({ max: 100 })
-    .withMessage("Printify ID cannot exceed 100 characters"),
-
+  // Description validation
   body("description")
     .optional()
     .isLength({ max: 1000 })
     .withMessage("Description cannot exceed 1000 characters"),
 
+  // Image validation (optional if you’re using file upload)
+  body("image")
+    .optional()
+    .isURL()
+    .withMessage("Image must be a valid URL"),
+
+  // Stock validation
+  body("stock")
+    .notEmpty()
+    .withMessage("Stock is required")
+    .isInt({ min: 0 })
+    .withMessage("Stock must be a valid non-negative integer"),
+
+  // Quantity validation
+  body("quantity")
+    .notEmpty()
+    .withMessage("Quantity is required")
+    .isInt({ min: 1 })
+    .withMessage("Quantity must be at least 1"),
 ];
+
 
 
 

@@ -16,8 +16,8 @@ import eventRoutes from './routes/router.events.js';
 import newsRoutes from './routes/router.news.js';
 import contactRoutes from './routes/router.contact.js';
 import adminRoutes from './routes/router.admin.js';
-import { cloudinary } from './config/cloudinary.js';
 import merchRoutes from './routes/router.merch.js';
+import orderRoutes from "./routes/router.order.js";
 import castRoutes from './routes/route.cast.js';
 import waveRoutes from './routes/route.wave.js';
 
@@ -91,6 +91,7 @@ app.use('/api/venues', venueRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/news', newsRoutes);
 app.use("/api/merch", merchRoutes);
+app.use("/api/orders", orderRoutes);
 app.use("/api/casts", castRoutes);
 app.use("/api/waves", waveRoutes);
 app.use('/api/contact', contactRoutes);

@@ -16,6 +16,9 @@ export const uploadArtistFiles = upload.fields([
 ]);
 
 
+// === MERCH (PRODUCT) UPLOAD ===
+export const uploadMerchImage = upload.single("image");
+
 // === Wave (PODCAST) UPLOAD ===
 
 export const uploadWaveThumbnail = upload.single("thumbnail");

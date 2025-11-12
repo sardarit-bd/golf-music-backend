@@ -1,23 +1,38 @@
 import express from "express";
-import { addAllPrintifyProducts, addSinglePrintifyProduct, createMerch, deleteMerch, fetchPrintifyProducts, getAllMerch, updateMerch } from "../controllers/controller.merch.js";
-import { authorize, protect } from "../middleware/auth.js";
+import { createMerch, deleteMerch, getAllMerch, getMerchById, updateMerch } from "../controllers/controller.merch.js";
+import { handleUploadErrors, uploadMerchImage } from "../middleware/upload.js";
 import { validateMerch } from "../middleware/validation.js";
+import { authorize, protect } from "../middleware/auth.js";
+
+
 
 const router = express.Router();
 
 // Public route
 router.get("/", getAllMerch);
+router.get("/:id", getMerchById);
 
 // Admin routes
-router.post("/", protect, authorize("admin"), validateMerch, createMerch);
-router.put("/:id", protect, authorize("admin"), validateMerch, updateMerch);
+router.post(
+  "/",
+  protect,
+  authorize("admin"),
+  uploadMerchImage,
+  handleUploadErrors,
+  validateMerch,
+  createMerch
+);
+
+router.put(
+  "/:id",
+  protect,
+  authorize("admin"),
+  uploadMerchImage,
+  handleUploadErrors,
+  validateMerch,
+  updateMerch
+);
+
 router.delete("/:id", protect, authorize("admin"), deleteMerch);
-
-
-
-router.get("/products", protect, authorize("admin"), fetchPrintifyProducts);
-router.post("/add-all", protect, authorize("admin"), addAllPrintifyProducts);
-router.post("/add/:productId", protect, authorize("admin"), addSinglePrintifyProduct);
-
 
 export default router;
