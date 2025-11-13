@@ -17,9 +17,9 @@ import newsRoutes from './routes/router.news.js';
 import contactRoutes from './routes/router.contact.js';
 import adminRoutes from './routes/router.admin.js';
 import merchRoutes from './routes/router.merch.js';
-import orderRoutes from "./routes/router.order.js";
 import castRoutes from './routes/route.cast.js';
 import waveRoutes from './routes/route.wave.js';
+import orderRoutes from './routes/router.order.js';
 import { handleStripeWebhook } from './controllers/controller.merch.js';
 import bodyParser from 'body-parser';
 

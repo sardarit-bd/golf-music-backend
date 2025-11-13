@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-const orderSchema = new mongoose.Schema(
+const OrderSchema = new mongoose.Schema(
   {
     merch: {
       type: mongoose.Schema.Types.ObjectId,
@@ -12,50 +12,61 @@ const orderSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    quantity: {
-      type: Number,
+    quantity: { 
+      type: Number, 
       required: true,
-      min: 1,
+      min: 1
     },
-    totalPrice: {
-      type: Number,
+    totalPrice: { 
+      type: Number, 
       required: true,
-    },
-
-    // Payment method: stripe | cod
-    paymentMethod: {
-      type: String,
-      enum: ["stripe", "cod"],
-      required: true,
+      min: 0
     },
 
-    // Payment status
+    paymentMethod: { 
+      type: String, 
+      enum: ["stripe", "cod"], 
+      required: true 
+    },
     paymentStatus: {
       type: String,
-      enum: ["pending", "paid", "failed"],
+      enum: ["pending", "paid", "failed", "refunded"],
       default: "pending",
     },
 
-    // Delivery status
     deliveryStatus: {
       type: String,
-      enum: ["pending", "shipped", "delivered", "cancelled"],
+      enum: [
+        "pending",
+        "confirmed",
+        "processing",
+        "ready-for-pickup",
+        "shipped",
+        "delivered",
+        "cancelled"
+      ],
       default: "pending",
     },
 
     shippingInfo: {
-      name: { type: String, required: false },
-      email: { type: String, required: false },
-      phone: { type: String, required: false },
-      address: { type: String, required: false },
-      city: { type: String, required: false },
-      postalCode: { type: String, required: false },
-      country: { type: String, required: false, default: "Bangladesh" },
-      note: { type: String },
+      name: String,
+      email: String,
+      phone: String,
+      address: String,
+      city: String,
+      postalCode: String,
+      note: String,
     },
   },
-  { timestamps: true }
+  { 
+    timestamps: true 
+  }
 );
 
-const Order = mongoose.model("Order", orderSchema);
-export default Order;
+// Index for better performance
+OrderSchema.index({ createdAt: -1 });
+OrderSchema.index({ buyer: 1 });
+OrderSchema.index({ deliveryStatus: 1 });
+OrderSchema.index({ paymentStatus: 1 });
+
+export default mongoose.model("Order", OrderSchema);
