@@ -335,8 +335,6 @@ export const validateMerch = [
 ];
 
 
-
-
 //  CAST (PODCAST) VALIDATION
 
 export const validateCast = [
@@ -352,21 +350,9 @@ export const validateCast = [
     .withMessage("Description cannot exceed 1000 characters"),
 ];
 
-const youTubeUrlRegex =
-  /^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([A-Za-z0-9_-]{11})([&?].*)?$/i;
-
 export const validateWave = [
   body("title")
     .trim()
     .notEmpty().withMessage("Title is required")
     .isLength({ max: 200 }).withMessage("Title cannot exceed 200 characters"),
-
-  // body("thumbnail")
-  //   .notEmpty().withMessage("Thumbnail URL is required")
-  //   .isURL({ require_protocol: true }).withMessage("Thumbnail must be a valid URL"),
-
-  // body("youtubeUrl")
-  //   .notEmpty().withMessage("YouTube URL is required")
-  //   .matches(youTubeUrlRegex)
-  //   .withMessage("Invalid YouTube link format"),
 ];

@@ -11,21 +11,21 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 // Get all merch items (with search & filters)
 export const getAllMerch = asyncHandler(async (req, res, next) => {
   const {
-    search, 
-    minPrice, 
+    search,
+    minPrice,
     maxPrice,
     inStock,
     page = 1,
     limit = 10,
   } = req.query;
 
-  const query = {};
+  const query = { isActive: true };
 
   // Search by name or description
   if (search) {
     query.$or = [
-      { name: { $regex: search, $options: "i" } },    
-      { description: { $regex: search, $options: "i" } },  
+      { name: { $regex: search, $options: "i" } },
+      { description: { $regex: search, $options: "i" } },
     ];
   }
 
@@ -125,10 +125,12 @@ export const updateMerch = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Merch item not found", 404));
   }
 
-  const { name, price, description, stock, quantity } = req.body;
+  const { name, price, description, stock, quantity, isActive } = req.body;
+
+  // Image (optional)
   const image = req.file?.path || merch.image;
 
-  // Check for duplicates (except current one)
+  // Duplicate check
   if (name && name !== merch.name) {
     const duplicate = await Merch.findOne({
       name: new RegExp(`^${name}$`, "i"),
@@ -139,13 +141,15 @@ export const updateMerch = asyncHandler(async (req, res, next) => {
     }
   }
 
-  merch.name = name || merch.name;
-  merch.price = price || merch.price;
-  merch.description = description || merch.description;
+  // Update fields safely
+  merch.name = name ?? merch.name;
+  merch.price = price ?? merch.price;
+  merch.description = description ?? merch.description;
   merch.image = image;
   merch.stock = stock ?? merch.stock;
   merch.quantity = quantity ?? merch.quantity;
-   
+  merch.isActive = isActive ?? merch.isActive;
+
   await merch.save();
 
   res.status(200).json({
@@ -154,6 +158,7 @@ export const updateMerch = asyncHandler(async (req, res, next) => {
     data: merch,
   });
 });
+
 
 // Delete merch
 export const deleteMerch = asyncHandler(async (req, res, next) => {
@@ -169,20 +174,15 @@ export const deleteMerch = asyncHandler(async (req, res, next) => {
 });
 
 
-
-
-
 // Create Order with Stripe / COD
 export const createOrder = asyncHandler(async (req, res, next) => {
   const { merchId, quantity, paymentMethod, shippingInfo } = req.body;
   const userId = req.user._id;
 
-  // Validate payment method
   if (!["stripe", "cod"].includes(paymentMethod)) {
     return next(new ErrorResponse("Invalid payment method", 400));
   }
 
-  // For COD, shipping info required
   if (paymentMethod === "cod" && !shippingInfo) {
     return next(new ErrorResponse("Shipping information is required for COD", 400));
   }
@@ -197,9 +197,22 @@ export const createOrder = asyncHandler(async (req, res, next) => {
 
   let paymentStatus = "pending";
   let deliveryStatus = "pending";
+
+  // Create order FIRST
+  const order = await Order.create({
+    merch: merch._id,
+    buyer: userId,
+    quantity,
+    totalPrice,
+    paymentMethod,
+    paymentStatus,
+    deliveryStatus,
+    ...(shippingInfo && { shippingInfo })
+  });
+
   let stripeSession = null;
 
-  // Stripe Payment Flow
+  // Stripe AFTER creating order
   if (paymentMethod === "stripe") {
     stripeSession = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
@@ -214,28 +227,13 @@ export const createOrder = asyncHandler(async (req, res, next) => {
         },
       ],
       mode: "payment",
-      success_url: `${process.env.CLIENT_URL}/order-success`,
+      metadata: {
+        orderId: order._id.toString(),
+      },
+      success_url: `${process.env.CLIENT_URL}/order-success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.CLIENT_URL}/order-failed`,
     });
   }
-
-  // Cash On Delivery Flow
-  if (paymentMethod === "cod") {
-    paymentStatus = "pending";
-    deliveryStatus = "pending";
-  }
-
-  //Create Order (add shipping info)
-  const order = await Order.create({
-    merch: merch._id,
-    buyer: userId,
-    quantity,
-    totalPrice,
-    paymentMethod,
-    paymentStatus,
-    deliveryStatus,
-    ...(shippingInfo && { shippingInfo })
-  });
 
   // Reduce stock
   merch.stock -= quantity;
@@ -253,13 +251,17 @@ export const createOrder = asyncHandler(async (req, res, next) => {
 
 
 
+
 // Stripe Webhook (for auto payment confirmation)
 export const handleStripeWebhook = asyncHandler(async (req, res) => {
   const event = req.body;
 
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
-    const order = await Order.findOne({ totalPrice: session.amount_total / 100 });
+    const orderId = session.metadata.orderId;
+
+    const order = await Order.findById(orderId);
+
     if (order) {
       order.paymentStatus = "paid";
       await order.save();
@@ -268,23 +270,6 @@ export const handleStripeWebhook = asyncHandler(async (req, res) => {
 
   res.status(200).json({ received: true });
 });
-
-// Admin marks as delivered
-// export const markOrderDelivered = asyncHandler(async (req, res, next) => {
-//   const order = await Order.findById(req.params.id);
-//   if (!order) return next(new ErrorResponse("Order not found", 404));
-
-//   order.deliveryStatus = "delivered";
-//   if (order.paymentMethod === "cod") order.paymentStatus = "paid";
-
-//   await order.save();
-
-//   res.status(200).json({
-//     success: true,
-//     message: "Order marked as delivered",
-//     data: order,
-//   });
-// });
 
 
 export const getAllOrders = asyncHandler(async (req, res, next) => {
