@@ -20,6 +20,8 @@ import merchRoutes from './routes/router.merch.js';
 import orderRoutes from "./routes/router.order.js";
 import castRoutes from './routes/route.cast.js';
 import waveRoutes from './routes/route.wave.js';
+import { handleStripeWebhook } from './controllers/controller.merch.js';
+import bodyParser from 'body-parser';
 
 // Fix for __dirname in ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -33,15 +35,21 @@ const app = express();
 // ===== Security middleware =====
 app.use(helmet());
 
+// ===== Stripe Webhook MUST BE PLACED HERE BEFORE express.json() =====
+app.post(
+  "/api/stripe/webhook",
+  bodyParser.raw({ type: "application/json" }),
+  handleStripeWebhook
+);
+
 // ===== Rate limiting =====
-app.set('trust proxy', 1); // Very important for Vercel or Render deployments
+app.set('trust proxy', 1); 
 
 const limiter = rateLimit({
   windowMs: 2 * 60 * 60 * 1000,
-  max: 2000, // max requests per IP
+  max: 2000,
   standardHeaders: true,
   legacyHeaders: false,
-  // Remove custom keyGenerator - let express-rate-limit handle it automatically
   handler: (req, res) => {
     res.status(429).json({
       success: false,
@@ -65,7 +73,7 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: function (origin, callback) {
-      if (!origin) return callback(null, true); // allow non-browser requests
+      if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {

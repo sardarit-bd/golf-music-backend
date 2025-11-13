@@ -131,18 +131,19 @@ export const login = asyncHandler(async (req, res, next) => {
   const userWithPassword = await User.findOne({ email }).select("+password");
 
   // Check if user is active
-  if (!user.isActive) {
+  if (user.userType !== "fan" && !user.isActive) {
     return next(
       new ErrorResponse("Account deactivated", 403, {
         details: [
           {
             field: "email",
-            message: "Your account has been deactivated by administrator(Please check your mail)"
+            message: "Your account has been deactivated by administrator (Please check your mail)"
           }
         ]
       })
     );
   }
+
 
   // Require admin verification for specific user types
   const requiresVerification = ["artist", "venue", "journalist"].includes(user.userType);
