@@ -256,9 +256,10 @@ export const getAllMerch = asyncHandler(async (req, res, next) => {
     inStock,
     page = 1,
     limit = 10,
+    showAll = false
   } = req.query;
 
-  const query = { isActive: true };
+  const query = {};
 
   if (search) {
     query.$or = [
@@ -399,6 +400,12 @@ export const deleteMerch = asyncHandler(async (req, res, next) => {
 export const createOrder = asyncHandler(async (req, res, next) => {
   const { merchId, quantity, paymentMethod, shippingInfo } = req.body;
   const userId = req.user._id;
+
+    const allowedRoles = ["user", "artist", "venue", "journalist", "admin"];
+  
+  if (!allowedRoles.includes(req.user.userType)) {
+    return next(new ErrorResponse("Unauthorized to create orders", 403));
+  }
 
   if (!["stripe", "cod"].includes(paymentMethod)) {
     return next(new ErrorResponse("Invalid payment method", 400));
