@@ -74,21 +74,33 @@ const allowedOrigins = [
 
 app.use(
   cors({
-    origin: function (origin, callback) {
-      // Allow requests with no origin (like mobile apps or curl requests)
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, curl, Postman)
       if (!origin) return callback(null, true);
-      
-      // Allow all Vercel domains in production
-      if (NODE_ENV === 'production' && origin.endsWith('.vercel.app')) {
+
+      // Allow ALL Vercel frontend domains
+      if (origin.endsWith(".vercel.app")) {
         return callback(null, true);
       }
-      
-      if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        console.log('Blocked by CORS:', origin);
-        callback(new Error("Not allowed by CORS"));
+
+      // Allow localhost dev
+      if (origin.startsWith("http://localhost")) {
+        return callback(null, true);
       }
+
+      // Allow your main client domain (replace with your real domain)
+      const allowed = [
+        CLIENT_URL,
+        "https://gulf-cost-music.vercel.app",
+        "https://golf-music.vercel.app"
+      ];
+
+      if (allowed.includes(origin)) {
+        return callback(null, true);
+      }
+
+      console.log("❌ Blocked by CORS:", origin);
+      return callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
   })
