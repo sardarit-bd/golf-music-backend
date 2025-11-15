@@ -4,6 +4,10 @@ import { validationResult } from "express-validator";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import Stripe from "stripe";
 import Order from "../models/model.order.js";
+import dotenv from 'dotenv';
+dotenv.config();
+
+
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
