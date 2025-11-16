@@ -5,6 +5,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import Stripe from "stripe";
 import Order from "../models/model.order.js";
 import dotenv from 'dotenv';
+import { sendAdminNewOrderEmail, sendOrderConfirmationEmail } from "../utils/emailService.js";
 dotenv.config();
 
 
@@ -405,7 +406,8 @@ export const createOrder = asyncHandler(async (req, res, next) => {
   const { merchId, quantity, paymentMethod, shippingInfo } = req.body;
   const userId = req.user._id;
 
-    const allowedRoles = ["user", "artist", "venue", "journalist", "admin"];
+    const allowedRoles = ["fan", "user", "artist", "venue", "journalist", "admin"];
+
   
   if (!allowedRoles.includes(req.user.userType)) {
     return next(new ErrorResponse("Unauthorized to create orders", 403));
@@ -478,23 +480,44 @@ export const createOrder = asyncHandler(async (req, res, next) => {
   });
 });
 
-export const handleStripeWebhook = asyncHandler(async (req, res) => {
-  const event = req.body;
+export const handleStripeWebhook = asyncHandler(async (req, res, next) => {
+  const sig = req.headers["stripe-signature"];
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(
+      req.body,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET
+    );
+  } catch (err) {
+    console.log("❌ Webhook signature failed:", err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
 
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
     const orderId = session.metadata.orderId;
 
-    const order = await Order.findById(orderId);
+    const order = await Order.findById(orderId).populate("buyer");
 
     if (order) {
       order.paymentStatus = "paid";
       await order.save();
+
+      console.log("Order updated successfully");
+
+      // Send email to buyer
+      await sendOrderConfirmationEmail(order.buyer.email, order);
+
+      // Notify admin
+      await sendAdminNewOrderEmail(order);
     }
   }
 
-  res.status(200).json({ received: true });
+  res.json({ received: true });
 });
+
 
 
 export const getUserOrders = asyncHandler(async (req, res) => {

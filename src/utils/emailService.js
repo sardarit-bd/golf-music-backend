@@ -67,3 +67,51 @@ export const sendResetPasswordEmail = async (email, resetUrl) => {
 
   await transporter.sendMail(message);
 };
+
+export const sendOrderConfirmationEmail = async (email, order) => {
+  try {
+    await transporter.sendMail({
+      from: EMAIL_USERNAME,
+      to: email,
+      subject: "Your Order is Confirmed - Gulf Coast Music",
+      html: `
+        <h2>🎉 Thank you for your purchase!</h2>
+        <p>Your payment has been successfully completed.</p>
+
+        <h3>🧾 Order Details:</h3>
+        <p><strong>Order ID:</strong> ${order._id}</p>
+        <p><strong>Total Amount:</strong> $${order.totalPrice}</p>
+
+        <p>You will be notified when your order ships.</p>
+        <br>
+        <p>Regards,<br>Gulf Coast Music Team</p>
+      `
+    });
+  } catch (err) {
+    console.log("❌ Failed to send order confirmation email:", err);
+  }
+};
+
+export const sendAdminNewOrderEmail = async (order) => {
+  try {
+    await transporter.sendMail({
+      from: EMAIL_USERNAME,
+      to: "thegulfcoastmusic@gmail.com",
+      subject: "🔔 New Paid Order Received - Gulf Coast Music",
+      html: `
+        <h2>New Order Paid</h2>
+
+        <p><strong>Buyer:</strong> ${order.buyer.email}</p>
+        <p><strong>Order ID:</strong> ${order._id}</p>
+        <p><strong>Total:</strong> $${order.totalPrice}</p>
+        <p><strong>Payment Method:</strong> Stripe (Paid)</p>
+
+        <br>
+        <p>Login to your dashboard to process the order.</p>
+      `
+    });
+  } catch (err) {
+    console.log("❌ Failed to notify admin:", err);
+  }
+};
+
