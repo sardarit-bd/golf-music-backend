@@ -169,12 +169,12 @@ app.use(errorHandler);
 // ===============================
 // Start Server
 // ===============================
-// const server = app.listen(PORT, () => {
-//   console.log(`Server running in ${NODE_ENV} mode on port ${PORT}`);
-// });
+const server = app.listen(PORT, () => {
+  console.log(`Server running in ${NODE_ENV} mode on port ${PORT}`);
+});
 
-// export default server;
+export default server;
 
 
 //added for vercel hosting
-export default app;
+// export default app;
