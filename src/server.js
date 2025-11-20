@@ -20,8 +20,11 @@ import merchRoutes from './routes/router.merch.js';
 import castRoutes from './routes/route.cast.js';
 import waveRoutes from './routes/route.wave.js';
 import orderRoutes from './routes/router.order.js';
-
+import sponsorRoutes from './routes/router.sponsor.js';
+import heroVideoRoutes from './routes/router.heroVideo.js';
+import featuredSectionRoutes from './routes/router.featuredSection.js';
 import { handleStripeWebhook } from './controllers/controller.merch.js';
+
 
 // Fix for __dirname in ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -126,7 +129,9 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // ===============================
 // API Routes
 // ===============================
+app.use("/api/hero-video", heroVideoRoutes);
 app.use('/api/auth', authRoutes);
+app.use("/api/featured-section", featuredSectionRoutes);
 app.use('/api/artists', artistRoutes);
 app.use('/api/journalists', journalistRoutes);
 app.use('/api/venues', venueRoutes);
@@ -136,6 +141,7 @@ app.use("/api/merch", merchRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/casts", castRoutes);
 app.use("/api/waves", waveRoutes);
+app.use("/api/sponsors", sponsorRoutes);
 app.use('/api/contact', contactRoutes);
 app.use('/api/admin', adminRoutes);
 
