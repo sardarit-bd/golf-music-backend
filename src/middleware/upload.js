@@ -16,6 +16,19 @@ export const uploadArtistFiles = upload.fields([
 ]);
 
 
+// Only allow video uploads
+export const uploadHeroVideo = multer({
+  storage,
+  limits: { fileSize: 200 * 1024 * 1024 }, // 200MB
+}).single("video");
+
+
+// uploadFeaturedImage
+export const uploadFeaturedImage = multer({
+  storage,
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+}).single("image");
+
 // === MERCH (PRODUCT) UPLOAD ===
 export const uploadMerchImage = upload.single("image");
 
@@ -42,6 +55,12 @@ export const uploadNewsPhotos = upload.array("photos", 5);
 //  JOURNALIST UPLOAD
 
 export const uploadJournalistPhoto = upload.single("profilePhoto");
+
+
+export const uploadSingleSponsorLogo = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+}).single("logo");
 
 
 //  ERROR HANDLER
