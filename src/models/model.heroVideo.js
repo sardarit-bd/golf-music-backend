@@ -14,13 +14,13 @@ const heroSectionSchema = new mongoose.Schema(
       type: String,
       default: "Get Started",
     },
+
     videoUrl: {
       type: String,
-      default: null, // will store Cloudinary URL
+      default: null,
     }
   },
   { timestamps: true }
 );
 
-const HeroSection = mongoose.model("HeroSection", heroSectionSchema);
-export default HeroSection;
+export default mongoose.model("HeroSection", heroSectionSchema);

@@ -14,19 +14,30 @@ export const getHeroSection = async (req, res, next) => {
   }
 };
 
-// UPDATE hero content + video
+// UPDATE hero content + video - FIXED VERSION
 export const updateHeroSection = async (req, res, next) => {
   try {
+
     let hero = await HeroSection.findOne();
-    if (!hero) hero = await HeroSection.create({});
-
-    if (req.body.title) hero.title = req.body.title;
-    if (req.body.subtitle) hero.subtitle = req.body.subtitle;
-    if (req.body.buttonText) hero.buttonText = req.body.buttonText;
-
-    if (req.file) {
-      hero.videoUrl = req.file.path;
+    if (!hero) {
+      hero = await HeroSection.create({});
     }
+
+    // Fix: Check if req.body exists before accessing properties
+    if (!req.body) {
+      return res.status(400).json({
+        success: false,
+        message: "Request body is missing"
+      });
+    }
+
+    const { title, subtitle, buttonText, videoUrl } = req.body;
+
+    // Update fields if they exist in request body
+    if (title !== undefined) hero.title = title;
+    if (subtitle !== undefined) hero.subtitle = subtitle;
+    if (buttonText !== undefined) hero.buttonText = buttonText;
+    if (videoUrl !== undefined) hero.videoUrl = videoUrl;
 
     await hero.save();
 
@@ -36,6 +47,7 @@ export const updateHeroSection = async (req, res, next) => {
       data: hero,
     });
   } catch (error) {
+    console.error("Update error:", error);
     next(error);
   }
 };
