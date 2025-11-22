@@ -85,22 +85,15 @@ app.use(compression());
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow no-origin (mobile, Postman)
       if (!origin) return callback(null, true);
 
-      // Allow all Vercel frontend subdomains
-      if (origin.endsWith(".vercel.app")) {
-        return callback(null, true);
-      }
-
-      // Localhost always allowed
-      if (origin.startsWith("http://localhost")) {
-        return callback(null, true);
-      }
-
-      // Allowed list
       const allowed = [
         CLIENT_URL,
+        "https://gulfcoastmusic.live",
+        "https://www.gulfcoastmusic.live",
+        "https://api.gulfcoastmusic.live",
+        "http://localhost:3000",
+        "http://localhost:3001",
         "https://gulf-cost-music.vercel.app",
         "https://golf-music.vercel.app",
       ];
@@ -113,8 +106,11 @@ app.use(
       return callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
+    methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+
 
 // ===============================
 // JSON Body Parser (AFTER Webhook!)
