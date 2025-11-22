@@ -8,6 +8,14 @@ const upload = multer({
 });
 
 
+
+
+// uploadFooterLogo
+
+export const uploadFooterLogo = multer({
+  storage,
+}).single("logo");
+
 //  ARTIST UPLOADS
 
 export const uploadArtistFiles = upload.fields([

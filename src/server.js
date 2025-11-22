@@ -22,6 +22,7 @@ import waveRoutes from './routes/route.wave.js';
 import orderRoutes from './routes/router.order.js';
 import sponsorRoutes from './routes/router.sponsor.js';
 import heroVideoRoutes from './routes/router.heroVideo.js';
+import footerRoutes from './routes/router.footer.js';
 import featuredSectionRoutes from './routes/router.featuredSection.js';
 import { handleStripeWebhook } from './controllers/controller.merch.js';
 
@@ -144,6 +145,7 @@ app.use("/api/waves", waveRoutes);
 app.use("/api/sponsors", sponsorRoutes);
 app.use('/api/contact', contactRoutes);
 app.use('/api/admin', adminRoutes);
+app.use("/api/footer", footerRoutes);
 
 // ===============================
 // Server Health Check
