@@ -1,17 +1,14 @@
-import express from "express";
-import { getHeroSection, updateHeroSection } from "../controllers/controller.heroVideo.js";
-import { authorize, protect } from "../middleware/auth.js";
+import express from 'express';
+import { getHeroSection, getUploadSignature, updateHeroSection } from '../controllers/controller.heroSection.js';
+import { authorize, protect } from '../middleware/auth.js';
+
 
 const router = express.Router();
 
-router.get("/", getHeroSection);
-
-router.put(
-  "/update",
-  protect,
-  authorize("admin"),
-  updateHeroSection
-);
-
+// Public routes
+router.get('/', getHeroSection);
+router.put('/update', protect,
+  authorize("admin"), updateHeroSection);
+router.get('/upload-signature', getUploadSignature);
 
 export default router;

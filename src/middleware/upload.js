@@ -10,6 +10,9 @@ const upload = multer({
 
 
 
+// EVENT image upload
+export const uploadEventImage = upload.single("image");
+
 // uploadFooterLogo
 
 export const uploadFooterLogo = multer({
