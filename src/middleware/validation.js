@@ -1,6 +1,5 @@
 import { body } from "express-validator";
 
-
 export const validateRegistration = [
   body("username")
     .isLength({ min: 3, max: 30 })
@@ -19,65 +18,12 @@ export const validateRegistration = [
 
   body("userType")
     .customSanitizer((value) => value?.toLowerCase())
-    .isIn(["artist", "venue", "journalist", "fan"])
+    .isIn(["artist", "venue", "journalist", "fan", "photographer"])
     .withMessage("User type must be artist, venue, journalist, or fan"),
 
   body("genre")
     .if(body("userType").equals("artist"))
     .customSanitizer((value) => value?.toLowerCase())
-    .custom((value) => {
-      const validGenres = [
-        "rap", "country", "pop", "rock", "jazz", 
-        "reggae", "edm", "classical", "other"
-      ];
-      if (!validGenres.includes(value)) {
-        throw new Error("Invalid genre selected");
-      }
-      return true;
-    }),
-
-  body("location")
-    .if(body("userType").isIn(["venue", "journalist"]))
-    .customSanitizer((value) => value?.toLowerCase())
-    .custom((value) => {
-      const validLocations = ["new orleans", "biloxi", "mobile", "pensacola"];
-      if (!validLocations.includes(value)) {
-        throw new Error("Invalid location selected");
-      }
-      return true;
-    }),
-];
-
-
-export const validateLogin = [
-  body("email")
-    .isEmail()
-    .normalizeEmail()
-    .withMessage("Please provide a valid email"),
-
-  body("password").notEmpty().withMessage("Password is required"),
-];
-
-export const validateForgotPassword = [
-  body("email").isEmail().withMessage("Valid email required"),
-]
-
-export const validateResetPassword = [
-  body("password")
-    .isLength({ min: 6 })
-    .withMessage("Password must be at least 6 characters"),
-]
-
-export const validateArtistProfile = [
-  body("name")
-    .notEmpty()
-    .withMessage("Artist name is required")
-    .isLength({ max: 100 })
-    .withMessage("Name cannot exceed 100 characters"),
-
-  body("city").notEmpty().withMessage("City is required"),
-
-  body("genre")
     .custom((value) => {
       const validGenres = [
         "rap",
@@ -90,11 +36,69 @@ export const validateArtistProfile = [
         "classical",
         "other",
       ];
-      if (!validGenres.includes(value?.toLowerCase())) {
-        throw new Error("Please select a valid genre");
+      if (!validGenres.includes(value)) {
+        throw new Error("Invalid genre selected");
       }
       return true;
     }),
+
+  body("location")
+    .customSanitizer((value) => value?.toLowerCase())
+    .custom((value, { req }) => {
+      const validLocations = ["new orleans", "biloxi", "mobile", "pensacola"];
+
+      if (req.body.userType !== "fan" && !validLocations.includes(value)) {
+        throw new Error("Invalid location selected");
+      }
+      return true;
+    }),
+];
+
+export const validateLogin = [
+  body("email")
+    .isEmail()
+    .normalizeEmail()
+    .withMessage("Please provide a valid email"),
+
+  body("password").notEmpty().withMessage("Password is required"),
+];
+
+export const validateForgotPassword = [
+  body("email").isEmail().withMessage("Valid email required"),
+];
+
+export const validateResetPassword = [
+  body("password")
+    .isLength({ min: 6 })
+    .withMessage("Password must be at least 6 characters"),
+];
+
+export const validateArtistProfile = [
+  body("name")
+    .notEmpty()
+    .withMessage("Artist name is required")
+    .isLength({ max: 100 })
+    .withMessage("Name cannot exceed 100 characters"),
+
+  body("city").notEmpty().withMessage("City is required"),
+
+  body("genre").custom((value) => {
+    const validGenres = [
+      "rap",
+      "country",
+      "pop",
+      "rock",
+      "jazz",
+      "reggae",
+      "edm",
+      "classical",
+      "other",
+    ];
+    if (!validGenres.includes(value?.toLowerCase())) {
+      throw new Error("Please select a valid genre");
+    }
+    return true;
+  }),
 
   body("biography")
     .optional()
@@ -241,9 +245,7 @@ export const validateContact = [
     .withMessage("Message cannot exceed 2000 characters"),
 ];
 
-
 export const validateJournalistProfile = [
-
   body("fullName")
     .optional()
     .isLength({ max: 100 })
@@ -268,7 +270,6 @@ export const validateJournalistProfile = [
       }
     }),
 ];
-
 
 export const validateAdminActions = [
   body("isActive")
@@ -297,9 +298,7 @@ export const validateMerch = [
     .withMessage("Price is required")
     .custom((value) => {
       const cleanValue =
-        typeof value === "string"
-          ? value.replace("$", "").trim()
-          : value;
+        typeof value === "string" ? value.replace("$", "").trim() : value;
 
       if (isNaN(cleanValue) || Number(cleanValue) <= 0) {
         throw new Error("Price must be a valid positive number");
@@ -314,10 +313,7 @@ export const validateMerch = [
     .withMessage("Description cannot exceed 1000 characters"),
 
   // Image validation (optional if you’re using file upload)
-  body("image")
-    .optional()
-    .isURL()
-    .withMessage("Image must be a valid URL"),
+  body("image").optional().isURL().withMessage("Image must be a valid URL"),
 
   // Stock validation
   body("stock")
@@ -333,7 +329,6 @@ export const validateMerch = [
     .isInt({ min: 1 })
     .withMessage("Quantity must be at least 1"),
 ];
-
 
 //  CAST (PODCAST) VALIDATION
 
@@ -353,6 +348,8 @@ export const validateCast = [
 export const validateWave = [
   body("title")
     .trim()
-    .notEmpty().withMessage("Title is required")
-    .isLength({ max: 200 }).withMessage("Title cannot exceed 200 characters"),
+    .notEmpty()
+    .withMessage("Title is required")
+    .isLength({ max: 200 })
+    .withMessage("Title cannot exceed 200 characters"),
 ];

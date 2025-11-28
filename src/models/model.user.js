@@ -38,7 +38,7 @@ const userSchema = new mongoose.Schema({
   userType: {
     type: String,
     required: [true, "User type is required"],
-    enum: ["artist", "venue", "journalist", "fan", "admin"],
+    enum: ["artist", "venue", "journalist", "fan", "admin", "photographer"],
     set: (val) => val.toLowerCase(),
   },
 
@@ -66,7 +66,7 @@ const userSchema = new mongoose.Schema({
     enum: ["new orleans", "biloxi", "mobile", "pensacola"],
     set: (val) => (val ? val.toLowerCase() : val),
     required: function () {
-      return this.userType === "venue" || this.userType === "journalist";
+      return this.userType === "venue" || this.userType === "journalist" || this.userType === "photographer";
     },
   },
 

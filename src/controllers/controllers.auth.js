@@ -15,7 +15,6 @@ import { ErrorResponse } from "../middleware/errorHandler.js";
    REGISTER
 ======================================================== */
 export const register = asyncHandler(async (req, res, next) => {
-
   const { username, email, password, userType, genre, location } = req.body;
 
   const existingUser = await User.findOne({
@@ -37,7 +36,7 @@ export const register = asyncHandler(async (req, res, next) => {
     verificationRequested: userType !== "fan",
   });
 
-
+  // Artist creation
   if (userType === "artist") {
     await Artist.create({
       user: user._id,
@@ -51,7 +50,7 @@ export const register = asyncHandler(async (req, res, next) => {
     });
   }
 
-
+  // Venue creation
   if (userType === "venue") {
     await Venue.create({
       user: user._id,
@@ -66,7 +65,7 @@ export const register = asyncHandler(async (req, res, next) => {
     });
   }
 
-
+  // Journalist creation
   if (userType === "journalist") {
     await Journalist.create({
       user: user._id,
@@ -76,6 +75,20 @@ export const register = asyncHandler(async (req, res, next) => {
       areasOfCoverage: user.location ? [user.location] : [],
       isActive: false,
       isVerified: false,
+    });
+  }
+
+  // NEW: Photographer creation
+  if (userType === "photographer") {
+    await Photographer.create({
+      user: user._id,
+      name: user.username,
+      city: user.location || "new orleans",
+      biography: "",
+      services: [],
+      photos: [],
+      videos: [],
+      isActive: false,
     });
   }
 
