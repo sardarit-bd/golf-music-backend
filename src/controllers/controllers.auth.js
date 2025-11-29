@@ -9,6 +9,7 @@ import { generateToken } from "../utils/helpers.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { formatValidationErrors } from "../utils/validationFormatter.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
+import Photographer from "../models/model.photographer.js";
 
 
 /* ========================================================

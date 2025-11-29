@@ -10,6 +10,13 @@ const upload = multer({
 
 
 
+const memoryStorage = multer.memoryStorage();
+
+export const uploadPhotographers = multer({
+  storage: memoryStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+}).array("photos", 5);
+
 // EVENT image upload
 export const uploadEventImage = upload.single("image");
 

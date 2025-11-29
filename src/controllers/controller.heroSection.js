@@ -91,7 +91,7 @@ export const getUploadSignature = async (req, res) => {
       data: {
         signature,
         timestamp,
-        cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+        cloudName: process.env.CLOUDINARY_NAME,
         apiKey: process.env.CLOUDINARY_API_KEY
       }
     });

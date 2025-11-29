@@ -3,6 +3,7 @@ import Admin from "../models/model.admin.js";
 import Artist from "../models/model.artist.js";
 import Journalist from "../models/model.journalist.js";
 import News from "../models/model.news.js";
+import Photographer from "../models/model.photographer.js";
 import User from "../models/model.user.js";
 import Venue from "../models/model.venue.js";
 import Contact from "../models/models.contact.js";
@@ -181,6 +182,13 @@ export const verifyUser = async (req, res, next) => {
       await Journalist.findOneAndUpdate({ user: user._id }, { isActive: true });
     }
 
+    if (user.userType === "photographer") {
+      await Photographer.findOneAndUpdate(
+        { user: user._id },
+        { isActive: true, isVerified: true }
+      );
+    }
+
     res.status(200).json({
       success: true,
       message: `${user.userType} verified successfully!`,
@@ -204,6 +212,7 @@ export const deleteUser = async (req, res, next) => {
       artist: Artist,
       venue: Venue,
       journalist: Journalist,
+      photographer: Photographer,
     };
 
     const ProfileModel = modelMap[user.userType];
@@ -245,6 +254,11 @@ export const getContentForModeration = async (req, res, next) => {
         model = Event;
         populateField = { path: "venue", select: "venueName city" };
         break;
+      case "photographers":
+        model = Photographer;
+        populateField = { path: "user", select: "username email" };
+        break;
+
       default:
         return next(new ErrorResponse("Invalid content type", 400));
     }
@@ -300,6 +314,7 @@ export const toggleContentStatus = async (req, res, next) => {
       venue: Venue,
       news: News,
       event: Event,
+      photographer: Photographer,
     };
 
     const model = models[type];
@@ -386,10 +401,10 @@ export const updateUser = async (req, res) => {
     // Find user and update
     const user = await User.findByIdAndUpdate(
       id,
-      { 
-        username, 
-        email, 
-        userType, 
+      {
+        username,
+        email,
+        userType,
         isVerified,
         updatedAt: Date.now()
       },
@@ -410,7 +425,7 @@ export const updateUser = async (req, res) => {
     });
   } catch (error) {
     console.error('Update user error:', error);
-    
+
     // Handle validation errors
     if (error.name === 'ValidationError') {
       const errors = Object.values(error.errors).map(err => err.message);
@@ -420,7 +435,7 @@ export const updateUser = async (req, res) => {
         errors
       });
     }
-    
+
     // Handle duplicate key error
     if (error.code === 11000) {
       return res.status(400).json({
@@ -476,14 +491,14 @@ export const getSystemSettings = async (req, res, next) => {
 };
 
 
-  //  GET NEWS FOR ADMIN
+//  GET NEWS FOR ADMIN
 
 export const getNewsForAdmin = async (req, res, next) => {
   try {
     const { page = 1, limit = 10, search = "", status = "all", location = "" } = req.query;
-    
+
     let query = {};
-    
+
     // Search filter
     if (search) {
       query.$or = [
@@ -492,7 +507,7 @@ export const getNewsForAdmin = async (req, res, next) => {
         { location: { $regex: search, $options: "i" } }
       ];
     }
-    
+
     // Status filter
     if (status !== "all") {
       query.isActive = status === "active";
@@ -528,7 +543,7 @@ export const getNewsForAdmin = async (req, res, next) => {
 };
 
 
-  //  UPDATE NEWS BY ADMIN
+//  UPDATE NEWS BY ADMIN
 
 export const updateNewsByAdmin = async (req, res, next) => {
   try {
@@ -582,7 +597,7 @@ export const updateNewsByAdmin = async (req, res, next) => {
 };
 
 
-  //  TOGGLE NEWS STATUS (ACTIVE/INACTIVE)
+//  TOGGLE NEWS STATUS (ACTIVE/INACTIVE)
 
 export const toggleNewsStatus = async (req, res, next) => {
   try {
@@ -607,7 +622,7 @@ export const toggleNewsStatus = async (req, res, next) => {
 };
 
 
-  //  DELETE NEWS BY ADMIN
+//  DELETE NEWS BY ADMIN
 
 export const deleteNewsByAdmin = async (req, res, next) => {
   try {

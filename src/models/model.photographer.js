@@ -43,8 +43,25 @@ const photographerSchema = new mongoose.Schema({
   ],
   videos: [
     {
-      url: String,
-      title: String,
+      url: {
+        type: String,
+        required: true,
+      },
+      title: {
+        type: String,
+        default: "Untitled Video",
+      },
+      public_id: {
+        type: String,
+        required: true,
+      },
+      duration: Number,
+      format: String,
+      bytes: Number,
+      uploadedAt: {
+        type: Date,
+        default: Date.now,
+      },
     },
   ],
   isActive: {

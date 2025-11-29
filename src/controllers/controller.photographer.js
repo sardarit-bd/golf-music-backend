@@ -1,9 +1,11 @@
 import mongoose from "mongoose";
 import Photographer from "../models/model.photographer.js";
 // import Photographer from "../models/model.photographer.js";
-// import User from "../models/model.user.js";
+import User from "../models/model.user.js"; //
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
+import { cloudinary } from "../config/cloudinary.js";
+// import { cloudinary } from "../config/cloudinary.js";
 // import { asyncHandler } from "../utils/asyncHandler.js";
 // import { ErrorResponse } from "../middleware/errorHandler.js";
 
@@ -11,6 +13,12 @@ import { ErrorResponse } from "../middleware/errorHandler.js";
    GET PHOTOGRAPHER PROFILE
 ======================================================== */
 export const getPhotographerProfile = asyncHandler(async (req, res, next) => {
+  // User verify korar jonno use kora jete pare
+  const user = await User.findById(req.user.id);
+  if (!user) {
+    return next(new ErrorResponse("User not found", 404));
+  }
+
   const photographer = await Photographer.findOne({ user: req.user.id })
     .populate("user", "username email userType isVerified");
 
@@ -195,32 +203,61 @@ export const deleteService = asyncHandler(async (req, res, next) => {
    ADD PHOTO
 ======================================================== */
 export const addPhoto = asyncHandler(async (req, res, next) => {
-  const { url, caption } = req.body;
-
-  if (!url) {
-    return next(new ErrorResponse("Photo URL is required", 400));
+  if (!req.files || req.files.length === 0) {
+    return next(new ErrorResponse("No photos uploaded", 400));
   }
 
   const photographer = await Photographer.findOne({ user: req.user.id });
-
   if (!photographer) {
     return next(new ErrorResponse("Photographer profile not found", 404));
   }
 
-  photographer.photos.push({ url, caption: caption || "" });
+  if (photographer.photos.length + req.files.length > 10) {
+    return next(new ErrorResponse("Maximum 10 photos allowed", 400));
+  }
+
+  const uploadedPhotos = [];
+
+  for (const file of req.files) {
+    const result = await new Promise((resolve, reject) => {
+      cloudinary.uploader.upload_stream(
+        {
+          folder: "photographers/photos",
+          resource_type: "image"
+        },
+        (error, uploadResult) => {
+          if (error) reject(error);
+          else resolve(uploadResult);
+        }
+      ).end(file.buffer);
+    });
+
+    console.log("📸 Cloudinary upload result:", {
+      url: result.secure_url,
+      public_id: result.public_id, // ✅ এইটা check করুন
+      full_result: result
+    });
+
+    uploadedPhotos.push({
+      url: result.secure_url,
+      public_id: result.public_id, // ✅ MUST include this
+    });
+  }
+
+  photographer.photos.push(...uploadedPhotos);
   await photographer.save();
 
-  res.status(201).json({
+  // Save korar por check korun public_id save hoise kina
+  console.log("💾 Saved photographer photos:", photographer.photos);
+
+  res.status(200).json({
     success: true,
-    message: "Photo added successfully",
-    data: {
-      photos: photographer.photos,
-    },
+    message: "Photos uploaded successfully",
+    data: { photos: photographer.photos }
   });
 });
-
 /* ========================================================
-   DELETE PHOTO
+   DELETE PHOTO - WITH CLOUDINARY CLEANUP
 ======================================================== */
 export const deletePhoto = asyncHandler(async (req, res, next) => {
   const { photoId } = req.params;
@@ -236,26 +273,47 @@ export const deletePhoto = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Photo not found", 404));
   }
 
-  photographer.photos.pull(photoId);
-  await photographer.save();
+  try {
+    // Delete from Cloudinary
+    if (photoToDelete.public_id) {
+      console.log("Deleting from Cloudinary:", photoToDelete.public_id);
+      
+      const result = await cloudinary.uploader.destroy(photoToDelete.public_id, {
+        resource_type: "image",
+        invalidate: true // CDN cache clear korbe
+      });
+      
+      console.log("Cloudinary delete result:", result);
+      
+      if (result.result !== 'ok') {
+        console.warn("Cloudinary deletion may have failed:", result);
+      }
+    }
 
-  res.status(200).json({
-    success: true,
-    message: "Photo deleted successfully",
-    data: {
-      photos: photographer.photos,
-    },
-  });
+    // Remove from database
+    photographer.photos.pull(photoId);
+    await photographer.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Photo deleted successfully",
+      data: {
+        photos: photographer.photos,
+      },
+    });
+  } catch (error) {
+    console.error("Delete photo error:", error);
+    return next(new ErrorResponse("Failed to delete photo from Cloudinary: " + error.message, 500));
+  }
 });
-
 /* ========================================================
    ADD VIDEO
 ======================================================== */
 export const addVideo = asyncHandler(async (req, res, next) => {
-  const { url, title } = req.body;
+  const { url, title, public_id } = req.body;
 
-  if (!url) {
-    return next(new ErrorResponse("Video URL is required", 400));
+  if (!url || !public_id) {
+    return next(new ErrorResponse("Video URL and public ID are required", 400));
   }
 
   const photographer = await Photographer.findOne({ user: req.user.id });
@@ -264,7 +322,17 @@ export const addVideo = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Photographer profile not found", 404));
   }
 
-  photographer.videos.push({ url, title: title || "" });
+  // Check video limit (e.g., max 10 videos)
+  if (photographer.videos.length >= 10) {
+    return next(new ErrorResponse("Maximum video limit reached (10 videos)", 400));
+  }
+
+  photographer.videos.push({
+    url,
+    title: title || "Untitled Video",
+    public_id
+  });
+
   await photographer.save();
 
   res.status(201).json({
@@ -277,10 +345,11 @@ export const addVideo = asyncHandler(async (req, res, next) => {
 });
 
 /* ========================================================
-   DELETE VIDEO
+   DELETE VIDEO FROM CLOUDINARY AND DATABASE
 ======================================================== */
 export const deleteVideo = asyncHandler(async (req, res, next) => {
   const { videoId } = req.params;
+  const { public_id } = req.body;
 
   const photographer = await Photographer.findOne({ user: req.user.id });
 
@@ -293,17 +362,28 @@ export const deleteVideo = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Video not found", 404));
   }
 
-  photographer.videos.pull(videoId);
-  await photographer.save();
+  try {
+    // Delete from Cloudinary
+    await cloudinary.uploader.destroy(public_id || videoToDelete.public_id, {
+      resource_type: "video"
+    });
 
-  res.status(200).json({
-    success: true,
-    message: "Video deleted successfully",
-    data: {
-      videos: photographer.videos,
-    },
-  });
+    // Remove from Database
+    photographer.videos.pull(videoId);
+    await photographer.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Video deleted successfully",
+      data: { videos: photographer.videos },
+    });
+
+  } catch (error) {
+    console.error("Cloudinary delete error:", error);
+    return next(new ErrorResponse("Failed to delete video", 500));
+  }
 });
+
 
 /* ========================================================
    GET ALL PHOTOGRAPHERS (PUBLIC)
@@ -312,7 +392,7 @@ export const getAllPhotographers = asyncHandler(async (req, res, next) => {
   const { city, page = 1, limit = 10 } = req.query;
 
   let query = { isActive: true, isVerified: true };
-  
+
   if (city) {
     query.city = city.toLowerCase();
   }
