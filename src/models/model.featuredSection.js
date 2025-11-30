@@ -22,14 +22,14 @@ const featuredSectionSchema = new mongoose.Schema({
   },
 
   // Badges
-  streamsCount: {
-    type: Number,
-    default: 259,
-  },
-  hitsCount: {
-    type: Number,
-    default: 100,
-  },
+  // streamsCount: {
+  //   type: Number,
+  //   default: 259,
+  // },
+  // hitsCount: {
+  //   type: Number,
+  //   default: 100,
+  // },
 
   // Bullet list
   listItems: [

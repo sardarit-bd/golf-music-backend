@@ -4,16 +4,16 @@ import Event from "../models/models.event.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 
 const venueColors = [
-  "#0000FF",
-  "#008000",
-  "#FF0000",
-  "#800080",
-  "#FFA500",
-  "#FFFF00",
-  "#FFC0CB",
-  "#A52A2A",
-  "#FFFFFF",
-  "#000000",
+  "#0000FF", // 1 - Blue
+  "#008000", // 2 - Green  
+  "#FF0000", // 3 - Red
+  "#800080", // 4 - Purple
+  "#FFA500", // 5 - Orange
+  "#FFFF00", // 6 - Yellow
+  "#FFC0CB", // 7 - Pink
+  "#A52A2A", // 8 - Brown
+  "#FFFFFF", // 9 - White
+  "#000000"  // 10 - Black
 ];
 
 
@@ -30,6 +30,7 @@ export const createEvent = async (req, res, next) => {
 
     const { artistBandName, time, date, description } = req.body;
 
+    // Find venue by user
     const venue = await Venue.findOne({ user: req.user.id });
     if (!venue) {
       return next(
@@ -40,20 +41,26 @@ export const createEvent = async (req, res, next) => {
       );
     }
 
-    const venueEventsCount = await Event.countDocuments({ venue: venue._id });
-    const color = venueColors[venueEventsCount % venueColors.length];
+    // Use venue's colorCode for events
+    const color = venue.colorCode || "#000000";
+
+    // IMAGE HANDLING
+    const imageData = req.file
+      ? { url: req.file.path, filename: req.file.filename }
+      : null;
 
     const event = await Event.create({
       artistBandName,
       time,
       date,
       description,
+      image: imageData,
       venue: venue._id,
-      city: venue.city,
+      city: venue.city, // Automatically use venue's city
       color,
     });
 
-    await event.populate("venue", "venueName city address");
+    await event.populate("venue", "venueName city address colorCode");
 
     res.status(201).json({
       success: true,
@@ -68,16 +75,22 @@ export const createEvent = async (req, res, next) => {
 
   //  GET EVENTS BY CITY
 
+// GET EVENTS BY CITY - FIXED DEFAULT CITY
 export const getEventsByCity = async (req, res, next) => {
   try {
-    const { city } = req.query;
-    const defaultCity = "mobile";
+    const { city = "mobile" } = req.query; // Default to Mobile
     let query = { isActive: true };
 
-    query.city = city && city !== "all" ? city.toLowerCase() : defaultCity;
+    // Validate city
+    const validCities = ["new orleans", "biloxi", "mobile", "pensacola"];
+    if (city && city !== "all" && validCities.includes(city.toLowerCase())) {
+      query.city = city.toLowerCase();
+    } else {
+      query.city = "mobile"; // Default to Mobile
+    }
 
     const events = await Event.find(query)
-      .populate("venue", "venueName city address seatingCapacity")
+      .populate("venue", "venueName city address seatingCapacity colorCode")
       .sort({ date: 1, time: 1 });
 
     res.status(200).json({
@@ -85,10 +98,55 @@ export const getEventsByCity = async (req, res, next) => {
       data: {
         events,
         filters: {
-          currentCity: city || defaultCity,
-          availableCities: ["new orleans", "biloxi", "mobile", "pensacola"],
+          currentCity: query.city,
+          availableCities: validCities,
         },
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+// GET CALENDAR EVENTS BY CITY (SPECIFIC FOR CALENDAR)
+export const getCalendarEvents = async (req, res, next) => {
+  try {
+    const { city = "mobile" } = req.query;
+    
+    // Validate city parameter
+    const validCities = ["new orleans", "biloxi", "mobile", "pensacola"];
+    const selectedCity = validCities.includes(city.toLowerCase()) 
+      ? city.toLowerCase() 
+      : "mobile";
+
+    const events = await Event.find({
+      city: selectedCity,
+      isActive: true,
+      date: { $gte: new Date().setHours(0, 0, 0, 0) }
+    })
+      .populate("venue", "venueName colorCode verifiedOrder")
+      .sort({ date: 1, time: 1 })
+      .select("artistBandName date time venue color city");
+
+    // Transform data for calendar
+    const calendarEvents = events.map(event => ({
+      id: event._id,
+      title: event.artistBandName,
+      date: event.date,
+      time: event.time,
+      venue: event.venue.venueName,
+      color: event.venue.colorCode || "#000000",
+      city: event.city
+    }));
+
+    res.status(200).json({
+      success: true,
+      data: {
+        events: calendarEvents,
+        currentCity: selectedCity,
+        availableCities: validCities
+      }
     });
   } catch (error) {
     next(error);

@@ -7,6 +7,10 @@ const eventSchema = new mongoose.Schema({
     trim: true,
     maxlength: [100, 'Artist/Band name cannot exceed 100 characters'],
   },
+  image: {
+    url: { type: String },
+    filename: { type: String }
+  },
   time: {
     type: String,
     required: [true, 'Time is required'],
@@ -41,7 +45,7 @@ const eventSchema = new mongoose.Schema({
   },
   color: {
     type: String,
-    required: true,
+    default: "#000000"
   },
   isActive: {
     type: Boolean,

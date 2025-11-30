@@ -21,7 +21,7 @@ const storage = new CloudinaryStorage({
 
     //  If audio file (e.g. mp3, wav)
     if (file.mimetype.startsWith('audio/')) {
-      resource_type = 'video'; // Cloudinary treats audio as video
+      resource_type = 'video';
       folder = 'gulf-music/audio';
       allowed_formats = ['mp3', 'wav', 'ogg'];
     }
@@ -44,7 +44,7 @@ const storage = new CloudinaryStorage({
       folder,
       resource_type,
       allowed_formats,
-      public_id: file.originalname.split('.')[0] + '-' + Date.now(),
+      public_id: `${folder}/${file.originalname.split('.')[0]}-${Date.now()}`,
     };
   },
 });

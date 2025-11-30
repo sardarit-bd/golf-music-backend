@@ -14,7 +14,9 @@ export const sendVerificationEmail = async (userEmail, userType) => {
     const verificationMessages = {
       artist: 'Hello, please email thegulfcoastmusic@gmail.com to request verification as a Gulf Coast Artist.',
       venue: 'Hello, please email thegulfcoastmusic@gmail.com to request verification as a Gulf Coast Venue.',
-      journalist: 'Hello, please email thegulfcoastmusic@gmail.com to request verification as a Gulf Coast Journalist.'
+      journalist: 'Hello, please email thegulfcoastmusic@gmail.com to request verification as a Gulf Coast Journalist.',
+      // NEW: Photographer message
+      photographer: 'Hello, please email thegulfcoastmusic@gmail.com to request verification as a Gulf Coast Photo/Videographer.'
     };
 
     const message =

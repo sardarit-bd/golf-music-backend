@@ -7,6 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { CLIENT_URL, NODE_ENV, PORT } from './config/environment.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { handleStripeWebhook } from './controllers/controller.merch.js';
 import connectDB from './config/database.js';
 import authRoutes from './routes/router.auth.js';
 import artistRoutes from './routes/router.artists.js';
@@ -24,7 +25,7 @@ import sponsorRoutes from './routes/router.sponsor.js';
 import heroVideoRoutes from './routes/router.heroVideo.js';
 import footerRoutes from './routes/router.footer.js';
 import featuredSectionRoutes from './routes/router.featuredSection.js';
-import { handleStripeWebhook } from './controllers/controller.merch.js';
+import photographerRoutes from './routes/routes.photographer.js'; 
 
 
 // Fix for __dirname in ES Modules
@@ -142,6 +143,7 @@ app.use("/api/sponsors", sponsorRoutes);
 app.use('/api/contact', contactRoutes);
 app.use('/api/admin', adminRoutes);
 app.use("/api/footer", footerRoutes);
+app.use("/api/photographers", photographerRoutes);
 
 // ===============================
 // Server Health Check

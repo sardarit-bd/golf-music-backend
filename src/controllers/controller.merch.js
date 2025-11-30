@@ -406,7 +406,7 @@ export const createOrder = asyncHandler(async (req, res, next) => {
   const { merchId, quantity, paymentMethod, shippingInfo } = req.body;
   const userId = req.user._id;
 
-    const allowedRoles = ["fan", "user", "artist", "venue", "journalist", "admin"];
+    const allowedRoles = ["fan", "user", "artist", "venue", "journalist", "photographer", "admin"];
 
   
   if (!allowedRoles.includes(req.user.userType)) {

@@ -3,6 +3,7 @@ import Venue from "../models/model.venue.js";
 import { cloudinary } from "../config/cloudinary.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
+import Event from "../models/models.event.js";
 
 
 
@@ -208,21 +209,59 @@ export const getVenue = asyncHandler(async (req, res, next) => {
 
 export const addShow = asyncHandler(async (req, res, next) => {
   const { artist, date, time } = req.body;
+
+  // Find venue by user
   const venue = await Venue.findOne({ user: req.user.id });
 
   if (!venue) {
     throw new ErrorResponse("Venue not found", 404);
   }
 
-  venue.shows.push({ artist, date, time });
+  // IMAGE HANDLING
+  const imageData = req.file
+    ? { url: req.file.path, filename: req.file.filename }
+    : null;
+
+  // COLORS
+  const venueColors = [
+    "#0000FF", "#008000", "#FF0000", "#800080",
+    "#FFA500", "#FFFF00", "#FFC0CB", "#A52A2A",
+    "#FFFFFF", "#000000"
+  ];
+
+  const colorIndex = (venue.verifiedOrder - 1) % venueColors.length;
+  const assignedColor = venueColors[colorIndex];
+
+  const inputDate = new Date(date);
+  const utcDate = new Date(Date.UTC(
+    inputDate.getFullYear(),
+    inputDate.getMonth(),
+    inputDate.getDate()
+  ));
+
+  // CREATE EVENT
+  const event = await Event.create({
+    artistBandName: artist,
+    time,
+    date: utcDate,
+    image: imageData,
+    venue: venue._id,
+    city: venue.city,
+    color: assignedColor,
+  });
+
+  // SAVE SHOW INSIDE VENUE (optional)
+  venue.shows.push({ artist, date: utcDate, time });
   await venue.save();
 
   res.status(200).json({
     success: true,
-    message: "Show added successfully",
-    data: venue,
+    message: "Show added with image & event created",
+    data: { venue, event },
   });
 });
+
+
 
 
 //  GET Calendar by City
@@ -303,34 +342,54 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
     isActive
   } = req.body;
 
-  const updateData = {
-    ...(venueName && { venueName }),
-    ...(city && { city }),
-    ...(address && { address }),
-    ...(seatingCapacity && { seatingCapacity: parseInt(seatingCapacity) }),
-    ...(biography && { biography }),
-    ...(openHours && { openHours }),
-    ...(openDays && { openDays }),
-    ...(isActive !== undefined && { isActive }),
-    updatedAt: Date.now()
-  };
+  const venueColors = [
+    "#0000FF", "#008000", "#FF0000", "#800080",
+    "#FFA500", "#FFFF00", "#FFC0CB", "#A52A2A",
+    "#FFFFFF", "#000000"
+  ];
 
-  const venue = await Venue.findByIdAndUpdate(
-    id,
-    updateData,
-    { new: true, runValidators: true }
-  ).populate("user", "username email");
-
+  let venue = await Venue.findById(id);
   if (!venue) {
     return next(new ErrorResponse("Venue not found", 404));
   }
 
+  // Auto color assign only when verifying FIRST time
+  if (isActive === true && venue.verifiedOrder === 0) {
+
+    const verifiedCount = await Venue.countDocuments({
+      isActive: true,
+      city: venue.city,
+      verifiedOrder: { $gt: 0 }
+    });
+
+    venue.verifiedOrder = verifiedCount + 1;
+
+    const colorIndex = (venue.verifiedOrder - 1) % venueColors.length;
+    venue.colorCode = venueColors[colorIndex];
+  }
+
+  // Apply regular updates
+  if (venueName) venue.venueName = venueName;
+  if (city) venue.city = city;
+  if (address) venue.address = address;
+  if (seatingCapacity) venue.seatingCapacity = seatingCapacity;
+  if (biography) venue.biography = biography;
+  if (openHours) venue.openHours = openHours;
+  if (openDays) venue.openDays = openDays;
+
+  if (isActive !== undefined) venue.isActive = isActive;
+
+  venue.updatedAt = Date.now();
+  await venue.save();
+
   res.status(200).json({
     success: true,
-    message: "Venue profile updated successfully",
-    data: { venue },
+    message: "Venue verified & updated successfully",
+    data: { venue }
   });
 });
+
+
 
 
 //  DELETE Venue by Admin

@@ -11,15 +11,15 @@ export const updateFeaturedSection = async (req, res) => {
     featured = await FeaturedSection.create({});
   }
 
-  const { subtitle, title, description, streamsCount, hitsCount, listItems } =
+  const { subtitle, title, description, listItems } =
     req.body;
 
   if (subtitle) featured.subtitle = subtitle;
   if (title) featured.title = title;
   if (description) featured.description = description;
 
-  if (streamsCount) featured.streamsCount = streamsCount;
-  if (hitsCount) featured.hitsCount = hitsCount;
+  // if (streamsCount) featured.streamsCount = streamsCount;
+  // if (hitsCount) featured.hitsCount = hitsCount;
 
   if (listItems) {
     featured.listItems = JSON.parse(listItems);

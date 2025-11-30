@@ -1,7 +1,7 @@
 import express from "express";
 import { protect, authorize } from "../middleware/auth.js";
 import { validateVenueProfile } from "../middleware/validation.js";
-import { handleUploadErrors, uploadVenuePhotos } from "../middleware/upload.js";
+import { handleUploadErrors, uploadEventImage, uploadVenuePhotos } from "../middleware/upload.js";
 import {
   addShow,
   createOrUpdateProfile,
@@ -22,7 +22,15 @@ router.get("/profile", protect, authorize("venue"), getMyVenueProfile);
 
 router.get("/calendar", getCalendarByCity);
 
-router.post("/add-show", protect, authorize("venue"), addShow);
+router.post(
+  "/add-show",
+  protect,
+  authorize("venue"),
+  uploadEventImage,
+  handleUploadErrors,
+  addShow
+);
+
 // Create or Update
 router.post(
   "/profile",
