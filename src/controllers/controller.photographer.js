@@ -232,23 +232,23 @@ export const addPhoto = asyncHandler(async (req, res, next) => {
       ).end(file.buffer);
     });
 
-    console.log("📸 Cloudinary upload result:", {
+    console.log("Cloudinary upload result:", {
       url: result.secure_url,
-      public_id: result.public_id, // ✅ এইটা check করুন
+      public_id: result.public_id,
       full_result: result
     });
 
     uploadedPhotos.push({
       url: result.secure_url,
-      public_id: result.public_id, // ✅ MUST include this
+      public_id: result.public_id,
     });
   }
 
   photographer.photos.push(...uploadedPhotos);
   await photographer.save();
 
-  // Save korar por check korun public_id save hoise kina
-  console.log("💾 Saved photographer photos:", photographer.photos);
+
+  console.log("Saved photographer photos:", photographer.photos);
 
   res.status(200).json({
     success: true,
@@ -280,7 +280,7 @@ export const deletePhoto = asyncHandler(async (req, res, next) => {
       
       const result = await cloudinary.uploader.destroy(photoToDelete.public_id, {
         resource_type: "image",
-        invalidate: true // CDN cache clear korbe
+        invalidate: true
       });
       
       console.log("Cloudinary delete result:", result);

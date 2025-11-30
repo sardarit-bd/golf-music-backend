@@ -232,11 +232,18 @@ export const addShow = asyncHandler(async (req, res, next) => {
   const colorIndex = (venue.verifiedOrder - 1) % venueColors.length;
   const assignedColor = venueColors[colorIndex];
 
+  const inputDate = new Date(date);
+  const utcDate = new Date(Date.UTC(
+    inputDate.getFullYear(),
+    inputDate.getMonth(),
+    inputDate.getDate()
+  ));
+
   // CREATE EVENT
   const event = await Event.create({
     artistBandName: artist,
     time,
-    date,
+    date: utcDate,
     image: imageData,
     venue: venue._id,
     city: venue.city,
@@ -244,7 +251,7 @@ export const addShow = asyncHandler(async (req, res, next) => {
   });
 
   // SAVE SHOW INSIDE VENUE (optional)
-  venue.shows.push({ artist, date, time });
+  venue.shows.push({ artist, date: utcDate, time });
   await venue.save();
 
   res.status(200).json({
@@ -253,6 +260,7 @@ export const addShow = asyncHandler(async (req, res, next) => {
     data: { venue, event },
   });
 });
+
 
 
 
