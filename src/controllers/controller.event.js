@@ -5,7 +5,7 @@ import { ErrorResponse } from "../middleware/errorHandler.js";
 
 const venueColors = [
   "#0000FF", // 1 - Blue
-  "#008000", // 2 - Green  
+  "#008000", // 2 - Green
   "#FF0000", // 3 - Red
   "#800080", // 4 - Purple
   "#FFA500", // 5 - Orange
@@ -13,11 +13,10 @@ const venueColors = [
   "#FFC0CB", // 7 - Pink
   "#A52A2A", // 8 - Brown
   "#FFFFFF", // 9 - White
-  "#000000"  // 10 - Black
+  "#000000", // 10 - Black
 ];
 
-
-  //  CREATE EVENT
+//  CREATE EVENT
 
 export const createEvent = async (req, res, next) => {
   try {
@@ -72,8 +71,7 @@ export const createEvent = async (req, res, next) => {
   }
 };
 
-
-  //  GET EVENTS BY CITY
+//  GET EVENTS BY CITY
 
 // GET EVENTS BY CITY - FIXED DEFAULT CITY
 export const getEventsByCity = async (req, res, next) => {
@@ -108,36 +106,36 @@ export const getEventsByCity = async (req, res, next) => {
   }
 };
 
-
 // GET CALENDAR EVENTS BY CITY (SPECIFIC FOR CALENDAR)
 export const getCalendarEvents = async (req, res, next) => {
   try {
     const { city = "mobile" } = req.query;
-    
+
     // Validate city parameter
     const validCities = ["new orleans", "biloxi", "mobile", "pensacola"];
-    const selectedCity = validCities.includes(city.toLowerCase()) 
-      ? city.toLowerCase() 
+    const selectedCity = validCities.includes(city.toLowerCase())
+      ? city.toLowerCase()
       : "mobile";
 
     const events = await Event.find({
       city: selectedCity,
       isActive: true,
-      date: { $gte: new Date().setHours(0, 0, 0, 0) }
+      date: { $gte: new Date().setHours(0, 0, 0, 0) },
     })
       .populate("venue", "venueName colorCode verifiedOrder")
       .sort({ date: 1, time: 1 })
-      .select("artistBandName date time venue color city");
+      .select("artistBandName date time venue color city image");
 
     // Transform data for calendar
-    const calendarEvents = events.map(event => ({
+    const calendarEvents = events.map((event) => ({
       id: event._id,
       title: event.artistBandName,
       date: event.date,
       time: event.time,
-      venue: event.venue.venueName,
-      color: event.venue.colorCode || "#000000",
-      city: event.city
+      venue: event.venue?.venueName || "Unknown Venue",
+      color: event.venue?.colorCode || "#000000",
+      city: event.city,
+      image: event.image,
     }));
 
     res.status(200).json({
@@ -145,16 +143,15 @@ export const getCalendarEvents = async (req, res, next) => {
       data: {
         events: calendarEvents,
         currentCity: selectedCity,
-        availableCities: validCities
-      }
+        availableCities: validCities,
+      },
     });
   } catch (error) {
     next(error);
   }
 };
 
-
-  //  GET SINGLE EVENT BY ID
+//  GET SINGLE EVENT BY ID
 
 export const getEvent = async (req, res, next) => {
   try {
@@ -176,8 +173,7 @@ export const getEvent = async (req, res, next) => {
   }
 };
 
-
-  //  GET EVENTS OF CURRENT VENUE OWNER
+//  GET EVENTS OF CURRENT VENUE OWNER
 
 export const getMyEvents = async (req, res, next) => {
   try {
@@ -199,8 +195,7 @@ export const getMyEvents = async (req, res, next) => {
   }
 };
 
-
-  //  UPDATE EVENT
+//  UPDATE EVENT
 
 export const updateEvent = async (req, res, next) => {
   try {
@@ -241,8 +236,7 @@ export const updateEvent = async (req, res, next) => {
   }
 };
 
-
-  //  DELETE (SOFT DELETE)
+//  DELETE (SOFT DELETE)
 
 export const deleteEvent = async (req, res, next) => {
   try {
@@ -269,8 +263,7 @@ export const deleteEvent = async (req, res, next) => {
   }
 };
 
-
-  //  UPCOMING EVENTS
+//  UPCOMING EVENTS
 
 export const getUpcomingEvents = async (req, res, next) => {
   try {
@@ -298,19 +291,25 @@ export const getUpcomingEvents = async (req, res, next) => {
 ===================================== */
 export const getEventsForAdmin = async (req, res, next) => {
   try {
-    const { page = 1, limit = 10, search = "", status = "all", city = "" } = req.query;
-    
+    const {
+      page = 1,
+      limit = 10,
+      search = "",
+      status = "all",
+      city = "",
+    } = req.query;
+
     let query = {};
-    
+
     // Search filter
     if (search) {
       query.$or = [
         { artistBandName: { $regex: search, $options: "i" } },
         { description: { $regex: search, $options: "i" } },
-        { city: { $regex: search, $options: "i" } }
+        { city: { $regex: search, $options: "i" } },
       ];
     }
-    
+
     // Status filter
     if (status !== "all") {
       query.isActive = status === "active";
@@ -336,22 +335,22 @@ export const getEventsForAdmin = async (req, res, next) => {
         pagination: {
           current: page,
           pages: Math.ceil(total / limit),
-          total
-        }
-      }
+          total,
+        },
+      },
     });
   } catch (error) {
     next(error);
   }
 };
 
-
-  //  UPDATE EVENT BY ADMIN
+//  UPDATE EVENT BY ADMIN
 
 export const updateEventByAdmin = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { artistBandName, time, date, description, city, isActive } = req.body;
+    const { artistBandName, time, date, description, city, isActive } =
+      req.body;
 
     let event = await Event.findById(id);
     if (!event) {
@@ -364,14 +363,13 @@ export const updateEventByAdmin = async (req, res, next) => {
       ...(date && { date }),
       ...(description && { description }),
       ...(city && { city: city.toLowerCase() }),
-      ...(isActive !== undefined && { isActive })
+      ...(isActive !== undefined && { isActive }),
     };
 
-    event = await Event.findByIdAndUpdate(
-      id,
-      updateData,
-      { new: true, runValidators: true }
-    ).populate("venue", "venueName city address seatingCapacity");
+    event = await Event.findByIdAndUpdate(id, updateData, {
+      new: true,
+      runValidators: true,
+    }).populate("venue", "venueName city address seatingCapacity");
 
     res.status(200).json({
       success: true,
@@ -383,8 +381,7 @@ export const updateEventByAdmin = async (req, res, next) => {
   }
 };
 
-
-  //  TOGGLE EVENT STATUS (ACTIVE/INACTIVE)
+//  TOGGLE EVENT STATUS (ACTIVE/INACTIVE)
 
 export const toggleEventStatus = async (req, res, next) => {
   try {
@@ -400,7 +397,9 @@ export const toggleEventStatus = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: `Event ${event.isActive ? 'activated' : 'deactivated'} successfully`,
+      message: `Event ${
+        event.isActive ? "activated" : "deactivated"
+      } successfully`,
       data: { event },
     });
   } catch (error) {
@@ -408,8 +407,7 @@ export const toggleEventStatus = async (req, res, next) => {
   }
 };
 
-
-  //  DELETE EVENT BY ADMIN
+//  DELETE EVENT BY ADMIN
 
 export const deleteEventByAdmin = async (req, res, next) => {
   try {
