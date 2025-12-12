@@ -5,6 +5,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { SUBSCRIPTION_RULES } from "../config/subscriptionRules.js";
 import User from "../models/model.user.js";
 import { cloudinary } from "../config/cloudinary.js";
+import { sanitizeArtistForPlan } from "../utils/sanitizeArtist.js";
 
 
 //  CREATE or UPDATE Artist Profile
@@ -46,38 +47,32 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
       : [req.body.removedAudios];
   }
 
-  // DELETE FROM CLOUDINARY (Correct public_id)
+  if (rules.photos === 0) removedPhotos = [];
+  if (rules.mp3 === 0) removedAudios = [];
+
   for (const filename of removedPhotos) {
     try {
-      // remove file extension
       const publicId = filename.replace(/\.[^/.]+$/, "");
       await cloudinary.uploader.destroy(publicId);
-      console.log("Deleted Photo:", publicId);
     } catch (err) {
-      console.log("Failed to delete photo:", filename, err);
+      console.log("Failed to delete photo:", filename);
     }
   }
 
   for (const filename of removedAudios) {
     try {
-      // remove file extension
       const publicId = filename.replace(/\.[^/.]+$/, "");
       await cloudinary.uploader.destroy(publicId);
-      console.log("Deleted Audio:", publicId);
     } catch (err) {
-      console.log("Failed to delete audio:", filename, err);
+      console.log("Failed to delete audio:", filename);
     }
   }
 
+  const oldPhotos =
+    artist?.photos?.filter((p) => !removedPhotos.includes(p.filename)) || [];
 
-  // FILTER EXISTING FILES TO REMOVE DELETED ONES
-  const oldPhotos = artist?.photos?.filter(
-    (p) => !removedPhotos.includes(p.filename)
-  ) || [];
-
-  const oldAudios = artist?.mp3Files?.filter(
-    (a) => !removedAudios.includes(a.filename)
-  ) || [];
+  const oldAudios =
+    artist?.mp3Files?.filter((a) => !removedAudios.includes(a.filename)) || [];
 
   let newPhotos = [];
   let newAudios = [];
@@ -125,11 +120,10 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
       ? [...oldAudios, ...newAudios].slice(0, rules.mp3)
       : oldAudios;
 
-  // Biography restriction
-  const finalBiography =
-    rules.biography ? biography : artist?.biography || "";
+  const finalBiography = rules.biography
+    ? biography
+    : artist?.biography || "";
 
-  // FINAL PAYLOAD
   const artistData = {
     name,
     city,
@@ -139,11 +133,13 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
     mp3Files: mergedAudios,
     photosLimit: rules.photos,
     mp3Limit: rules.mp3,
-    featuresLocked:
-      !rules.biography && rules.photos === 0 && rules.mp3 === 0,
+    featuresLocked: Object.values({
+      biography: rules.biography,
+      photos: rules.photos > 0,
+      mp3: rules.mp3 > 0,
+    }).every(v => v === false)
   };
 
-  // CREATE OR UPDATE
   artist = artist
     ? await Artist.findByIdAndUpdate(artist._id, artistData, {
       new: true,
@@ -151,10 +147,12 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
     })
     : await Artist.create({ user: user.id, ...artistData });
 
+  const safeArtist = sanitizeArtistForPlan(artist, rules);
+
   return res.status(200).json({
     success: true,
     message: `Artist profile updated successfully (${user.subscriptionPlan.toUpperCase()} Plan)`,
-    data: { artist },
+    data: { artist: safeArtist },
   });
 });
 
@@ -166,14 +164,18 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
 export const getMyArtistProfile = asyncHandler(async (req, res, next) => {
   const artist = await Artist.findOne({ user: req.user.id }).populate(
     "user",
-    "username email"
+    "username email subscriptionPlan"
   );
 
-  if (!artist) {
-    return next(new ErrorResponse("Artist profile not found", 404));
-  }
+  if (!artist) return next(new ErrorResponse("Artist profile not found", 404));
 
-  res.status(200).json({ success: true, data: { artist } });
+  const rules = req.rules || (SUBSCRIPTION_RULES.artist[req.user.subscriptionPlan] || SUBSCRIPTION_RULES.artist.free);
+  const safeArtist = sanitizeArtistForPlan(artist, rules);
+
+  res.status(200).json({
+    success: true,
+    data: { artist: safeArtist },
+  });
 });
 
 
@@ -183,82 +185,89 @@ export const getArtistsByGenre = asyncHandler(async (req, res, next) => {
   const { genre } = req.query;
   let query = { isActive: true };
 
-  if (genre && genre !== "all") {
-    query.genre = genre.toLowerCase();
-  }
+  if (genre && genre !== "all") query.genre = genre.toLowerCase();
 
   const artists = await Artist.find(query)
-    .populate("user", "username email")
+    .populate("user", "username email subscriptionPlan")
     .sort({ name: 1 });
+
+  const safeArtists = artists.map((a) => {
+    const ownerPlan = a.user?.subscriptionPlan || "free";
+    const rules = SUBSCRIPTION_RULES.artist[ownerPlan] || SUBSCRIPTION_RULES.artist.free;
+    return sanitizeArtistForPlan(a, rules);
+  });
 
   res.status(200).json({
     success: true,
-    data: { artists },
+    data: { artists: safeArtists },
   });
 });
+
 
 
 //  GET Single Artist by ID
 
 export const getArtist = asyncHandler(async (req, res, next) => {
   const artist = await Artist.findById(req.params.id).populate(
-    "user",
-    "username email"
+    "user", "username email subscriptionPlan"
   );
 
-  if (!artist) {
-    return next(new ErrorResponse("Artist not found", 404));
-  }
+  if (!artist) return next(new ErrorResponse("Artist not found", 404));
+
+  const ownerPlan = artist.user?.subscriptionPlan || "free";
+  const rules = SUBSCRIPTION_RULES.artist[ownerPlan] || SUBSCRIPTION_RULES.artist.free;
+  const safeArtist = sanitizeArtistForPlan(artist, rules);
 
   res.status(200).json({
     success: true,
-    data: { artist },
+    data: { artist: safeArtist },
   });
 });
+
 
 
 //  UPDATE Artist Profile
 
-export const updateArtistProfile = asyncHandler(async (req, res, next) => {
-  const { name, city, genre, biography } = req.body;
-  const normalizedGenre = genre?.toLowerCase();
+// export const updateArtistProfile = asyncHandler(async (req, res, next) => {
+//   const { name, city, genre, biography } = req.body;
+//   const normalizedGenre = genre?.toLowerCase();
 
-  const updateData = {
-    name,
-    city,
-    genre: normalizedGenre,
-    biography,
-    photos: req.files?.photos
-      ? req.files.photos.map((file) => ({
-        url: `/uploads/${file.filename}`,
-        filename: file.filename,
-      }))
-      : undefined,
-    mp3Files: req.files?.mp3Files
-      ? req.files.mp3Files.map((file) => ({
-        url: `/uploads/${file.filename}`,
-        filename: file.filename,
-        originalName: file.originalname,
-      }))
-      : undefined,
-  };
+//   const updateData = {
+//     name,
+//     city,
+//     genre: normalizedGenre,
+//     biography,
+//     photos: req.files?.photos
+//       ? req.files.photos.map((file) => ({
+//         url: `/uploads/${file.filename}`,
+//         filename: file.filename,
+//       }))
+//       : undefined,
+//     mp3Files: req.files?.mp3Files
+//       ? req.files.mp3Files.map((file) => ({
+//         url: `/uploads/${file.filename}`,
+//         filename: file.filename,
+//         originalName: file.originalname,
+//       }))
+//       : undefined,
+//   };
 
-  const artist = await Artist.findOneAndUpdate(
-    { user: req.user.id },
-    updateData,
-    { new: true, runValidators: true }
-  );
+//   const artist = await Artist.findOneAndUpdate(
+//     { user: req.user.id },
+//     updateData,
+//     { new: true, runValidators: true }
+//   );
 
-  if (!artist) {
-    return next(new ErrorResponse("Artist profile not found", 404));
-  }
+//   if (!artist) {
+//     return next(new ErrorResponse("Artist profile not found", 404));
+//   }
 
-  res.status(200).json({
-    success: true,
-    message: "Artist profile updated successfully",
-    data: { artist },
-  });
-});
+//   res.status(200).json({
+//     success: true,
+//     message: "Artist profile updated successfully",
+//     data: { artist },
+//   });
+// });
 
 
 //  DELETE Artist Profile

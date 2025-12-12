@@ -15,39 +15,35 @@ cloudinary.config({
 const storage = new CloudinaryStorage({
   cloudinary,
   params: async (req, file) => {
-    let folder = 'gulf-music/uploads';
-    let resource_type = 'image';
-    let allowed_formats = ['jpg', 'jpeg', 'png', 'webp'];
+    let folder = "gulf-music/uploads";
+    let resource_type = "image";
+    let allowed_formats = ["jpg", "jpeg", "png", "webp"];
 
-    //  If audio file (e.g. mp3, wav)
-    if (file.mimetype.startsWith('audio/')) {
-      resource_type = 'video';
-      folder = 'gulf-music/audio';
-      allowed_formats = ['mp3', 'wav', 'ogg'];
-    }
-
-    //  If video file (e.g. mp4, mov)
-    else if (file.mimetype.startsWith('video/')) {
-      resource_type = 'video';
-      folder = 'gulf-music/video';
-      allowed_formats = ['mp4', 'mov', 'avi', 'mkv'];
-    }
-
-    //  If image file
-    else if (file.mimetype.startsWith('image/')) {
-      resource_type = 'image';
-      folder = 'gulf-music/images';
-      allowed_formats = ['jpg', 'jpeg', 'png', 'webp'];
+    if (file.mimetype.startsWith("audio/")) {
+      resource_type = "video";
+      folder = "gulf-music/audio";
+      allowed_formats = ["mp3", "wav", "ogg"];
+    } else if (file.mimetype.startsWith("video/")) {
+      resource_type = "video";
+      folder = "gulf-music/video";
+      allowed_formats = ["mp4", "mov", "avi", "mkv"];
+    } else if (file.mimetype.startsWith("image/")) {
+      resource_type = "image";
+      folder = "gulf-music/images";
+      allowed_formats = ["jpg", "jpeg", "png", "webp"];
     }
 
     return {
       folder,
       resource_type,
       allowed_formats,
-      public_id: `${folder}/${file.originalname.split('.')[0]}-${Date.now()}`,
+      public_id: `${file.originalname
+        .replace(/\.[^/.]+$/, "")
+        .replace(/\s+/g, "-")}-${Date.now()}`,
     };
   },
 });
+
 
 export { cloudinary, storage };
 

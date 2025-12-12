@@ -30,7 +30,7 @@ export const SUBSCRIPTION_RULES = {
     },
     pro: {
       photos: 5,
-      mp3: 1,
+      mp3: 5,
       biography: true,
       marketFeePercent: 5,
       trialDays: 30,
