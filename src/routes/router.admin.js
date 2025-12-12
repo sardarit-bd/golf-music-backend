@@ -2,6 +2,7 @@ import express from 'express';
 import { 
     deleteContactMessage, 
     deleteUser, 
+    getAdminProfile, 
     getAllUsers, 
     getContactMessages, 
     getContentForModeration, 
@@ -10,21 +11,31 @@ import {
     markContactAsRead, 
     promoteUserToAdmin, 
     toggleContentStatus, 
+    updateAdminProfile, 
     updateUser, 
     verifyUser 
 } from '../controllers/controller.admin.js';
 import { validateAdminActions } from '../middleware/validation.js';
 import { authorize, protect } from '../middleware/auth.js';
+import { uploadAdminProfilePhoto } from '../middleware/upload.js';
 
 const router = express.Router();
 
-// Protect all admin routes and authorize only admin users
+// Protect all admin routes
 router.use(protect, authorize('admin'));
+
+// ============================
+// Admin Profile Routes (NEW)
+// ============================
+router.get("/profile", getAdminProfile);
+router.put("/profile", uploadAdminProfilePhoto, updateAdminProfile);
 
 // Dashboard
 router.get('/dashboard', getDashboardStats);
 
+// Promote user to admin
 router.post('/users/:id/promote', authorize('super_admin'), promoteUserToAdmin);
+
 // User management
 router.get('/users', getAllUsers);
 router.put('/users/:id/verify', validateAdminActions, verifyUser);

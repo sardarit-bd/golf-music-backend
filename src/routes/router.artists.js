@@ -1,59 +1,87 @@
 import express from 'express';
 import { authorize, protect } from '../middleware/auth.js';
 import { validateArtistProfile } from '../middleware/validation.js';
-import { createOrUpdateProfile, deleteArtistByAdmin, deleteArtistProfile, getArtist, getArtistsByGenre, getMyArtistProfile, updateArtistByAdmin, updateArtistProfile } from '../controllers/controllers.artist.js';
+import { 
+
+  changeArtistPlanByAdmin,
+    createOrUpdateProfile, 
+    deleteArtistByAdmin, 
+    deleteArtistProfile, 
+    getArtist, 
+    getArtistsByGenre, 
+    getArtistsForAdmin, 
+    getMyArtistProfile, 
+    updateArtistByAdmin, 
+    updateArtistProfile 
+} from '../controllers/controllers.artist.js';
 import { handleUploadErrors, uploadArtistFiles } from '../middleware/upload.js';
-
-
 
 const router = express.Router();
 
+// Get current artist profile
 router.get("/profile/me", protect, authorize("artist"), getMyArtistProfile);
 
 // Create or update artist profile
 router.post(
-  '/profile',
-  protect,
-  authorize('artist'),
-  uploadArtistFiles,
-  handleUploadErrors,
-  validateArtistProfile,
-  createOrUpdateProfile
+    '/profile',
+    protect,
+    authorize('artist'),
+    uploadArtistFiles,
+    handleUploadErrors,
+    validateArtistProfile,
+    createOrUpdateProfile
 );
 
 // Get all artists
 router.get('/', getArtistsByGenre);
 
-// Get artist by ID
+// Get specific artist by ID
 router.get('/:id', getArtist);
 
-// Explicit Update
+// Update artist profile
 router.put(
-  '/profile', 
-  protect,
-  authorize('artist'),
-  uploadArtistFiles,
-  handleUploadErrors,
-  validateArtistProfile,
-  updateArtistProfile
+    '/profile', 
+    protect,
+    authorize('artist'),
+    uploadArtistFiles,
+    handleUploadErrors,
+    validateArtistProfile,
+    updateArtistProfile
 );
 
-// Delete
+// Delete artist profile
 router.delete('/profile', protect, authorize('artist'), deleteArtistProfile);
 
-// Admin routes for artist management
-router.put(
-  '/admin/:id',
-  protect,
-  authorize('admin'),
-  updateArtistByAdmin
+// Get all artists for admin with filtering
+router.get(
+    '/admin/artists',
+    protect,
+    authorize('admin'),
+    getArtistsForAdmin 
 );
 
+// Update artist by admin
+router.put(
+    '/admin/:id',
+    protect,
+    authorize('admin'),
+    updateArtistByAdmin
+);
+
+// Change artist plan by admin
+router.put(
+    '/admin/:id/plan',
+    protect,
+    authorize('admin'),
+    changeArtistPlanByAdmin 
+);
+
+// Delete artist by admin
 router.delete(
-  '/admin/:id',
-  protect,
-  authorize('admin'),
-  deleteArtistByAdmin
+    '/admin/:id',
+    protect,
+    authorize('admin'),
+    deleteArtistByAdmin
 );
 
 export default router;

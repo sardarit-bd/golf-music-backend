@@ -1,3 +1,4 @@
+import { cloudinary } from "../config/cloudinary.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import Admin from "../models/model.admin.js";
 import Artist from "../models/model.artist.js";
@@ -396,60 +397,95 @@ export const markContactAsRead = async (req, res, next) => {
 export const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const { username, email, userType, isVerified } = req.body;
+    const {
+      username,
+      email,
+      userType,
+      isVerified,
+      subscriptionPlan,
+      giveTrial 
+    } = req.body;
 
-    // Find user and update
-    const user = await User.findByIdAndUpdate(
-      id,
-      {
-        username,
-        email,
-        userType,
-        isVerified,
-        updatedAt: Date.now()
-      },
-      { new: true, runValidators: true }
-    );
 
+    const user = await User.findById(id);
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found'
+        message: "User not found",
       });
     }
+
+    // Basic fields update
+    if (username) user.username = username;
+    if (email) user.email = email.toLowerCase().trim();
+    if (userType) user.userType = userType;
+    if (typeof isVerified === "boolean") user.isVerified = isVerified;
+
+
+    const proEligibleTypes = ["artist", "venue", "photographer"];
+
+    if (subscriptionPlan) {
+      if (subscriptionPlan === "pro") {
+        if (!proEligibleTypes.includes(user.userType)) {
+          return res.status(400).json({
+            success: false,
+            message: "Only artists, venues, and photographers can be Pro users.",
+          });
+        }
+
+        user.subscriptionPlan = "pro";
+        user.subscriptionStatus = "active";
+
+
+        if (giveTrial) {
+          const now = new Date();
+          const trialEnds = new Date(
+            now.getTime() + 30 * 24 * 60 * 60 * 1000
+          );
+          user.trialEndsAt = trialEnds;
+        }
+      } else if (subscriptionPlan === "free") {
+        user.subscriptionPlan = "free";
+        user.subscriptionStatus = "none";
+        user.trialEndsAt = null;
+        user.stripeSubscriptionId = undefined;
+      }
+    }
+
+    user.updatedAt = Date.now();
+    await user.save();
 
     res.json({
       success: true,
-      message: 'User updated successfully',
-      data: { user }
+      message: "User updated successfully",
+      data: { user },
     });
   } catch (error) {
-    console.error('Update user error:', error);
+    console.error("Update user error:", error);
 
-    // Handle validation errors
-    if (error.name === 'ValidationError') {
-      const errors = Object.values(error.errors).map(err => err.message);
+    if (error.name === "ValidationError") {
+      const errors = Object.values(error.errors).map((err) => err.message);
       return res.status(400).json({
         success: false,
-        message: 'Validation error',
-        errors
+        message: "Validation error",
+        errors,
       });
     }
 
-    // Handle duplicate key error
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
-        message: 'Email or username already exists'
+        message: "Email or username already exists",
       });
     }
 
     res.status(500).json({
       success: false,
-      message: 'Error updating user'
+      message: "Error updating user",
     });
   }
 };
+
 
 // @desc    Delete contact
 export const deleteContactMessage = async (req, res, next) => {
@@ -650,6 +686,83 @@ export const deleteNewsByAdmin = async (req, res, next) => {
       success: true,
       message: "News permanently deleted successfully",
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+export const getAdminProfile = async (req, res, next) => {
+  try {
+    const admin = await Admin.findOne({ user: req.user.id }).populate("user", "email username");
+
+    if (!admin) return next(new ErrorResponse("Admin profile not found", 404));
+
+    res.status(200).json({
+      success: true,
+      data: admin,
+    });
+
+  } catch (error) {
+    next(new ErrorResponse("Failed to load admin profile", 500));
+  }
+};
+
+
+export const updateAdminProfile = async (req, res, next) => {
+  try {
+    const admin = await Admin.findOne({ user: req.user.id });
+    if (!admin) return next(new ErrorResponse("Admin profile not found", 404));
+
+    const { fullName, bio, phone, email } = req.body;
+
+    // --- UPDATE USER TABLE (email, username) ---
+    const user = await User.findById(admin.user);
+
+    if (email) {
+      // Prevent duplicates
+      const emailExists = await User.findOne({ email });
+      if (emailExists && emailExists._id.toString() !== user._id.toString()) {
+        return next(new ErrorResponse("Email already in use", 400));
+      }
+
+      user.email = email.toLowerCase().trim();
+    }
+
+    await user.save();  // update user info
+
+    // --- UPDATE ADMIN PROFILE FIELDS ---
+    admin.fullName = fullName || admin.fullName;
+    admin.bio = bio || admin.bio;
+    admin.phone = phone || admin.phone;
+
+    // Photo upload
+    if (req.file) {
+      if (admin.profilePhoto?.filename) {
+        await cloudinary.uploader.destroy(admin.profilePhoto.filename);
+      }
+
+      const uploadRes = await cloudinary.uploader.upload(req.file.path, {
+        folder: "admin/profile",
+      });
+
+      admin.profilePhoto = {
+        url: uploadRes.secure_url,
+        filename: uploadRes.public_id,
+      };
+    }
+
+    await admin.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Admin profile updated successfully",
+      data: {
+        admin,
+        user: { email: user.email }
+      },
+    });
+
   } catch (error) {
     next(error);
   }

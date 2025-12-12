@@ -4,6 +4,7 @@ import { validateVenueProfile } from "../middleware/validation.js";
 import { handleUploadErrors, uploadEventImage, uploadVenuePhotos } from "../middleware/upload.js";
 import {
   addShow,
+  changeVenuePlanByAdmin,
   createOrUpdateProfile,
   deleteVenueByAdmin,
   deleteVenueProfile,
@@ -15,10 +16,12 @@ import {
   updateVenueByAdmin,
   updateVenueProfile,
 } from "../controllers/controllers.venue.js";
+import { withEntitlements } from "../middleware/withEntitlements.js";
 
 const router = express.Router();
 
-router.get("/profile", protect, authorize("venue"), getMyVenueProfile);
+// Venue Self Routes
+router.get("/profile", protect, authorize("venue"), withEntitlements("venue"), getMyVenueProfile);
 
 router.get("/calendar", getCalendarByCity);
 
@@ -31,11 +34,12 @@ router.post(
   addShow
 );
 
-// Create or Update
+// Create or Update Venue
 router.post(
   "/profile",
   protect,
   authorize("venue"),
+  withEntitlements("venue"),
   uploadVenuePhotos,
   handleUploadErrors,
   validateVenueProfile,
@@ -47,25 +51,33 @@ router.put(
   "/profile",
   protect,
   authorize("venue"),
+  withEntitlements("venue"),
   uploadVenuePhotos,
   handleUploadErrors,
   validateVenueProfile,
   updateVenueProfile
 );
 
-// Delete
-router.delete("/profile", protect, authorize("venue"), deleteVenueProfile);
+// Delete My Venue
+router.delete("/profile", protect, authorize("venue"), withEntitlements("venue"),  deleteVenueProfile);
 
-// Get all venues (filter)
+// PUBLIC GET all venues
 router.get("/", getVenuesByCity);
 
-// Get single venue by ID
-router.get("/:id", getVenue);
-
-
-//NEW: Admin routes for venue management
+// ================================
+// ADMIN ROUTES (MUST COME BEFORE /:id)
+// ================================
 router.get("/admin/venues", protect, authorize("admin"), getVenuesForAdmin);
+
 router.put("/admin/:id", protect, authorize("admin"), updateVenueByAdmin);
+
+router.put("/admin/:id/plan", protect, authorize("admin"), changeVenuePlanByAdmin);
+
 router.delete("/admin/:id", protect, authorize("admin"), deleteVenueByAdmin);
+
+// ================================
+// Dynamic route MUST be last
+// ================================
+router.get("/:id", getVenue);
 
 export default router;

@@ -69,6 +69,21 @@ const userSchema = new mongoose.Schema({
       return this.userType === "venue" || this.userType === "journalist" || this.userType === "photographer";
     },
   },
+    subscriptionPlan: {
+    type: String,
+    enum: ["free", "pro"],
+    default: "free",
+  },
+  
+  subscriptionStatus: {
+    type: String,
+    enum: ["none", "active", "past_due", "canceled"],
+    default: "none",
+  },
+  
+  stripeCustomerId: { type: String },
+  stripeSubscriptionId: { type: String },
+  trialEndsAt: { type: Date }, 
 
   // Password Reset Fields
   resetPasswordToken: { type: String },

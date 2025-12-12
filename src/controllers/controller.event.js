@@ -16,6 +16,13 @@ const venueColors = [
   "#000000", // 10 - Black
 ];
 
+const validCities = ["new orleans", "biloxi", "mobile", "pensacola"];
+
+const buildUtcDateOnly = (dateInput) => {
+  const d = new Date(dateInput);
+  return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+};
+
 //  CREATE EVENT
 
 export const createEvent = async (req, res, next) => {
@@ -29,7 +36,6 @@ export const createEvent = async (req, res, next) => {
 
     const { artistBandName, time, date, description } = req.body;
 
-    // Find venue by user
     const venue = await Venue.findOne({ user: req.user.id });
     if (!venue) {
       return next(
@@ -40,22 +46,48 @@ export const createEvent = async (req, res, next) => {
       );
     }
 
-    // Use venue's colorCode for events
+    const isPro = req.user.subscriptionPlan === "pro";
+
+    // FREE PLAN → LIMIT 1 EVENT PER MONTH
+    if (!isPro) {
+      const now = new Date();
+      const startOfMonth = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
+      const endOfMonth = new Date(
+        Date.UTC(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999)
+      );
+
+      const eventsThisMonth = await Event.countDocuments({
+        venue: venue._id,
+        date: { $gte: startOfMonth, $lte: endOfMonth },
+        isActive: true,
+      });
+
+      if (eventsThisMonth >= 1) {
+        return next(
+          new ErrorResponse(
+            "Free plan allows only 1 show per month. Upgrade to Pro for unlimited shows.",
+            403
+          )
+        );
+      }
+    }
+
     const color = venue.colorCode || "#000000";
 
-    // IMAGE HANDLING
     const imageData = req.file
       ? { url: req.file.path, filename: req.file.filename }
       : null;
 
+    const utcDate = buildUtcDateOnly(date);
+
     const event = await Event.create({
       artistBandName,
       time,
-      date,
+      date: utcDate,
       description,
       image: imageData,
       venue: venue._id,
-      city: venue.city, // Automatically use venue's city
+      city: venue.city,
       color,
     });
 
@@ -71,20 +103,17 @@ export const createEvent = async (req, res, next) => {
   }
 };
 
-//  GET EVENTS BY CITY
 
 // GET EVENTS BY CITY - FIXED DEFAULT CITY
 export const getEventsByCity = async (req, res, next) => {
   try {
-    const { city = "mobile" } = req.query; // Default to Mobile
+    const { city = "mobile" } = req.query;
     let query = { isActive: true };
 
-    // Validate city
-    const validCities = ["new orleans", "biloxi", "mobile", "pensacola"];
     if (city && city !== "all" && validCities.includes(city.toLowerCase())) {
       query.city = city.toLowerCase();
     } else {
-      query.city = "mobile"; // Default to Mobile
+      query.city = "mobile";
     }
 
     const events = await Event.find(query)
@@ -111,8 +140,6 @@ export const getCalendarEvents = async (req, res, next) => {
   try {
     const { city = "mobile" } = req.query;
 
-    // Validate city parameter
-    const validCities = ["new orleans", "biloxi", "mobile", "pensacola"];
     const selectedCity = validCities.includes(city.toLowerCase())
       ? city.toLowerCase()
       : "mobile";
@@ -126,14 +153,13 @@ export const getCalendarEvents = async (req, res, next) => {
       .sort({ date: 1, time: 1 })
       .select("artistBandName date time venue color city image");
 
-    // Transform data for calendar
     const calendarEvents = events.map((event) => ({
       id: event._id,
       title: event.artistBandName,
       date: event.date,
       time: event.time,
       venue: event.venue?.venueName || "Unknown Venue",
-      color: event.venue?.colorCode || "#000000",
+      color: event.venue?.colorCode || event.color || "#000000",
       city: event.city,
       image: event.image,
     }));

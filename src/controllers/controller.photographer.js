@@ -1,17 +1,13 @@
 import mongoose from "mongoose";
 import Photographer from "../models/model.photographer.js";
-// import Photographer from "../models/model.photographer.js";
 import User from "../models/model.user.js"; //
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { cloudinary } from "../config/cloudinary.js";
-// import { cloudinary } from "../config/cloudinary.js";
-// import { asyncHandler } from "../utils/asyncHandler.js";
-// import { ErrorResponse } from "../middleware/errorHandler.js";
 
-/* ========================================================
-   GET PHOTOGRAPHER PROFILE
-======================================================== */
+
+
+
 export const getPhotographerProfile = asyncHandler(async (req, res, next) => {
   // User verify korar jonno use kora jete pare
   const user = await User.findById(req.user.id);
