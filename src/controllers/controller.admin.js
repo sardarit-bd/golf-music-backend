@@ -10,12 +10,7 @@ import Venue from "../models/model.venue.js";
 import Contact from "../models/models.contact.js";
 import Event from "../models/models.event.js";
 
-
-
-
-
 // Promote User To Admin
-
 export const promoteUserToAdmin = async (req, res, next) => {
   try {
     const { id } = req.params; // user ID to promote

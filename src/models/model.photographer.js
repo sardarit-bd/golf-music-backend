@@ -6,21 +6,28 @@ const photographerSchema = new mongoose.Schema({
     ref: "User",
     required: true,
   },
+
+  // BASIC INFO (Free & Pro)
   name: {
     type: String,
     required: true,
     trim: true,
   },
+
   city: {
     type: String,
     enum: ["new orleans", "biloxi", "mobile", "pensacola"],
     required: true,
+    set: (v) => v.toLowerCase().trim(),
   },
+
   biography: {
     type: String,
     maxlength: 2000,
     default: "",
   },
+
+  // PRO FEATURES
   services: [
     {
       service: {
@@ -35,12 +42,15 @@ const photographerSchema = new mongoose.Schema({
       },
     },
   ],
+
   photos: [
     {
       url: String,
       caption: String,
+      public_id: String,
     },
   ],
+
   videos: [
     {
       url: {
@@ -64,18 +74,41 @@ const photographerSchema = new mongoose.Schema({
       },
     },
   ],
+
+  /* ==========================================
+     SUBSCRIPTION-RELATED (Like Artist/Venue)
+  =========================================== */
+  photosLimit: {
+    type: Number,
+    default: 0,
+  },
+
+  videosLimit: {
+    type: Number,
+    default: 0,
+  },
+
+  featuresLocked: {
+    type: Boolean,
+    default: true,
+  },
+  /* ========================================== */
+
   isActive: {
     type: Boolean,
     default: false,
   },
+
   isVerified: {
     type: Boolean,
     default: false,
   },
+
   createdAt: {
     type: Date,
     default: Date.now,
   },
+
   updatedAt: {
     type: Date,
     default: Date.now,

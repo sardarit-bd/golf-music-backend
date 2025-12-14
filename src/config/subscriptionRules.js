@@ -36,4 +36,26 @@ export const SUBSCRIPTION_RULES = {
       trialDays: 30,
     },
   },
+
+  photographer: {
+    free: {
+      biography: false,
+      services: false,
+      photos: 0,
+      videos: 0,
+      marketFeePercent: 10,
+    },
+    pro: {
+      biography: true,
+      services: true,
+      photos: 10,
+      videos: 10,
+      marketFeePercent: 5,
+      trialDays: 30,
+    },
+  },
+
+
 };
+
+
