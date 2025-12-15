@@ -350,87 +350,79 @@ export const changeArtistPlanByAdmin = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
   const { subscriptionPlan, notifyUser } = req.body;
 
-  console.log("Changing artist plan:", { id, subscriptionPlan, notifyUser });
-
-  // Validate subscription plan
   if (!["pro", "free"].includes(subscriptionPlan)) {
-    return next(new ErrorResponse("Invalid subscription plan. Must be 'pro' or 'free'", 400));
+    return next(new ErrorResponse("Invalid subscription plan", 400));
   }
 
-  // Find artist with populated user
   const artist = await Artist.findById(id).populate("user");
+  if (!artist) return next(new ErrorResponse("Artist not found", 404));
+  if (!artist.user) return next(new ErrorResponse("Artist owner not found", 404));
 
-  if (!artist) {
-    return next(new ErrorResponse("Artist not found", 404));
+  const user = artist.user;
+
+  if (user.subscriptionPlan === subscriptionPlan) {
+    return next(
+      new ErrorResponse(`Artist is already on ${subscriptionPlan} plan`, 400)
+    );
   }
 
-  if (!artist.user) {
-    return next(new ErrorResponse("Artist owner not found", 404));
-  }
-
-  // Check if plan is already the same
-  if (artist.user.subscriptionPlan === subscriptionPlan) {
-    return next(new ErrorResponse(`Artist is already on ${subscriptionPlan} plan`, 400));
-  }
-
-  // Update user's subscription plan
-  artist.user.subscriptionPlan = subscriptionPlan;
-  artist.user.subscriptionStatus = subscriptionPlan === "pro" ? "active" : "none";
-  artist.user.updatedAt = Date.now();
-
-  try {
-    await artist.user.save();
-    console.log("User plan updated successfully");
-  } catch (error) {
-    console.error("Error saving user:", error);
-    return next(new ErrorResponse("Failed to update user subscription", 500));
-  }
-
-  // Update artist's limits based on plan
   if (subscriptionPlan === "pro") {
-    // Pro plan features
-    artist.photosLimit = 5;
-    artist.mp3Limit = 5;
-    artist.featuresLocked = false;
+    const trialDays = SUBSCRIPTION_RULES.artist.pro.trialDays || 0;
 
-  } else {
-    // Free plan restrictions
-    artist.photosLimit = 0;
-    artist.mp3Limit = 0;
-    artist.featuresLocked = true;
+    user.subscriptionPlan = "pro";
 
+    if (!user.trialUsed && trialDays > 0) {
+      user.subscriptionStatus = "trialing";
+      user.trialStartedAt = new Date();
+      user.trialEndsAt = new Date(
+        Date.now() + trialDays * 24 * 60 * 60 * 1000
+      );
+      user.trialUsed = true;
+    } else {
+      user.subscriptionStatus = "active";
+      user.trialEndsAt = null;
+    }
   }
+
+  if (subscriptionPlan === "free") {
+    user.subscriptionPlan = "free";
+    user.subscriptionStatus = "none";
+    user.trialEndsAt = null;
+  }
+
+  await user.save();
+
+  const rules =
+    SUBSCRIPTION_RULES.artist[subscriptionPlan] ||
+    SUBSCRIPTION_RULES.artist.free;
+
+  artist.photosLimit = rules.photos;
+  artist.mp3Limit = rules.mp3;
+
+  artist.featuresLocked = !(
+    rules.biography ||
+    rules.photos > 0 ||
+    rules.mp3 > 0
+  );
 
   artist.updatedAt = Date.now();
+  await artist.save();
 
-  try {
-    await artist.save();
-    console.log("Artist updated successfully");
-  } catch (error) {
-    console.error("Error saving artist:", error);
-    return next(new ErrorResponse("Failed to update artist limits", 500));
-  }
-
-  // TODO: Send notification email if notifyUser is true
-  if (notifyUser) {
-    console.log("Notification email should be sent to:", artist.user.email);
-    // Implement email sending logic here
-  }
-
-  // Populate the updated artist with user data
-  const updatedArtist = await Artist.findById(id)
-    .populate("user", "username email subscriptionPlan subscriptionStatus");
+  const updatedArtist = await Artist.findById(id).populate(
+    "user",
+    "username email subscriptionPlan subscriptionStatus trialEndsAt trialUsed"
+  );
 
   res.status(200).json({
     success: true,
-    message: `Artist plan changed to ${subscriptionPlan.toUpperCase()} successfully`,
-    data: {
-      artist: updatedArtist,
-      updatedUser: updatedArtist.user,
-      newPlan: subscriptionPlan
-    }
+    message:
+      subscriptionPlan === "pro"
+        ? "Artist upgraded successfully"
+        : "Artist downgraded successfully",
+    data: { artist: updatedArtist },
   });
 });
+
 
 
 export const getArtistsForAdmin = asyncHandler(async (req, res, next) => {

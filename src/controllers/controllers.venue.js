@@ -649,38 +649,62 @@ export const deleteVenueByAdmin = asyncHandler(async (req, res, next) => {
   });
 });
 
-// CHANGE Plan for Venue by Admin
 export const changeVenuePlanByAdmin = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
-  const { subscriptionPlan } = req.body;
+  const { subscriptionPlan, notifyUser } = req.body;
 
   if (!["pro", "free"].includes(subscriptionPlan)) {
     return next(new ErrorResponse("Invalid subscription plan", 400));
   }
 
   const venue = await Venue.findById(id).populate("user");
+  if (!venue) return next(new ErrorResponse("Venue not found", 404));
+  if (!venue.user) return next(new ErrorResponse("Venue owner not found", 404));
 
-  if (!venue) {
-    return next(new ErrorResponse("Venue not found", 404));
+  const user = venue.user;
+
+  if (user.subscriptionPlan === subscriptionPlan) {
+    return next(
+      new ErrorResponse(`Venue is already on ${subscriptionPlan}`, 400)
+    );
   }
 
-  if (!venue.user) {
-    return next(new ErrorResponse("Venue owner not found", 404));
+  /* =========================
+     PRO PLAN + ONE-TIME TRIAL
+  ========================= */
+  if (subscriptionPlan === "pro") {
+    const trialDays = SUBSCRIPTION_RULES.venue.pro.trialDays || 0;
+
+    user.subscriptionPlan = "pro";
+
+    if (!user.trialUsed && trialDays > 0) {
+      user.subscriptionStatus = "trialing";
+      user.trialStartedAt = new Date();
+      user.trialEndsAt = new Date(
+        Date.now() + trialDays * 24 * 60 * 60 * 1000
+      );
+      user.trialUsed = true;
+    } else {
+      user.subscriptionStatus = "active";
+      user.trialEndsAt = null;
+    }
   }
 
-  // Update user plan
-  venue.user.subscriptionPlan = subscriptionPlan;
-  venue.user.subscriptionStatus =
-    subscriptionPlan === "pro" ? "active" : "none";
-  await venue.user.save();
+  if (subscriptionPlan === "free") {
+    user.subscriptionPlan = "free";
+    user.subscriptionStatus = "none";
+    user.trialEndsAt = null;
+  }
 
-  // Sync venue limits
+  await user.save();
+
   const rules =
     SUBSCRIPTION_RULES.venue[subscriptionPlan] ||
     SUBSCRIPTION_RULES.venue.free;
 
   venue.photosLimit = rules.photos;
   venue.showLimit = Number.isFinite(rules.shows) ? rules.shows : 1;
+
   venue.featuresLocked = !(
     rules.biography ||
     rules.openHours ||
@@ -692,12 +716,17 @@ export const changeVenuePlanByAdmin = asyncHandler(async (req, res, next) => {
   venue.updatedAt = Date.now();
   await venue.save();
 
+  const updatedVenue = await Venue.findById(id).populate(
+    "user",
+    "username email subscriptionPlan subscriptionStatus trialEndsAt trialUsed"
+  );
+
   res.status(200).json({
     success: true,
-    message: `Venue ${subscriptionPlan === "pro"
-      ? "upgraded to Pro"
-      : "downgraded to Free"
-      } successfully`,
-    data: { venue },
+    message:
+      subscriptionPlan === "pro"
+        ? "Venue upgraded successfully"
+        : "Venue downgraded successfully",
+    data: { venue: updatedVenue },
   });
 });

@@ -5,42 +5,38 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { cloudinary } from "../config/cloudinary.js";
 import { SUBSCRIPTION_RULES } from "../config/subscriptionRules.js";
+import { sanitizePhotographerForPlan } from "../utils/sanitizePhotographer.js";
 
 
 
 
 export const getPhotographerProfile = asyncHandler(async (req, res, next) => {
-  // User verify korar jonno use kora jete pare
-  const user = await User.findById(req.user.id);
-  if (!user) {
-    return next(new ErrorResponse("User not found", 404));
-  }
+  const user = req.user;
 
-  const photographer = await Photographer.findOne({ user: req.user.id })
-    .populate("user", "username email userType isVerified");
+  const photographer = await Photographer.findOne({ user: user.id })
+    .populate(
+      "user",
+      "username email userType isVerified subscriptionPlan subscriptionStatus"
+    );
 
   if (!photographer) {
     return next(new ErrorResponse("Photographer profile not found", 404));
   }
 
+  const rules =
+    SUBSCRIPTION_RULES.photographer[user.subscriptionPlan] ||
+    SUBSCRIPTION_RULES.photographer.free;
+
+  const safePhotographer = sanitizePhotographerForPlan(
+    photographer,
+    rules
+  );
+
   res.status(200).json({
     success: true,
     message: "Photographer profile fetched successfully",
     data: {
-      photographer: {
-        id: photographer._id,
-        user: photographer.user,
-        name: photographer.name,
-        city: photographer.city,
-        biography: photographer.biography,
-        services: photographer.services,
-        photos: photographer.photos,
-        videos: photographer.videos,
-        isActive: photographer.isActive,
-        isVerified: photographer.isVerified,
-        createdAt: photographer.createdAt,
-        updatedAt: photographer.updatedAt,
-      },
+      photographer: safePhotographer,
     },
   });
 });
@@ -50,7 +46,6 @@ export const getPhotographerProfile = asyncHandler(async (req, res, next) => {
 ======================================================== */
 export const updatePhotographerProfile = asyncHandler(async (req, res, next) => {
   const user = req.user;
-
   const rules =
     SUBSCRIPTION_RULES.photographer[user.subscriptionPlan] ||
     SUBSCRIPTION_RULES.photographer.free;
@@ -58,19 +53,17 @@ export const updatePhotographerProfile = asyncHandler(async (req, res, next) => 
   const { name, city, biography } = req.body;
 
   let photographer = await Photographer.findOne({ user: user.id });
-  if (!photographer) {
-    return next(new ErrorResponse("Photographer profile not found", 404));
-  }
+  if (!photographer) return next(new ErrorResponse("Photographer profile not found", 404));
 
-  if (name) photographer.name = name;
-  if (city) photographer.city = city.toLowerCase();
+  if (name !== undefined) photographer.name = name;
+  if (city !== undefined) photographer.city = city.toLowerCase();
 
-  // Free cannot change biography
+  // biography only if allowed
   if (rules.biography && biography !== undefined) {
     photographer.biography = biography;
   }
 
-  // Keep subscription fields synced (if you added them to model)
+  // sync meta
   photographer.photosLimit = rules.photos;
   photographer.videosLimit = rules.videos;
   photographer.featuresLocked = !(
@@ -82,17 +75,15 @@ export const updatePhotographerProfile = asyncHandler(async (req, res, next) => 
 
   await photographer.save();
 
-  photographer = await Photographer.findOne({ user: user.id }).populate(
-    "user",
-    "username email userType isVerified subscriptionPlan subscriptionStatus"
-  );
+  const safe = sanitizePhotographerForPlan(photographer, rules);
 
   res.status(200).json({
     success: true,
     message: `Photographer profile updated successfully (${user.subscriptionPlan.toUpperCase()} Plan)`,
-    data: { photographer },
+    data: { photographer: safe },
   });
 });
+
 
 
 /* ========================================================
@@ -454,7 +445,7 @@ export const getPhotographerById = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
 
   const photographer = await Photographer.findById(id)
-    .populate("user", "username email")
+    .populate("user", "username email subscriptionPlan")
     .select("-__v");
 
   if (!photographer) {
@@ -465,59 +456,78 @@ export const getPhotographerById = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Photographer profile is not available", 404));
   }
 
+  const ownerPlan = photographer.user?.subscriptionPlan || "free";
+  const rules =
+    SUBSCRIPTION_RULES.photographer[ownerPlan] ||
+    SUBSCRIPTION_RULES.photographer.free;
+
+  const safePhotographer = sanitizePhotographerForPlan(
+    photographer,
+    rules
+  );
+
   res.status(200).json({
     success: true,
     message: "Photographer profile fetched successfully",
     data: {
-      photographer,
+      photographer: safePhotographer,
     },
   });
 });
+
 
 
 export const changePhotographerPlanByAdmin = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
   const { subscriptionPlan, notifyUser } = req.body;
 
-  // Validate plan
   if (!["pro", "free"].includes(subscriptionPlan)) {
     return next(
       new ErrorResponse("Invalid subscription plan. Must be 'pro' or 'free'", 400)
     );
   }
 
-  // Find photographer + user
   const photographer = await Photographer.findById(id).populate("user");
-  if (!photographer) {
-    return next(new ErrorResponse("Photographer not found", 404));
-  }
-  if (!photographer.user) {
-    return next(new ErrorResponse("Photographer owner not found", 404));
-  }
+  if (!photographer) return next(new ErrorResponse("Photographer not found", 404));
+  if (!photographer.user) return next(new ErrorResponse("Photographer owner not found", 404));
 
-  // Ensure correct userType
-  if (photographer.user.userType !== "photographer") {
+  const user = photographer.user;
+
+  if (user.userType !== "photographer") {
     return next(new ErrorResponse("User is not a photographer", 400));
   }
 
-  // Already same plan check
-  if (photographer.user.subscriptionPlan === subscriptionPlan) {
+  if (user.subscriptionPlan === subscriptionPlan) {
     return next(
       new ErrorResponse(`Photographer is already on ${subscriptionPlan} plan`, 400)
     );
   }
 
-  photographer.user.subscriptionPlan = subscriptionPlan;
-  photographer.user.subscriptionStatus =
-    subscriptionPlan === "pro" ? "active" : "none";
-  photographer.user.updatedAt = Date.now();
+  if (subscriptionPlan === "pro") {
+    const trialDays = SUBSCRIPTION_RULES.photographer.pro.trialDays || 0;
 
-  try {
-    await photographer.user.save();
-  } catch (err) {
-    console.error("Error saving user:", err);
-    return next(new ErrorResponse("Failed to update user subscription", 500));
+    user.subscriptionPlan = "pro";
+
+    if (!user.trialUsed && trialDays > 0) {
+      user.subscriptionStatus = "trialing";
+      user.trialStartedAt = new Date();
+      user.trialEndsAt = new Date(
+        Date.now() + trialDays * 24 * 60 * 60 * 1000
+      );
+      user.trialUsed = true;
+    } else {
+      user.subscriptionStatus = "active";
+      user.trialEndsAt = null;
+    }
   }
+
+  if (subscriptionPlan === "free") {
+    user.subscriptionPlan = "free";
+    user.subscriptionStatus = "none";
+    user.trialEndsAt = null;
+  }
+
+  await user.save();
 
   const rules =
     SUBSCRIPTION_RULES.photographer[subscriptionPlan] ||
@@ -526,225 +536,221 @@ export const changePhotographerPlanByAdmin = asyncHandler(async (req, res, next)
   photographer.photosLimit = rules.photos;
   photographer.videosLimit = rules.videos;
 
-  if (subscriptionPlan === "free") {
-    photographer.photos = [];
-    photographer.videos = [];
-    photographer.services = [];
-    photographer.biography = "";
+  photographer.featuresLocked = !(
+    rules.biography ||
+    rules.services ||
+    rules.photos > 0 ||
+    rules.videos > 0
+  );
 
-    photographer.featuresLocked = true;
-  }
-
-  if (subscriptionPlan === "pro") {
-    photographer.featuresLocked = false;
-    photographer.isActive = true;
-  }
+  if (subscriptionPlan === "pro") photographer.isActive = true;
 
   photographer.updatedAt = Date.now();
-
-  try {
-    await photographer.save();
-  } catch (err) {
-    console.error("Error saving photographer:", err);
-    return next(new ErrorResponse("Failed to update photographer limits", 500));
-  }
-
-  if (notifyUser) {
-    console.log("Notify user:", photographer.user.email);
-  }
+  await photographer.save();
 
   const updatedPhotographer = await Photographer.findById(id).populate(
     "user",
-    "username email subscriptionPlan subscriptionStatus"
+    "username email subscriptionPlan subscriptionStatus trialEndsAt trialUsed"
   );
 
   res.status(200).json({
     success: true,
-    message: `Photographer plan changed to ${subscriptionPlan.toUpperCase()} successfully`,
+    message:
+      subscriptionPlan === "pro"
+        ? "Photographer upgraded successfully"
+        : "Photographer downgraded successfully",
     data: {
       photographer: updatedPhotographer,
-      updatedUser: updatedPhotographer.user,
-      newPlan: subscriptionPlan,
     },
   });
 });
+
+
+
 
 /* ========================================================
    GET ALL PHOTOGRAPHERS FOR ADMIN
 ======================================================== */
 export const getPhotographersForAdmin = asyncHandler(async (req, res, next) => {
-    const { 
-        page = 1, 
-        limit = 10, 
-        status = "all", 
-        plan = "all",
-        search = "" 
-    } = req.query;
+  const {
+    page = 1,
+    limit = 10,
+    status = "all",
+    plan = "all",
+    search = ""
+  } = req.query;
 
-    let query = {};
+  let query = {};
 
-    // Status filter
-    if (status !== "all") {
-        query.isActive = status === "active";
+  if (status !== "all") {
+    query.isActive = status === "active";
+  }
+
+  if (search) {
+    query.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { city: { $regex: search, $options: "i" } },
+      { biography: { $regex: search, $options: "i" } }
+    ];
+  }
+
+  const photographers = await Photographer.find(query)
+    .populate({
+      path: "user",
+      select: "username email subscriptionPlan subscriptionStatus isVerified"
+    })
+    .sort({ createdAt: -1 })
+    .limit(Number(limit))
+    .skip((page - 1) * limit);
+
+  const total = await Photographer.countDocuments(query);
+
+  /* ======================
+     FIXED STATS LOGIC
+  ====================== */
+  const proUsers = await User.find({ subscriptionPlan: "pro" }).select("_id");
+  const freeUsers = await User.find({ subscriptionPlan: "free" }).select("_id");
+
+  const proCount = await Photographer.countDocuments({
+    user: { $in: proUsers.map(u => u._id) }
+  });
+
+  const freeCount = await Photographer.countDocuments({
+    user: { $in: freeUsers.map(u => u._id) }
+  });
+
+  const activeCount = await Photographer.countDocuments({ isActive: true });
+  const inactiveCount = await Photographer.countDocuments({ isActive: false });
+
+  /* ======================
+     PLAN FILTER (POST POPULATE)
+  ====================== */
+  let filteredPhotographers = photographers;
+  if (plan !== "all") {
+    filteredPhotographers = photographers.filter(
+      p => p.user?.subscriptionPlan === plan
+    );
+  }
+
+  res.status(200).json({
+    success: true,
+    data: {
+      photographers: filteredPhotographers,
+      pagination: {
+        current: Number(page),
+        pages: Math.ceil(total / limit),
+        total
+      },
+      stats: {
+        total,
+        pro: proCount,
+        free: freeCount,
+        active: activeCount,
+        inactive: inactiveCount
+      }
     }
-
-    // Search filter
-    if (search) {
-        query.$or = [
-            { name: { $regex: search, $options: "i" } },
-            { city: { $regex: search, $options: "i" } },
-            { biography: { $regex: search, $options: "i" } }
-        ];
-    }
-
-    const photographers = await Photographer.find(query)
-        .populate({
-            path: "user",
-            select: "username email subscriptionPlan subscriptionStatus isVerified"
-        })
-        .sort({ createdAt: -1 })
-        .limit(limit * 1)
-        .skip((page - 1) * limit);
-
-    const total = await Photographer.countDocuments(query);
-    
-    // Get stats
-    const totalPhotographers = await Photographer.countDocuments();
-    const proCount = await Photographer.countDocuments({
-        "user.subscriptionPlan": "pro"
-    });
-    const freeCount = await Photographer.countDocuments({
-        "user.subscriptionPlan": "free"
-    });
-    const activeCount = await Photographer.countDocuments({ isActive: true });
-    const inactiveCount = await Photographer.countDocuments({ isActive: false });
-
-    // Plan filter after population
-    let filteredPhotographers = photographers;
-    if (plan !== "all") {
-        filteredPhotographers = photographers.filter(p => 
-            p.user?.subscriptionPlan === plan
-        );
-    }
-
-    res.status(200).json({
-        success: true,
-        data: {
-            photographers: filteredPhotographers,
-            pagination: {
-                current: parseInt(page),
-                pages: Math.ceil(total / limit),
-                total: filteredPhotographers.length
-            },
-            stats: {
-                total: totalPhotographers,
-                pro: proCount,
-                free: freeCount,
-                active: activeCount,
-                inactive: inactiveCount
-            }
-        }
-    });
+  });
 });
+
 
 /* ========================================================
    GET SINGLE PHOTOGRAPHER FOR ADMIN
 ======================================================== */
 export const getPhotographerForAdmin = asyncHandler(async (req, res, next) => {
-    const { id } = req.params;
+  const { id } = req.params;
 
-    const photographer = await Photographer.findById(id)
-        .populate({
-            path: "user",
-            select: "username email subscriptionPlan subscriptionStatus isVerified createdAt"
-        })
-        .populate({
-            path: "services"
-        });
-
-    if (!photographer) {
-        return next(new ErrorResponse("Photographer not found", 404));
-    }
-
-    res.status(200).json({
-        success: true,
-        data: { photographer }
+  const photographer = await Photographer.findById(id)
+    .populate({
+      path: "user",
+      select: "username email subscriptionPlan subscriptionStatus isVerified createdAt"
+    })
+    .populate({
+      path: "services"
     });
+
+  if (!photographer) {
+    return next(new ErrorResponse("Photographer not found", 404));
+  }
+
+  res.status(200).json({
+    success: true,
+    data: { photographer }
+  });
 });
 
 /* ========================================================
    TOGGLE PHOTOGRAPHER STATUS
 ======================================================== */
 export const togglePhotographerStatusAdmin = asyncHandler(async (req, res, next) => {
-    const { id } = req.params;
-    const { isActive } = req.body;
+  const { id } = req.params;
+  const { isActive } = req.body;
 
-    const photographer = await Photographer.findByIdAndUpdate(
-        id,
-        { isActive },
-        { new: true, runValidators: true }
-    ).populate("user");
+  const photographer = await Photographer.findByIdAndUpdate(
+    id,
+    { isActive },
+    { new: true, runValidators: true }
+  ).populate("user");
 
-    if (!photographer) {
-        return next(new ErrorResponse("Photographer not found", 404));
-    }
+  if (!photographer) {
+    return next(new ErrorResponse("Photographer not found", 404));
+  }
 
-    // Also update user status if needed
-    if (photographer.user) {
-        photographer.user.isActive = isActive;
-        await photographer.user.save();
-    }
+  // Also update user status if needed
+  if (photographer.user) {
+    photographer.user.isActive = isActive;
+    await photographer.user.save();
+  }
 
-    res.status(200).json({
-        success: true,
-        message: `Photographer ${isActive ? 'activated' : 'deactivated'} successfully`,
-        data: { photographer }
-    });
+  res.status(200).json({
+    success: true,
+    message: `Photographer ${isActive ? 'activated' : 'deactivated'} successfully`,
+    data: { photographer }
+  });
 });
 
 /* ========================================================
    DELETE PHOTOGRAPHER (ADMIN)
 ======================================================== */
 export const deletePhotographerAdmin = asyncHandler(async (req, res, next) => {
-    const { id } = req.params;
+  const { id } = req.params;
 
-    const photographer = await Photographer.findById(id);
-    if (!photographer) {
-        return next(new ErrorResponse("Photographer not found", 404));
+  const photographer = await Photographer.findById(id);
+  if (!photographer) {
+    return next(new ErrorResponse("Photographer not found", 404));
+  }
+
+  // Delete associated user
+  await User.findByIdAndDelete(photographer.user);
+
+  // Delete photos from Cloudinary
+  if (photographer.photos?.length) {
+    for (const photo of photographer.photos) {
+      try {
+        await cloudinary.uploader.destroy(photo.public_id);
+      } catch (err) {
+        console.warn(`Failed to delete photo: ${photo.public_id}`);
+      }
     }
+  }
 
-    // Delete associated user
-    await User.findByIdAndDelete(photographer.user);
-
-    // Delete photos from Cloudinary
-    if (photographer.photos?.length) {
-        for (const photo of photographer.photos) {
-            try {
-                await cloudinary.uploader.destroy(photo.public_id);
-            } catch (err) {
-                console.warn(`Failed to delete photo: ${photo.public_id}`);
-            }
-        }
+  // Delete videos from Cloudinary
+  if (photographer.videos?.length) {
+    for (const video of photographer.videos) {
+      try {
+        await cloudinary.uploader.destroy(video.public_id, {
+          resource_type: "video"
+        });
+      } catch (err) {
+        console.warn(`Failed to delete video: ${video.public_id}`);
+      }
     }
+  }
 
-    // Delete videos from Cloudinary
-    if (photographer.videos?.length) {
-        for (const video of photographer.videos) {
-            try {
-                await cloudinary.uploader.destroy(video.public_id, {
-                    resource_type: "video"
-                });
-            } catch (err) {
-                console.warn(`Failed to delete video: ${video.public_id}`);
-            }
-        }
-    }
+  // Delete photographer
+  await Photographer.findByIdAndDelete(id);
 
-    // Delete photographer
-    await Photographer.findByIdAndDelete(id);
-
-    res.status(200).json({
-        success: true,
-        message: "Photographer deleted successfully"
-    });
+  res.status(200).json({
+    success: true,
+    message: "Photographer deleted successfully"
+  });
 });

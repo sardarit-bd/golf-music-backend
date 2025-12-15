@@ -25,7 +25,8 @@ import sponsorRoutes from './routes/router.sponsor.js';
 import heroVideoRoutes from './routes/router.heroVideo.js';
 import footerRoutes from './routes/router.footer.js';
 import featuredSectionRoutes from './routes/router.featuredSection.js';
-import photographerRoutes from './routes/routes.photographer.js'; 
+import photographerRoutes from './routes/routes.photographer.js';
+import marketRoutes from './routes/route.market.js' 
 
 
 // Fix for __dirname in ES Modules
@@ -144,6 +145,7 @@ app.use('/api/contact', contactRoutes);
 app.use('/api/admin', adminRoutes);
 app.use("/api/footer", footerRoutes);
 app.use("/api/photographers", photographerRoutes);
+app.use("/api/market", marketRoutes);
 
 // ===============================
 // Server Health Check
