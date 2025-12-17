@@ -1,18 +1,12 @@
 import express from "express";
 
 import {
-  // SELLER
   getMyMarketItem,
   createMyMarketItem,
   updateMyMarketItem,
   deleteMyMarketItem,
-
-
-  // PUBLIC
   getAllMarketItemsPublic,
   getMarketItemByIdPublic,
-
-  // ADMIN
   adminMarketStats,
   adminListMarketItems,
   adminGetMarketItem,
@@ -28,14 +22,8 @@ import uploadMarketMedia from "../middleware/uploadMarketMedia.js";
 
 const router = express.Router();
 
-/* ======================
-   PUBLIC
-====================== */
 router.get("/", getAllMarketItemsPublic);
 
-/* ======================
-   SELLER (AUTH REQUIRED)
-====================== */
 router.get("/me", protect, getMyMarketItem);
 
 router.post(
@@ -60,7 +48,6 @@ router.delete(
   deletePhotoFromMyItem
 );
 
-// DELETE ENTIRE ITEM
 router.delete("/me", protect, deleteMyMarketItem);
 
 /* ======================
@@ -108,10 +95,6 @@ router.delete(
   adminDeleteBySeller
 );
 
-/* ======================
-   PUBLIC (SINGLE ITEM)
-   ⚠️ MUST BE LAST
-====================== */
 router.get("/:id", getMarketItemByIdPublic);
 
 export default router;
