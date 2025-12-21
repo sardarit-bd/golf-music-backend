@@ -240,6 +240,7 @@ export const getContentForModeration = async (req, res, next) => {
         break;
       case "venues":
         model = Venue;
+        // UPDATE: Include colorCode in venue population
         populateField = { path: "user", select: "username email" };
         break;
       case "news":
@@ -248,7 +249,8 @@ export const getContentForModeration = async (req, res, next) => {
         break;
       case "events":
         model = Event;
-        populateField = { path: "venue", select: "venueName city" };
+        // UPDATE: Include venue colorCode in event population
+        populateField = { path: "venue", select: "venueName city colorCode" };
         break;
       case "photographers":
         model = Photographer;
@@ -275,12 +277,23 @@ export const getContentForModeration = async (req, res, next) => {
     }
 
     const total = await model.countDocuments(query);
-    const content = await model
-      .find(query)
-      .populate(populateField)
-      .sort({ createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+    
+    // UPDATE: For venues, also select colorCode
+    let content;
+    if (type === "venues") {
+      content = await model.find(query)
+        .populate(populateField)
+        .select("+colorCode")
+        .sort({ createdAt: -1 })
+        .limit(limit * 1)
+        .skip((page - 1) * limit);
+    } else {
+      content = await model.find(query)
+        .populate(populateField)
+        .sort({ createdAt: -1 })
+        .limit(limit * 1)
+        .skip((page - 1) * limit);
+    }
 
     res.status(200).json({
       success: true,
@@ -760,5 +773,288 @@ export const updateAdminProfile = async (req, res, next) => {
 
   } catch (error) {
     next(error);
+  }
+};
+
+
+// NEW: Get color management for admin
+export const getColorManagement = async (req, res, next) => {
+  try {
+    const { city } = req.query;
+    
+    const validCities = ["new orleans", "biloxi", "mobile", "pensacola"];
+    const selectedCity = city && validCities.includes(city.toLowerCase()) 
+      ? city.toLowerCase() 
+      : "mobile";
+
+    // Color palettes (same as in venue controller)
+    const CITY_COLOR_PALETTES = {
+      'new orleans': [
+        "#FF6B6B", "#4ECDC4", "#FFD166", "#06D6A0", "#118AB2",
+        "#073B4C", "#EF476F", "#7209B7", "#FF9E00", "#8338EC",
+        "#3A86FF", "#FB5607", "#FF006E", "#8338EC", "#3A86FF",
+        "#06D6A0", "#FFD166", "#EF476F", "#118AB2", "#7209B7"
+      ],
+      'biloxi': [
+        "#E74C3C", "#3498DB", "#2ECC71", "#F39C12", "#9B59B6",
+        "#1ABC9C", "#D35400", "#C0392B", "#27AE60", "#8E44AD",
+        "#16A085", "#E67E22", "#2980B9", "#D68910", "#A569BD",
+        "#138D75", "#CA6F1E", "#7D3C98", "#117A65", "#B9770E"
+      ],
+      'mobile': [
+        "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF",
+        "#00FFFF", "#FFA500", "#800080", "#008000", "#800000",
+        "#008080", "#000080", "#808000", "#808080", "#C0C0C0",
+        "#FFD700", "#DA70D6", "#32CD32", "#FF4500", "#9400D3"
+      ],
+      'pensacola': [
+        "#1F77B4", "#FF7F0E", "#2CA02C", "#D62728", "#9467BD",
+        "#8C564B", "#E377C2", "#7F7F7F", "#BCBD22", "#17BECF",
+        "#393B79", "#637939", "#8C6D31", "#843C39", "#7B4173",
+        "#5254A3", "#8CA252", "#BD9E39", "#AD494A", "#A55194"
+      ]
+    };
+
+    // Get venues with colors for the selected city
+    const venues = await Venue.find({ 
+      city: selectedCity,
+      colorCode: { $exists: true, $ne: null }
+    })
+    .select("venueName colorCode verifiedOrder isActive")
+    .sort({ venueName: 1 });
+
+    // Get used colors
+    const usedColors = venues.map(v => v.colorCode);
+    const cityColors = CITY_COLOR_PALETTES[selectedCity] || CITY_COLOR_PALETTES['mobile'];
+    
+    const availableColors = cityColors.filter(
+      color => !usedColors.includes(color)
+    );
+
+    // Group venues by color for display
+    const colorAssignments = cityColors.map(color => {
+      const venue = venues.find(v => v.colorCode === color);
+      return {
+        color,
+        hex: color,
+        venue: venue ? {
+          id: venue._id,
+          name: venue.venueName,
+          verified: venue.verifiedOrder > 0,
+          active: venue.isActive
+        } : null,
+        isAvailable: !venue
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        city: selectedCity,
+        cityName: selectedCity.split(' ').map(word => 
+          word.charAt(0).toUpperCase() + word.slice(1)
+        ).join(' '),
+        totalColors: cityColors.length,
+        usedColors: usedColors.length,
+        availableColors: availableColors.length,
+        colorAssignments,
+        availableColorsList: availableColors,
+        venuesWithoutColor: await Venue.find({
+          city: selectedCity,
+          $or: [
+            { colorCode: { $exists: false } },
+            { colorCode: null }
+          ]
+        }).select("venueName _id").lean()
+      }
+    });
+  } catch (error) {
+    next(new ErrorResponse("Failed to fetch color management data", 500));
+  }
+};
+
+// NEW: Assign/Change venue color by admin
+export const assignVenueColor = async (req, res, next) => {
+  try {
+    const { venueId } = req.params;
+    const { colorCode } = req.body;
+
+    if (!colorCode) {
+      return next(new ErrorResponse("Color code is required", 400));
+    }
+
+    const venue = await Venue.findById(venueId);
+    if (!venue) {
+      return next(new ErrorResponse("Venue not found", 404));
+    }
+
+    // Color palettes
+    const CITY_COLOR_PALETTES = {
+      'new orleans': [
+        "#FF6B6B", "#4ECDC4", "#FFD166", "#06D6A0", "#118AB2",
+        "#073B4C", "#EF476F", "#7209B7", "#FF9E00", "#8338EC",
+        "#3A86FF", "#FB5607", "#FF006E", "#8338EC", "#3A86FF",
+        "#06D6A0", "#FFD166", "#EF476F", "#118AB2", "#7209B7"
+      ],
+      'biloxi': [
+        "#E74C3C", "#3498DB", "#2ECC71", "#F39C12", "#9B59B6",
+        "#1ABC9C", "#D35400", "#C0392B", "#27AE60", "#8E44AD",
+        "#16A085", "#E67E22", "#2980B9", "#D68910", "#A569BD",
+        "#138D75", "#CA6F1E", "#7D3C98", "#117A65", "#B9770E"
+      ],
+      'mobile': [
+        "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF",
+        "#00FFFF", "#FFA500", "#800080", "#008000", "#800000",
+        "#008080", "#000080", "#808000", "#808080", "#C0C0C0",
+        "#FFD700", "#DA70D6", "#32CD32", "#FF4500", "#9400D3"
+      ],
+      'pensacola': [
+        "#1F77B4", "#FF7F0E", "#2CA02C", "#D62728", "#9467BD",
+        "#8C564B", "#E377C2", "#7F7F7F", "#BCBD22", "#17BECF",
+        "#393B79", "#637939", "#8C6D31", "#843C39", "#7B4173",
+        "#5254A3", "#8CA252", "#BD9E39", "#AD494A", "#A55194"
+      ]
+    };
+
+    const cityColors = CITY_COLOR_PALETTES[venue.city] || CITY_COLOR_PALETTES['mobile'];
+    
+    // Validate color
+    if (!cityColors.includes(colorCode)) {
+      return next(
+        new ErrorResponse(
+          `Invalid color for ${venue.city}. Must be one of the 20 city colors.`,
+          400
+        )
+      );
+    }
+
+    // Check if color is already taken by another venue in same city
+    const existingVenue = await Venue.findOne({
+      city: venue.city,
+      colorCode: colorCode,
+      _id: { $ne: venueId }
+    });
+
+    if (existingVenue) {
+      return next(
+        new ErrorResponse(
+          `Color ${colorCode} is already assigned to ${existingVenue.venueName} in ${venue.city}`,
+          400
+        )
+      );
+    }
+
+    // Update venue color
+    const oldColor = venue.colorCode;
+    venue.colorCode = colorCode;
+    venue.updatedAt = Date.now();
+    await venue.save();
+
+    // Update all events for this venue with new color
+    await Event.updateMany(
+      { venue: venueId },
+      { $set: { color: colorCode } }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: `Color updated for ${venue.venueName} from ${oldColor || 'none'} to ${colorCode}`,
+      data: {
+        venue: {
+          id: venue._id,
+          name: venue.venueName,
+          city: venue.city,
+          colorCode: venue.colorCode
+        }
+      }
+    });
+  } catch (error) {
+    next(new ErrorResponse("Failed to assign venue color", 500));
+  }
+};
+
+// NEW: Reassign all colors for a city
+export const reassignCityColors = async (req, res, next) => {
+  try {
+    const { city } = req.params;
+
+    const validCities = ["new orleans", "biloxi", "mobile", "pensacola"];
+    if (!validCities.includes(city.toLowerCase())) {
+      return next(new ErrorResponse("Invalid city", 400));
+    }
+
+    // Color palettes
+    const CITY_COLOR_PALETTES = {
+      'new orleans': [
+        "#FF6B6B", "#4ECDC4", "#FFD166", "#06D6A0", "#118AB2",
+        "#073B4C", "#EF476F", "#7209B7", "#FF9E00", "#8338EC",
+        "#3A86FF", "#FB5607", "#FF006E", "#8338EC", "#3A86FF",
+        "#06D6A0", "#FFD166", "#EF476F", "#118AB2", "#7209B7"
+      ],
+      'biloxi': [
+        "#E74C3C", "#3498DB", "#2ECC71", "#F39C12", "#9B59B6",
+        "#1ABC9C", "#D35400", "#C0392B", "#27AE60", "#8E44AD",
+        "#16A085", "#E67E22", "#2980B9", "#D68910", "#A569BD",
+        "#138D75", "#CA6F1E", "#7D3C98", "#117A65", "#B9770E"
+      ],
+      'mobile': [
+        "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF",
+        "#00FFFF", "#FFA500", "#800080", "#008000", "#800000",
+        "#008080", "#000080", "#808000", "#808080", "#C0C0C0",
+        "#FFD700", "#DA70D6", "#32CD32", "#FF4500", "#9400D3"
+      ],
+      'pensacola': [
+        "#1F77B4", "#FF7F0E", "#2CA02C", "#D62728", "#9467BD",
+        "#8C564B", "#E377C2", "#7F7F7F", "#BCBD22", "#17BECF",
+        "#393B79", "#637939", "#8C6D31", "#843C39", "#7B4173",
+        "#5254A3", "#8CA252", "#BD9E39", "#AD494A", "#A55194"
+      ]
+    };
+
+    const cityColors = CITY_COLOR_PALETTES[city.toLowerCase()] || CITY_COLOR_PALETTES['mobile'];
+    
+    // Get all active venues in the city, sorted by creation date
+    const venues = await Venue.find({ 
+      city: city.toLowerCase(),
+      isActive: true 
+    }).sort({ createdAt: 1 });
+
+    let updateResults = [];
+    
+    // Reassign colors in order
+    for (let i = 0; i < venues.length; i++) {
+      const venue = venues[i];
+      const colorIndex = i % cityColors.length;
+      const newColor = cityColors[colorIndex];
+      
+      const oldColor = venue.colorCode;
+      venue.colorCode = newColor;
+      await venue.save();
+
+      // Update events for this venue
+      await Event.updateMany(
+        { venue: venue._id },
+        { $set: { color: newColor } }
+      );
+
+      updateResults.push({
+        venueId: venue._id,
+        venueName: venue.venueName,
+        oldColor,
+        newColor
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Colors reassigned for ${venues.length} venues in ${city}`,
+      data: {
+        city,
+        totalVenues: venues.length,
+        updates: updateResults
+      }
+    });
+  } catch (error) {
+    next(new ErrorResponse("Failed to reassign city colors", 500));
   }
 };
