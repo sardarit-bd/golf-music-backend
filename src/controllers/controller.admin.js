@@ -69,7 +69,8 @@ export const getDashboardStats = async (req, res, next) => {
       Contact.countDocuments({ isRead: false }),
       User.find().sort({ createdAt: -1 }).limit(5),
       Event.find({ isActive: true })
-        .populate("venue", "venueName city")
+        // UPDATE: Include venue colorCode in population
+        .populate("venue", "venueName city colorCode")
         .sort({ date: 1 })
         .limit(5),
     ]);
@@ -77,6 +78,137 @@ export const getDashboardStats = async (req, res, next) => {
     const userStats = await User.aggregate([
       { $group: { _id: "$userType", count: { $sum: 1 } } },
     ]);
+
+    // NEW: Get color statistics
+    const colorStats = await Venue.aggregate([
+      { $match: { colorCode: { $exists: true, $ne: null } } },
+      { $group: { 
+        _id: "$city", 
+        total: { $sum: 1 },
+        colorsUsed: { $addToSet: "$colorCode" }
+      }},
+      { $project: {
+        city: "$_id",
+        total: 1,
+        colorsUsedCount: { $size: "$colorsUsed" },
+        _id: 0
+      }}
+    ]);
+
+    const subscriptionStats = await User.aggregate([
+      { $match: { subscriptionPlan: { $in: ["pro", "free"] } } },
+      { $group: { 
+        _id: "$subscriptionPlan", 
+        count: { $sum: 1 },
+        users: { $push: { username: "$username", email: "$email" } }
+      }},
+      { $project: {
+        plan: "$_id",
+        count: 1,
+        sampleUsers: { $slice: ["$users", 3] },
+        _id: 0
+      }}
+    ]);
+    const cityStats = await Venue.aggregate([
+      { $group: { 
+        _id: "$city", 
+        count: { $sum: 1 },
+        verified: { $sum: { $cond: [{ $gt: ["$verifiedOrder", 0] }, 1, 0] } },
+        withColor: { $sum: { $cond: [{ $ne: ["$colorCode", null] }, 1, 0] } }
+      }},
+      { $project: {
+        city: { 
+          $toUpper: { $substrCP: ["$_id", 0, 1] } 
+        },
+        count: 1,
+        verified: 1,
+        withColor: 1,
+        percentageVerified: { $multiply: [{ $divide: ["$verified", "$count"] }, 100] },
+        percentageWithColor: { $multiply: [{ $divide: ["$withColor", "$count"] }, 100] },
+        _id: 0
+      }},
+      { $sort: { count: -1 } }
+    ]);
+    const recentVenues = await Venue.find({})
+      .populate("user", "username email subscriptionPlan")
+      .select("venueName city colorCode verifiedOrder createdAt")
+      .sort({ createdAt: -1 })
+      .limit(5);
+    const upcomingEventsByCity = await Event.aggregate([
+      { 
+        $match: { 
+          isActive: true,
+          date: { $gte: new Date() }
+        }
+      },
+      { 
+        $group: { 
+          _id: "$city",
+          count: { $sum: 1 },
+          events: { 
+            $push: {
+              id: "$_id",
+              title: "$artistBandName",
+              date: "$date",
+              venue: "$venue"
+            }
+          }
+        }
+      },
+      { 
+        $lookup: {
+          from: "venues",
+          localField: "events.venue",
+          foreignField: "_id",
+          as: "venueDetails"
+        }
+      },
+      {
+        $project: {
+          city: { 
+            $toUpper: { $substrCP: ["$_id", 0, 1] } 
+          },
+          count: 1,
+          upcomingEvents: { $slice: ["$events", 3] },
+          venueColors: {
+            $map: {
+              input: "$venueDetails",
+              as: "venue",
+              in: "$$venue.colorCode"
+            }
+          },
+          _id: 0
+        }
+      },
+      { $sort: { count: -1 } }
+    ]);
+    const formatCityName = (city) => {
+      if (!city) return "Unknown";
+      return city
+        .split(" ")
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ");
+    };
+    const formattedRecentEvents = recentEvents.map(event => ({
+      id: event._id,
+      title: event.artistBandName,
+      date: event.date,
+      time: event.time,
+      venue: event.venue?.venueName || "Unknown Venue",
+      city: formatCityName(event.city),
+      color: event.venue?.colorCode || "#000000",
+      hasColor: !!event.venue?.colorCode
+    }));
+    const formattedRecentVenues = recentVenues.map(venue => ({
+      id: venue._id,
+      name: venue.venueName,
+      city: formatCityName(venue.city),
+      colorCode: venue.colorCode || "Not assigned",
+      verified: venue.verifiedOrder > 0,
+      subscriptionPlan: venue.user?.subscriptionPlan || "free",
+      createdAt: venue.createdAt,
+      hasColor: !!venue.colorCode
+    }));
 
     res.status(200).json({
       success: true,
@@ -88,13 +220,76 @@ export const getDashboardStats = async (req, res, next) => {
           totalNews,
           totalEvents,
           pendingContacts,
+          venuesWithColor: await Venue.countDocuments({ colorCode: { $exists: true, $ne: null } }),
+          venuesWithoutColor: await Venue.countDocuments({ 
+            $or: [
+              { colorCode: { $exists: false } },
+              { colorCode: null }
+            ]
+          }),
+          colorCoverage: {
+            withColor: await Venue.countDocuments({ colorCode: { $exists: true, $ne: null } }),
+            withoutColor: await Venue.countDocuments({ 
+              $or: [
+                { colorCode: { $exists: false } },
+                { colorCode: null }
+              ]
+            }),
+            total: await Venue.countDocuments(),
+            percentage: Math.round(
+              (await Venue.countDocuments({ colorCode: { $exists: true, $ne: null } }) / 
+              await Venue.countDocuments()) * 100
+            ) || 0
+          }
         },
         userStats,
+        subscriptionStats,
+        colorStats: {
+          totalVenuesWithColor: await Venue.countDocuments({ colorCode: { $exists: true, $ne: null } }),
+          totalVenuesWithoutColor: await Venue.countDocuments({ 
+            $or: [
+              { colorCode: { $exists: false } },
+              { colorCode: null }
+            ]
+          }),
+          byCity: colorStats,
+          coverageByCity: cityStats.map(city => ({
+            city: formatCityName(city.city),
+            totalVenues: city.count,
+            verified: city.verified,
+            withColor: city.withColor,
+            colorCoveragePercentage: city.percentageWithColor.toFixed(1),
+            verificationPercentage: city.percentageVerified.toFixed(1)
+          }))
+        },
+        cityDistribution: cityStats.map(city => ({
+          city: formatCityName(city.city),
+          total: city.count,
+          verified: city.verified,
+          withColor: city.withColor,
+          colorCoverage: Math.round(city.percentageWithColor) || 0
+        })),
         recentUsers,
-        upcomingEvents: recentEvents,
+        recentEvents: formattedRecentEvents,
+        recentVenues: formattedRecentVenues,
+        upcomingEventsByCity,
+        quickStats: {
+          totalActiveEvents: await Event.countDocuments({ 
+            isActive: true, 
+            date: { $gte: new Date() } 
+          }),
+          totalVerifiedVenues: await Venue.countDocuments({ verifiedOrder: { $gt: 0 } }),
+          totalProUsers: await User.countDocuments({ subscriptionPlan: "pro" }),
+          totalUnreadContacts: pendingContacts,
+          colorAssignmentRate: Math.round(
+            (await Venue.countDocuments({ colorCode: { $exists: true, $ne: null } }) / 
+            await Venue.countDocuments()) * 100
+          ) || 0
+        }
       },
     });
   } catch (error) {
+    console.error("Dashboard stats error:", error);
     next(new ErrorResponse("Failed to fetch dashboard stats", 500));
   }
 };

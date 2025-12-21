@@ -2,12 +2,14 @@ import express from 'express';
 import { authorize, protect } from '../middleware/auth.js';
 import { validateEvent, validateEventUpdate } from '../middleware/validation.js';
 import { 
+  bulkUpdateEventColors,
   createEvent, 
   deleteEvent, 
   deleteEventByAdmin, 
   getCalendarEvents, 
   getEvent, 
   getEventsByCity, 
+  getEventsByVenueId, 
   getEventsForAdmin, 
   getMyEvents, 
   getUpcomingEvents, 
@@ -47,5 +49,9 @@ router.get('/admin/events', protect, authorize('admin'), getEventsForAdmin);
 router.put('/admin/:id', protect, authorize('admin'), updateEventByAdmin);
 router.put('/admin/:id/toggle', protect, authorize('admin'), toggleEventStatus);
 router.delete('/admin/:id', protect, authorize('admin'), deleteEventByAdmin);
+
+router.get('/admin/venue/:venueId/events', protect, authorize('admin'), getEventsByVenueId);
+
+router.put('/admin/venue/:venueId/bulk-update-colors', protect, authorize('admin'), bulkUpdateEventColors);
 
 export default router;
