@@ -8,6 +8,8 @@ import Event from "../models/models.event.js";
 import { generateToken } from "../utils/helpers.js";
 import { SUBSCRIPTION_RULES } from "../config/subscriptionRules.js";
 import { sanitizeVenueForPlan } from "../utils/sanitize.js";
+import { ColorAssigner } from "../utils/colorAssigner.js";
+import { formatCityName } from "../utils/formatCityName.js";
 
 // Helper function for extracting uploaded photos
 const extractUploadedPhotos = (req) => {
@@ -528,6 +530,8 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
     phone,
     website,
     isActive,
+    colorCode,
+    verifiedOrder,
   } = req.body;
 
   let venue = await Venue.findById(id).populate("user");
@@ -536,46 +540,224 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Venue not found", 404));
   }
 
-  // Auto color assign only when verifying FIRST time
-  if (isActive === true && venue.verifiedOrder === 0) {
-    const verifiedCount = await Venue.countDocuments({
-      isActive: true,
-      city: venue.city,
-      verifiedOrder: { $gt: 0 },
-    });
+  // Track changes for audit log
+  const changes = [];
+  const oldValues = {
+    city: venue.city,
+    isActive: venue.isActive,
+    verifiedOrder: venue.verifiedOrder,
+    colorCode: venue.colorCode,
+  };
 
-    venue.verifiedOrder = verifiedCount + 1;
-
-    const colorIndex = (venue.verifiedOrder - 1) % venueColors.length;
-    venue.colorCode = venueColors[colorIndex];
+  // CITY CHANGE HANDLING - If city changes, assign new color from that city's palette
+  if (city && city.toLowerCase() !== venue.city) {
+    const newCity = city.toLowerCase();
+    changes.push(`City changed from ${formatCityName(venue.city)} to ${formatCityName(newCity)}`);
+    
+    try {
+      // Get next available color for the new city
+      const newColor = await ColorAssigner.getNextAvailableColor(newCity);
+      venue.colorCode = newColor;
+      changes.push(`Color reassigned to ${newColor} for new city`);
+    } catch (error) {
+      console.error("Error assigning new city color:", error);
+      // If color assignment fails, use default color
+      venue.colorCode = "#000000";
+    }
+    
+    venue.city = newCity;
   }
 
-  // Update fields
+  // VERIFICATION HANDLING - Auto color assign when verifying FIRST time
+  if (isActive === true && venue.verifiedOrder === 0) {
+    try {
+      const assignedColor = await ColorAssigner.getNextAvailableColor(venue.city);
+      
+      // Get verified count for this city
+      const verifiedCount = await Venue.countDocuments({
+        city: venue.city,
+        verifiedOrder: { $gt: 0 },
+      });
+
+      venue.verifiedOrder = verifiedCount + 1;
+      venue.colorCode = assignedColor;
+      
+      changes.push(`Venue verified (order: ${venue.verifiedOrder}) with color: ${assignedColor}`);
+    } catch (error) {
+      console.error("Error in verification color assignment:", error);
+      // Fallback to sequential color
+      const verifiedCount = await Venue.countDocuments({
+        city: venue.city,
+        verifiedOrder: { $gt: 0 },
+      });
+      venue.verifiedOrder = verifiedCount + 1;
+      
+      // Use ColorAssigner's city colors array
+      const cityColors = ColorAssigner.CITY_COLORS[venue.city] || ColorAssigner.CITY_COLORS.mobile;
+      const colorIndex = (venue.verifiedOrder - 1) % cityColors.length;
+      venue.colorCode = cityColors[colorIndex];
+    }
+  }
+
+  // MANUAL COLOR ASSIGNMENT - Admin wants to set specific color
+  if (colorCode && colorCode !== venue.colorCode) {
+    try {
+      // Validate color for this city
+      const isValidColor = await ColorAssigner.validateColorForCity(colorCode, venue.city);
+      
+      if (!isValidColor) {
+        return next(
+          new ErrorResponse(
+            `Color ${colorCode} is not valid for ${formatCityName(venue.city)}. ` +
+            `Must be one of the 20 city-specific colors.`,
+            400
+          )
+        );
+      }
+
+      // Check if color is already taken by another venue in same city
+      const isAvailable = await ColorAssigner.isColorAvailable(colorCode, venue.city, id);
+      
+      if (!isAvailable) {
+        const existingVenue = await Venue.findOne({
+          city: venue.city,
+          colorCode: colorCode,
+          _id: { $ne: id }
+        });
+        
+        return next(
+          new ErrorResponse(
+            `Color ${colorCode} is already assigned to "${existingVenue.venueName}" ` +
+            `in ${formatCityName(venue.city)}. Choose a different color.`,
+            400
+          )
+        );
+      }
+
+      const oldColor = venue.colorCode;
+      venue.colorCode = colorCode;
+      changes.push(`Color manually changed from ${oldColor || 'none'} to ${colorCode}`);
+    } catch (error) {
+      console.error("Error in manual color assignment:", error);
+      return next(
+        new ErrorResponse(
+          `Failed to assign color ${colorCode}: ${error.message}`,
+          500
+        )
+      );
+    }
+  }
+
+  // MANUAL VERIFICATION ORDER - Admin wants to set specific order
+  if (verifiedOrder !== undefined && verifiedOrder !== venue.verifiedOrder) {
+    if (verifiedOrder < 0) {
+      return next(new ErrorResponse("Verification order must be 0 or positive", 400));
+    }
+    
+    // If setting verifiedOrder > 0, ensure venue is active
+    if (verifiedOrder > 0) {
+      venue.isActive = true;
+      
+      // If no color assigned yet, get one
+      if (!venue.colorCode) {
+        try {
+          const assignedColor = await ColorAssigner.getNextAvailableColor(venue.city);
+          venue.colorCode = assignedColor;
+          changes.push(`Auto-assigned color ${assignedColor} for verification`);
+        } catch (error) {
+          console.error("Error assigning color for manual verification:", error);
+        }
+      }
+    }
+    
+    venue.verifiedOrder = parseInt(verifiedOrder);
+    changes.push(`Verification order set to ${venue.verifiedOrder}`);
+  }
+
+  // DEACTIVATION HANDLING - Reset verification if deactivating
+  if (isActive !== undefined) {
+    venue.isActive = isActive;
+    
+    if (!isActive && venue.verifiedOrder > 0) {
+      changes.push("Venue deactivated (verification data preserved)");
+    }
+    
+    if (isActive) {
+      changes.push("Venue activated");
+    }
+  }
+
+  // BASIC FIELD UPDATES
   if (venueName) venue.venueName = venueName;
-  if (city) venue.city = city.toLowerCase();
   if (address) venue.address = address;
-  if (seatingCapacity !== undefined) venue.seatingCapacity = seatingCapacity;
+  if (seatingCapacity !== undefined) venue.seatingCapacity = parseInt(seatingCapacity) || 0;
   if (biography !== undefined) venue.biography = biography;
   if (openHours !== undefined) venue.openHours = openHours;
   if (openDays !== undefined) venue.openDays = openDays;
   if (phone !== undefined) venue.phone = phone;
   if (website !== undefined) venue.website = website;
-  if (isActive !== undefined) {
-    venue.isActive = isActive;
-    // If deactivating, also reset verification?
-    if (!isActive && venue.verifiedOrder > 0) {
-      venue.verifiedOrder = 0;
-      venue.colorCode = undefined;
+
+  venue.updatedAt = Date.now();
+
+  // SAVE VENUE
+  await venue.save();
+
+  // UPDATE ALL EVENTS WITH NEW COLOR (if color changed)
+  if (oldValues.colorCode !== venue.colorCode && venue.colorCode) {
+    try {
+      const updateResult = await Event.updateMany(
+        { venue: venue._id },
+        { $set: { color: venue.colorCode } }
+      );
+      
+      changes.push(`Updated ${updateResult.modifiedCount} events with new color`);
+      
+      console.log(`Color sync: Updated ${updateResult.modifiedCount} events for ${venue.venueName}`);
+    } catch (error) {
+      console.error("Error updating event colors:", error);
+      changes.push("Warning: Failed to update event colors");
     }
   }
 
-  venue.updatedAt = Date.now();
-  await venue.save();
+  // REFRESH POPULATED DATA
+  const updatedVenue = await Venue.findById(id)
+    .populate("user", "username email subscriptionPlan")
+    .lean();
+
+  // ADDITIONAL DATA FOR RESPONSE
+  const colorInfo = {
+    oldColor: oldValues.colorCode,
+    newColor: venue.colorCode,
+    city: venue.city,
+    verificationOrder: venue.verifiedOrder,
+    isColorChanged: oldValues.colorCode !== venue.colorCode,
+  };
+
+  // Get upcoming events count
+  const upcomingEventsCount = await Event.countDocuments({
+    venue: venue._id,
+    isActive: true,
+    date: { $gte: new Date() }
+  });
 
   res.status(200).json({
     success: true,
     message: "Venue updated successfully",
-    data: { venue },
+    data: {
+      venue: updatedVenue,
+      colorInfo,
+      changes,
+      summary: {
+        totalChanges: changes.length,
+        upcomingEvents: upcomingEventsCount,
+        verificationStatus: venue.verifiedOrder > 0 ? 
+          `Verified (#${venue.verifiedOrder} in ${formatCityName(venue.city)})` : 
+          "Not verified",
+        colorStatus: venue.colorCode ? 
+          `Assigned: ${venue.colorCode}` : 
+          "No color assigned",
+      }
+    },
   });
 });
 
@@ -584,37 +766,38 @@ export const verifyVenueByAdmin = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
 
   const venue = await Venue.findById(id).populate("user");
-
   if (!venue) {
     return next(new ErrorResponse("Venue not found", 404));
   }
 
-  // Check if already verified
   if (venue.verifiedOrder > 0) {
     return next(new ErrorResponse("Venue is already verified", 400));
   }
 
-  // Get count of verified venues in the same city
-  const verifiedCount = await Venue.countDocuments({
-    city: venue.city,
-    verifiedOrder: { $gt: 0 },
-  });
+  try {
+    const assignedColor = await ColorAssigner.getNextAvailableColor(venue.city);
+    
+    // Update venue
+    const verifiedCount = await Venue.countDocuments({
+      city: venue.city,
+      verifiedOrder: { $gt: 0 },
+    });
 
-  // Assign verification order and color
-  venue.verifiedOrder = verifiedCount + 1;
-  venue.isActive = true;
-
-  const colorIndex = (venue.verifiedOrder - 1) % venueColors.length;
-  venue.colorCode = venueColors[colorIndex];
-
-  venue.updatedAt = Date.now();
-  await venue.save();
-
-  res.status(200).json({
-    success: true,
-    message: "Venue verified successfully",
-    data: { venue },
-  });
+    venue.verifiedOrder = verifiedCount + 1;
+    venue.isActive = true;
+    venue.colorCode = assignedColor;
+    
+    await venue.save();
+    
+    res.status(200).json({
+      success: true,
+      message: "Venue verified successfully",
+      data: { venue },
+    });
+    
+  } catch (error) {
+    next(new ErrorResponse("Failed to assign color: " + error.message, 500));
+  }
 });
 
 // DELETE Venue by Admin

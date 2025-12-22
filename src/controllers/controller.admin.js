@@ -9,6 +9,7 @@ import User from "../models/model.user.js";
 import Venue from "../models/model.venue.js";
 import Contact from "../models/models.contact.js";
 import Event from "../models/models.event.js";
+import { ColorAssigner } from "../utils/colorAssigner.js";
 
 // Promote User To Admin
 export const promoteUserToAdmin = async (req, res, next) => {
@@ -1083,38 +1084,12 @@ export const assignVenueColor = async (req, res, next) => {
       return next(new ErrorResponse("Venue not found", 404));
     }
 
-    // Color palettes
-    const CITY_COLOR_PALETTES = {
-      'new orleans': [
-        "#FF6B6B", "#4ECDC4", "#FFD166", "#06D6A0", "#118AB2",
-        "#073B4C", "#EF476F", "#7209B7", "#FF9E00", "#8338EC",
-        "#3A86FF", "#FB5607", "#FF006E", "#8338EC", "#3A86FF",
-        "#06D6A0", "#FFD166", "#EF476F", "#118AB2", "#7209B7"
-      ],
-      'biloxi': [
-        "#E74C3C", "#3498DB", "#2ECC71", "#F39C12", "#9B59B6",
-        "#1ABC9C", "#D35400", "#C0392B", "#27AE60", "#8E44AD",
-        "#16A085", "#E67E22", "#2980B9", "#D68910", "#A569BD",
-        "#138D75", "#CA6F1E", "#7D3C98", "#117A65", "#B9770E"
-      ],
-      'mobile': [
-        "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF",
-        "#00FFFF", "#FFA500", "#800080", "#008000", "#800000",
-        "#008080", "#000080", "#808000", "#808080", "#C0C0C0",
-        "#FFD700", "#DA70D6", "#32CD32", "#FF4500", "#9400D3"
-      ],
-      'pensacola': [
-        "#1F77B4", "#FF7F0E", "#2CA02C", "#D62728", "#9467BD",
-        "#8C564B", "#E377C2", "#7F7F7F", "#BCBD22", "#17BECF",
-        "#393B79", "#637939", "#8C6D31", "#843C39", "#7B4173",
-        "#5254A3", "#8CA252", "#BD9E39", "#AD494A", "#A55194"
-      ]
-    };
-
-    const cityColors = CITY_COLOR_PALETTES[venue.city] || CITY_COLOR_PALETTES['mobile'];
+    const isValidColor = await ColorAssigner.validateColorForCity(
+      colorCode, 
+      venue.city
+    );
     
-    // Validate color
-    if (!cityColors.includes(colorCode)) {
+    if (!isValidColor) {
       return next(
         new ErrorResponse(
           `Invalid color for ${venue.city}. Must be one of the 20 city colors.`,
@@ -1122,18 +1097,22 @@ export const assignVenueColor = async (req, res, next) => {
         )
       );
     }
-
-    // Check if color is already taken by another venue in same city
-    const existingVenue = await Venue.findOne({
-      city: venue.city,
-      colorCode: colorCode,
-      _id: { $ne: venueId }
-    });
-
-    if (existingVenue) {
+    const isAvailable = await ColorAssigner.isColorAvailable(
+      colorCode, 
+      venue.city, 
+      venueId
+    );
+    
+    if (!isAvailable) {
+      const existingVenue = await Venue.findOne({
+        city: venue.city,
+        colorCode: colorCode,
+        _id: { $ne: venueId }
+      });
+      
       return next(
         new ErrorResponse(
-          `Color ${colorCode} is already assigned to ${existingVenue.venueName} in ${venue.city}`,
+          `Color ${colorCode} is already assigned to ${existingVenue.venueName}`,
           400
         )
       );
@@ -1142,10 +1121,9 @@ export const assignVenueColor = async (req, res, next) => {
     // Update venue color
     const oldColor = venue.colorCode;
     venue.colorCode = colorCode;
-    venue.updatedAt = Date.now();
     await venue.save();
 
-    // Update all events for this venue with new color
+    // Update events
     await Event.updateMany(
       { venue: venueId },
       { $set: { color: colorCode } }
@@ -1153,16 +1131,10 @@ export const assignVenueColor = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: `Color updated for ${venue.venueName} from ${oldColor || 'none'} to ${colorCode}`,
-      data: {
-        venue: {
-          id: venue._id,
-          name: venue.venueName,
-          city: venue.city,
-          colorCode: venue.colorCode
-        }
-      }
+      message: `Color updated from ${oldColor || 'none'} to ${colorCode}`,
+      data: { venue }
     });
+    
   } catch (error) {
     next(new ErrorResponse("Failed to assign venue color", 500));
   }

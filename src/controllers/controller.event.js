@@ -125,7 +125,6 @@ export const getCalendarEvents = async (req, res, next) => {
     const selectedCity = validCities.includes(city.toLowerCase())
       ? city.toLowerCase()
       : "mobile";
-
     const events = await Event.find({
       city: selectedCity,
       isActive: true,
@@ -141,9 +140,13 @@ export const getCalendarEvents = async (req, res, next) => {
       date: event.date,
       time: event.time,
       venue: event.venue?.venueName || "Unknown Venue",
+      // COLOR CORRECTLY ASSIGNED
       color: event.venue?.colorCode || "#000000",
       city: event.city,
       image: event.image,
+      // Venue info for filtering
+      venueId: event.venue?._id,
+      verified: event.venue?.verifiedOrder > 0,
     }));
 
     res.status(200).json({
@@ -230,7 +233,7 @@ export const updateEvent = async (req, res, next) => {
       { artistBandName, time, date, description },
       { new: true, runValidators: true }
     )
-    .populate("venue", "venueName city address colorCode");
+      .populate("venue", "venueName city address colorCode");
 
     res.status(200).json({
       success: true,
@@ -324,27 +327,48 @@ export const getEventsForAdmin = async (req, res, next) => {
       query.city = city.toLowerCase();
     }
 
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
     const events = await Event.find(query)
-      .populate("venue", "venueName city address seatingCapacity colorCode")
+      .populate({
+        path: "venue",
+        select: "venueName city address seatingCapacity colorCode",
+        options: { 
+          lean: true,
+          allowNull: true 
+        }
+      })
       .sort({ date: -1, time: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .limit(parseInt(limit))
+      .skip(skip);
 
     const total = await Event.countDocuments(query);
+
+    const processedEvents = events.map(event => ({
+      ...event.toObject(),
+      venue: event.venue || {
+        venueName: "N/A",
+        city: "Unknown",
+        address: "",
+        seatingCapacity: 0,
+        colorCode: "#cccccc"
+      }
+    }));
 
     res.status(200).json({
       success: true,
       data: {
-        events,
+        events: processedEvents,
         pagination: {
-          current: page,
+          current: parseInt(page),
           pages: Math.ceil(total / limit),
           total,
         },
       },
     });
   } catch (error) {
-    next(error);
+    console.error("Error in getEventsForAdmin:", error);
+    next(new ErrorResponse("Failed to fetch events: " + error.message, 500));
   }
 };
 
@@ -373,7 +397,7 @@ export const updateEventByAdmin = async (req, res, next) => {
       new: true,
       runValidators: true,
     })
-    .populate("venue", "venueName city address seatingCapacity colorCode");
+      .populate("venue", "venueName city address seatingCapacity colorCode");
 
     res.status(200).json({
       success: true,
@@ -400,9 +424,8 @@ export const toggleEventStatus = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: `Event ${
-        event.isActive ? "activated" : "deactivated"
-      } successfully`,
+      message: `Event ${event.isActive ? "activated" : "deactivated"
+        } successfully`,
       data: { event },
     });
   } catch (error) {
@@ -488,26 +511,23 @@ export const bulkUpdateEventColors = async (req, res, next) => {
       return next(new ErrorResponse("Venue not found", 404));
     }
 
-    // Update all events for this venue with the new color
-    const result = await Event.updateMany(
-      { venue: venueId },
-      { $set: { color: colorCode } }
-    );
-
-    // Update venue color
+    // ✅ ONLY update venue color
     venue.colorCode = colorCode;
     await venue.save();
 
+    // Count events for info only
+    const totalEvents = await Event.countDocuments({ venue: venueId });
+
     res.status(200).json({
       success: true,
-      message: `Updated ${result.modifiedCount} events with color ${colorCode}`,
+      message: `Venue color updated successfully`,
       data: {
         venue: {
           id: venue._id,
           name: venue.venueName,
-          colorCode: venue.colorCode
+          colorCode: venue.colorCode,
         },
-        eventsUpdated: result.modifiedCount
+        affectedEvents: totalEvents
       }
     });
   } catch (error) {

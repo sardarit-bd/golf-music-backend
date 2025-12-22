@@ -1,4 +1,5 @@
-// utils/colorAssigner.js
+import mongoose from "mongoose";
+
 const CITY_COLORS = {
   'new orleans': [
     "#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7",
