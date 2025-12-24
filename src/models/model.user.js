@@ -73,6 +73,7 @@ const userSchema = new mongoose.Schema({
       "none",
       "trialing",
       "active",
+      "incomplete",
       "past_due",
       "canceled",
       "expired",

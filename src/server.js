@@ -7,7 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { CLIENT_URL, NODE_ENV, PORT } from './config/environment.js';
 import { errorHandler } from './middleware/errorHandler.js';
-import { handleStripeWebhook } from './controllers/controller.merch.js';
+import { handleStripeWebhook } from './controllers/controller.stripeWebhook.js';
 import connectDB from './config/database.js';
 import authRoutes from './routes/router.auth.js';
 import artistRoutes from './routes/router.artists.js';
@@ -26,10 +26,10 @@ import heroVideoRoutes from './routes/router.heroVideo.js';
 import footerRoutes from './routes/router.footer.js';
 import featuredSectionRoutes from './routes/router.featuredSection.js';
 import photographerRoutes from './routes/routes.photographer.js';
-import marketRoutes from './routes/route.market.js' 
+import marketRoutes from './routes/route.market.js';
+import subscriptionRoutes from './routes/route.subscription.js';
 
 
-// Fix for __dirname in ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -46,8 +46,6 @@ app.use(helmet());
 // ===============================
 // STRIPE WEBHOOK (MUST BE FIRST)
 // ===============================
-// NO bodyParser here
-// NO express.json BEFORE THIS!
 
 app.post(
   "/api/stripe/webhook",
@@ -146,6 +144,7 @@ app.use('/api/admin', adminRoutes);
 app.use("/api/footer", footerRoutes);
 app.use("/api/photographers", photographerRoutes);
 app.use("/api/market", marketRoutes);
+app.use("/api/subscription", subscriptionRoutes);
 
 // ===============================
 // Server Health Check

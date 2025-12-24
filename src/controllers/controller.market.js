@@ -68,19 +68,13 @@ export const getMarketItemByIdPublic = asyncHandler(async (req, res, next) => {
   res.status(200).json({ success: true, data: item });
 });
 
-/**
- * SELLER: Get my item
- * GET /api/market/me
- */
+
 export const getMyMarketItem = asyncHandler(async (req, res) => {
   const item = await MarketItem.findOne({ seller: req.user._id });
   res.status(200).json({ success: true, data: item || null });
 });
 
-/**
- * SELLER: Create item (verified only + 1 item)
- * POST /api/market/me
- */
+
 export const createMyMarketItem = asyncHandler(async (req, res, next) => {
   const user = req.user;
   const userType = normalizeSellerType(user.userType);
@@ -97,7 +91,11 @@ export const createMyMarketItem = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("title, description, price are required", 400));
   }
 
-  // Extract Cloudinary URLs
+  const validLocations = ["New Orleans", "Biloxi", "Mobile", "Pensacola", ""];
+  if (location && !validLocations.includes(location)) {
+    return next(new ErrorResponse("Invalid location", 400));
+  }
+
   const photos = req.files?.photos?.map((file) => file.path) || [];
 
   const video = req.files?.video?.length > 0 ? req.files.video[0].path : "";
@@ -117,24 +115,24 @@ export const createMyMarketItem = asyncHandler(async (req, res, next) => {
   res.status(201).json({ success: true, data: item });
 });
 
-/**
- * SELLER: Update my item - FIXED VERSION
- * PUT /api/market/me
- */
+
 export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
   const item = await MarketItem.findOne({ seller: req.user._id });
   if (!item) return next(new ErrorResponse("Market item not found", 404));
 
   const { title, description, price, location, status } = req.body;
 
-  // Update basic fields
+  const validLocations = ["New Orleans", "Biloxi", "Mobile", "Pensacola", ""];
+  if (location !== undefined && !validLocations.includes(location)) {
+    return next(new ErrorResponse("Invalid location", 400));
+  }
+
   if (title !== undefined) item.title = title;
   if (description !== undefined) item.description = description;
   if (price !== undefined) item.price = price;
   if (location !== undefined) item.location = location;
   if (status !== undefined) item.status = status;
 
-  // Handle new photo uploads - ADD to existing photos (not replace)
   if (req.files?.photos?.length) {
     const newPhotos = req.files.photos.map((file) => file.path);
     const totalPhotos = (item.photos?.length || 0) + newPhotos.length;
@@ -167,10 +165,7 @@ export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
   res.status(200).json({ success: true, data: item });
 });
 
-/**
- * SELLER: Delete specific photo from my item
- * DELETE /api/market/me/photos/:index
- */
+
 export const deletePhotoFromMyItem = asyncHandler(async (req, res, next) => {
   const item = await MarketItem.findOne({ seller: req.user._id });
   if (!item) return next(new ErrorResponse("Market item not found", 404));
@@ -202,10 +197,7 @@ export const deletePhotoFromMyItem = asyncHandler(async (req, res, next) => {
   });
 });
 
-/**
- * SELLER: Delete my item
- * DELETE /api/market/me
- */
+
 export const deleteMyMarketItem = asyncHandler(async (req, res, next) => {
   const item = await MarketItem.findOne({ seller: req.user._id });
   if (!item) return next(new ErrorResponse("Market item not found", 404));
@@ -242,11 +234,6 @@ export const deleteMyMarketItem = asyncHandler(async (req, res, next) => {
    ADMIN CONTROLLERS
 ========================= */
 
-/**
- * ADMIN: List all items (filters + pagination + search)
- * GET /api/market/admin/items
- * query: status, sellerType, search, location, page, limit
- */
 export const adminListMarketItems = asyncHandler(async (req, res) => {
   const { status, sellerType, search, location } = req.query;
   const page = Math.max(parseInt(req.query.page || "1", 10), 1);
@@ -280,10 +267,7 @@ export const adminListMarketItems = asyncHandler(async (req, res) => {
   });
 });
 
-/**
- * ADMIN: Get stats for dashboard cards
- * GET /api/market/admin/stats
- */
+
 export const adminMarketStats = asyncHandler(async (req, res) => {
   const [total, active, sold, hidden] = await Promise.all([
     MarketItem.countDocuments({}),
@@ -298,10 +282,7 @@ export const adminMarketStats = asyncHandler(async (req, res) => {
   });
 });
 
-/**
- * ADMIN: Get single item
- * GET /api/market/admin/items/:id
- */
+
 export const adminGetMarketItem = asyncHandler(async (req, res, next) => {
   const item = await MarketItem.findById(req.params.id).populate(
     "seller",
@@ -312,10 +293,7 @@ export const adminGetMarketItem = asyncHandler(async (req, res, next) => {
   res.status(200).json({ success: true, data: item });
 });
 
-/**
- * ADMIN: Update item fields/status
- * PATCH /api/market/admin/items/:id
- */
+
 export const adminUpdateMarketItem = asyncHandler(async (req, res, next) => {
   const item = await MarketItem.findById(req.params.id);
   if (!item) return next(new ErrorResponse("Item not found", 404));
@@ -338,10 +316,7 @@ export const adminUpdateMarketItem = asyncHandler(async (req, res, next) => {
   res.status(200).json({ success: true, data: item });
 });
 
-/**
- * ADMIN: Delete item
- * DELETE /api/market/admin/items/:id
- */
+
 export const adminDeleteMarketItem = asyncHandler(async (req, res, next) => {
   const item = await MarketItem.findById(req.params.id);
   if (!item) return next(new ErrorResponse("Item not found", 404));
@@ -373,10 +348,7 @@ export const adminDeleteMarketItem = asyncHandler(async (req, res, next) => {
   res.status(200).json({ success: true, message: "Item deleted" });
 });
 
-/**
- * ADMIN: Force remove a seller's item by sellerId
- * DELETE /api/market/admin/seller/:sellerId
- */
+
 export const adminDeleteBySeller = asyncHandler(async (req, res, next) => {
   const item = await MarketItem.findOne({ seller: req.params.sellerId });
   if (!item) return next(new ErrorResponse("Seller has no item", 404));
