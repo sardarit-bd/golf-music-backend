@@ -564,10 +564,6 @@ export const changePhotographerPlanByAdmin = asyncHandler(async (req, res, next)
     },
   });
 });
-
-
-
-
 /* ========================================================
    GET ALL PHOTOGRAPHERS FOR ADMIN
 ======================================================== */

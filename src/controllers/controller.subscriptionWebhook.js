@@ -44,7 +44,7 @@ export const handleSubscriptionWebhook = async (event) => {
         : null,
     });
 
-    console.log("✅ Subscription checkout completed:", subscription.id);
+    console.log("Subscription checkout completed:", subscription.id);
   }
 
   /* =====================================================
