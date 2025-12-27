@@ -103,14 +103,12 @@ export const cancelSubscription = asyncHandler(async (req, res, next) => {
     cancel_at_period_end: true,
   });
 
-  user.subscriptionStatus = "canceled";
-  await user.save();
-
   res.status(200).json({
     success: true,
     message: "Subscription will cancel at period end",
   });
 });
+
 
 
 export const getBillingStatus = asyncHandler(async (req, res, next) => {

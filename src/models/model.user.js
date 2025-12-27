@@ -81,6 +81,11 @@ const userSchema = new mongoose.Schema({
     default: "none",
   },
 
+  cancelAtPeriodEnd: {
+    type: Boolean,
+    default: false,
+  },
+
   // ===== Trial control =====
   trialStartedAt: {
     type: Date,

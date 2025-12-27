@@ -1,87 +1,93 @@
 import { stripe } from "../config/stripe.js";
 import User from "../models/model.user.js";
 
-/**
- * Handle subscription-related Stripe webhook events
- * Called from central stripe webhook dispatcher
- */
+
 export const handleSubscriptionWebhook = async (event) => {
-  /* =====================================================
-     CHECKOUT COMPLETED (SUBSCRIPTION START)
-     ===================================================== */
-  if (event.type === "checkout.session.completed") {
-    const session = event.data.object;
+  try {
 
-    // Only subscription checkouts
-    if (session.mode !== "subscription") return;
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object;
 
-    if (!session.subscription) {
-      console.warn("⚠️ Subscription ID missing in checkout session");
-      return;
-    }
+      // Only subscription checkouts
+      if (session.mode !== "subscription") return;
 
-    // Retrieve full subscription from Stripe
-    const subscription = await stripe.subscriptions.retrieve(
-      session.subscription
-    );
+      if (!session.subscription) {
+        console.warn("⚠️ Subscription ID missing in checkout session");
+        return;
+      }
 
-    const userId = subscription.metadata?.userId;
-    if (!userId) {
-      console.warn("⚠️ userId missing in subscription metadata");
-      return;
-    }
+      // Fetch full subscription
+      const subscription = await stripe.subscriptions.retrieve(
+        session.subscription
+      );
 
-    await User.findByIdAndUpdate(userId, {
-      subscriptionPlan: "pro",
-      subscriptionStatus: subscription.status,
-      stripeSubscriptionId: subscription.id,
-      trialUsed: !!subscription.trial_end,
-      trialStartedAt: subscription.trial_start
-        ? new Date(subscription.trial_start * 1000)
-        : null,
-      trialEndsAt: subscription.trial_end
-        ? new Date(subscription.trial_end * 1000)
-        : null,
-    });
+      const userId = subscription.metadata?.userId;
+      if (!userId) {
+        console.warn("⚠️ userId missing in subscription metadata");
+        return;
+      }
 
-    console.log("Subscription checkout completed:", subscription.id);
-  }
+      await User.findByIdAndUpdate(userId, {
+        subscriptionPlan: "pro",
+        subscriptionStatus: subscription.status,
+        stripeSubscriptionId: subscription.id,
 
-  /* =====================================================
-     SUBSCRIPTION UPDATED (STATUS CHANGE)
-     ===================================================== */
-  if (event.type === "customer.subscription.updated") {
-    const sub = event.data.object;
+        cancelAtPeriodEnd: subscription.cancel_at_period_end || false,
 
-    await User.findOneAndUpdate(
-      { stripeSubscriptionId: sub.id },
-      {
-        subscriptionStatus: sub.status,
-        trialEndsAt: sub.trial_end
-          ? new Date(sub.trial_end * 1000)
+        trialUsed: !!subscription.trial_end,
+        trialStartedAt: subscription.trial_start
+          ? new Date(subscription.trial_start * 1000)
           : null,
-      }
-    );
+        trialEndsAt: subscription.trial_end
+          ? new Date(subscription.trial_end * 1000)
+          : null,
+      });
 
-    console.log("🔄 Subscription updated:", sub.id, sub.status);
-  }
+      console.log("Subscription checkout completed:", subscription.id);
+    }
 
-  /* =====================================================
-     SUBSCRIPTION DELETED / EXPIRED
-     ===================================================== */
-  if (event.type === "customer.subscription.deleted") {
-    const sub = event.data.object;
+    if (event.type === "customer.subscription.updated") {
+      const sub = event.data.object;
 
-    await User.findOneAndUpdate(
-      { stripeSubscriptionId: sub.id },
-      {
-        subscriptionPlan: "free",
-        subscriptionStatus: "expired",
-        stripeSubscriptionId: null,
-        trialEndsAt: null,
-      }
-    );
+      await User.findOneAndUpdate(
+        { stripeSubscriptionId: sub.id },
+        {
+          subscriptionStatus: sub.status,
+          cancelAtPeriodEnd: sub.cancel_at_period_end,
+          trialEndsAt: sub.trial_end
+            ? new Date(sub.trial_end * 1000)
+            : null,
+        }
+      );
 
-    console.log("❌ Subscription cancelled:", sub.id);
+      console.log(
+        "🔄 Subscription updated:",
+        sub.id,
+        sub.status,
+        "cancel_at_period_end:",
+        sub.cancel_at_period_end
+      );
+    }
+
+
+    if (event.type === "customer.subscription.deleted") {
+      const sub = event.data.object;
+
+      await User.findOneAndUpdate(
+        { stripeSubscriptionId: sub.id },
+        {
+          subscriptionPlan: "free",
+          subscriptionStatus: "expired",
+          stripeSubscriptionId: null,
+          trialEndsAt: null,
+          cancelAtPeriodEnd: false,
+        }
+      );
+
+      console.log("❌ Subscription fully cancelled:", sub.id);
+    }
+  } catch (err) {
+    console.error("❌ Subscription webhook error:", err.message);
+    throw err;
   }
 };

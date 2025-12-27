@@ -25,9 +25,10 @@ const marketItemSchema = new mongoose.Schema(
         "Maximum 5 photos allowed",
       ],
     },
-
-    video: { type: String, default: "" },
-
+    videos: {
+      type: [String],
+      default: []
+    },
     description: { type: String, required: true, maxlength: 2000 },
 
     price: { type: Number, required: true, min: 0 },

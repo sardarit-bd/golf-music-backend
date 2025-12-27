@@ -79,16 +79,21 @@ export const createMyMarketItem = asyncHandler(async (req, res, next) => {
   const user = req.user;
   const userType = normalizeSellerType(user.userType);
 
-  if (!user.isVerified) return next(new ErrorResponse("Account must be verified", 403));
-  if (!isSellerTypeAllowed(userType)) return next(new ErrorResponse("Not allowed", 403));
+  if (!user.isVerified)
+    return next(new ErrorResponse("Account must be verified", 403));
+  if (!isSellerTypeAllowed(userType))
+    return next(new ErrorResponse("Not allowed", 403));
 
   const existing = await MarketItem.findOne({ seller: user._id });
-  if (existing) return next(new ErrorResponse("You can only list 1 item", 400));
+  if (existing)
+    return next(new ErrorResponse("You can only list 1 item", 400));
 
   const { title, description, price, location } = req.body;
 
   if (!title || !description || price === undefined) {
-    return next(new ErrorResponse("title, description, price are required", 400));
+    return next(
+      new ErrorResponse("title, description, price are required", 400)
+    );
   }
 
   const validLocations = ["New Orleans", "Biloxi", "Mobile", "Pensacola", ""];
@@ -98,7 +103,9 @@ export const createMyMarketItem = asyncHandler(async (req, res, next) => {
 
   const photos = req.files?.photos?.map((file) => file.path) || [];
 
-  const video = req.files?.video?.length > 0 ? req.files.video[0].path : "";
+  const videos = req.files?.video?.length
+    ? [req.files.video[0].path]
+    : [];
 
   const item = await MarketItem.create({
     seller: user._id,
@@ -108,12 +115,13 @@ export const createMyMarketItem = asyncHandler(async (req, res, next) => {
     price,
     location: location || "",
     photos,
-    video,
+    videos,
     status: "active",
   });
 
   res.status(201).json({ success: true, data: item });
 });
+
 
 
 export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
@@ -133,32 +141,61 @@ export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
   if (location !== undefined) item.location = location;
   if (status !== undefined) item.status = status;
 
+  /* =====================
+     PHOTOS
+  ===================== */
   if (req.files?.photos?.length) {
     const newPhotos = req.files.photos.map((file) => file.path);
     const totalPhotos = (item.photos?.length || 0) + newPhotos.length;
-    
+
     if (totalPhotos > 5) {
-      return next(new ErrorResponse("Maximum 5 photos allowed in total", 400));
+      return next(new ErrorResponse("Maximum 5 photos allowed", 400));
     }
-    
-    // Add new photos to existing ones
+
     item.photos = [...(item.photos || []), ...newPhotos];
   }
 
-  // Handle video update
-  if (req.files?.video?.length) {
-    // Delete old video from Cloudinary if exists
-    if (item.video) {
-      try {
-        const publicId = item.video.split('/').pop().split('.')[0];
-        await cloudinary.uploader.destroy(`market/videos/${publicId}`, {
-          resource_type: 'video'
-        });
-      } catch (error) {
-        console.error("Error deleting old video:", error);
+  /* =====================
+     VIDEO DELETE
+  ===================== */
+  if (
+    req.body.videos &&
+    Array.isArray(req.body.videos) &&
+    req.body.videos.length === 0
+  ) {
+    if (item.videos?.length) {
+      for (const v of item.videos) {
+        try {
+          const publicId = v.split("/").pop().split(".")[0];
+          await cloudinary.uploader.destroy(`market/videos/${publicId}`, {
+            resource_type: "video",
+          });
+        } catch (err) {
+          console.error("Error deleting video:", err);
+        }
       }
     }
-    item.video = req.files.video[0].path;
+    item.videos = [];
+  }
+
+  if (req.files?.video?.length) {
+
+    // delete old video first
+    if (item.videos?.length) {
+      for (const v of item.videos) {
+        try {
+          const publicId = v.split("/").pop().split(".")[0];
+          await cloudinary.uploader.destroy(`market/videos/${publicId}`, {
+            resource_type: "video",
+          });
+        } catch (err) {
+          console.error("Error deleting old video:", err);
+        }
+      }
+    }
+
+    // save new video
+    item.videos = [req.files.video[0].path];
   }
 
   await item.save();
@@ -166,18 +203,19 @@ export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
 });
 
 
+
 export const deletePhotoFromMyItem = asyncHandler(async (req, res, next) => {
   const item = await MarketItem.findOne({ seller: req.user._id });
   if (!item) return next(new ErrorResponse("Market item not found", 404));
 
   const photoIndex = parseInt(req.params.index);
-  
+
   if (isNaN(photoIndex) || photoIndex < 0 || photoIndex >= (item.photos?.length || 0)) {
     return next(new ErrorResponse("Invalid photo index", 400));
   }
 
   const photoUrlToDelete = item.photos[photoIndex];
-  
+
   // Delete from Cloudinary
   try {
     const publicId = photoUrlToDelete.split('/').pop().split('.')[0];
@@ -188,12 +226,12 @@ export const deletePhotoFromMyItem = asyncHandler(async (req, res, next) => {
 
   // Remove from array
   item.photos.splice(photoIndex, 1);
-  
+
   await item.save();
-  res.status(200).json({ 
-    success: true, 
+  res.status(200).json({
+    success: true,
     message: "Photo deleted successfully",
-    data: item 
+    data: item
   });
 });
 
@@ -215,16 +253,19 @@ export const deleteMyMarketItem = asyncHandler(async (req, res, next) => {
   }
 
   // Delete video from Cloudinary if exists
-  if (item.video) {
-    try {
-      const publicId = item.video.split('/').pop().split('.')[0];
-      await cloudinary.uploader.destroy(`market/videos/${publicId}`, {
-        resource_type: 'video'
-      });
-    } catch (error) {
-      console.error("Error deleting video:", error);
+  if (item.videos?.length) {
+    for (const v of item.videos) {
+      try {
+        const publicId = v.split("/").pop().split(".")[0];
+        await cloudinary.uploader.destroy(`market/videos/${publicId}`, {
+          resource_type: "video",
+        });
+      } catch (err) {
+        console.error("Error deleting video:", err);
+      }
     }
   }
+
 
   await item.deleteOne();
   res.status(200).json({ success: true, message: "Market item deleted" });
@@ -298,7 +339,17 @@ export const adminUpdateMarketItem = asyncHandler(async (req, res, next) => {
   const item = await MarketItem.findById(req.params.id);
   if (!item) return next(new ErrorResponse("Item not found", 404));
 
-  const allowed = ["title", "photos", "video", "description", "price", "location", "status", "sellerType"];
+  const allowed = [
+    "title",
+    "photos",
+    "videos",
+    "description",
+    "price",
+    "location",
+    "status",
+    "sellerType",
+  ];
+
   for (const key of Object.keys(req.body || {})) {
     if (!allowed.includes(key)) delete req.body[key];
   }
@@ -321,11 +372,11 @@ export const adminDeleteMarketItem = asyncHandler(async (req, res, next) => {
   const item = await MarketItem.findById(req.params.id);
   if (!item) return next(new ErrorResponse("Item not found", 404));
 
-  // Delete media from Cloudinary
+  // Delete photos
   if (item.photos?.length) {
     for (const photoUrl of item.photos) {
       try {
-        const publicId = photoUrl.split('/').pop().split('.')[0];
+        const publicId = photoUrl.split("/").pop().split(".")[0];
         await cloudinary.uploader.destroy(`market/photos/${publicId}`);
       } catch (error) {
         console.error(`Error deleting photo ${photoUrl}:`, error);
@@ -333,14 +384,17 @@ export const adminDeleteMarketItem = asyncHandler(async (req, res, next) => {
     }
   }
 
-  if (item.video) {
-    try {
-      const publicId = item.video.split('/').pop().split('.')[0];
-      await cloudinary.uploader.destroy(`market/videos/${publicId}`, {
-        resource_type: 'video'
-      });
-    } catch (error) {
-      console.error("Error deleting video:", error);
+
+  if (item.videos?.length) {
+    for (const videoUrl of item.videos) {
+      try {
+        const publicId = videoUrl.split("/").pop().split(".")[0];
+        await cloudinary.uploader.destroy(`market/videos/${publicId}`, {
+          resource_type: "video",
+        });
+      } catch (error) {
+        console.error(`Error deleting video ${videoUrl}:`, error);
+      }
     }
   }
 
@@ -349,15 +403,16 @@ export const adminDeleteMarketItem = asyncHandler(async (req, res, next) => {
 });
 
 
+
 export const adminDeleteBySeller = asyncHandler(async (req, res, next) => {
   const item = await MarketItem.findOne({ seller: req.params.sellerId });
   if (!item) return next(new ErrorResponse("Seller has no item", 404));
 
-  // Delete media from Cloudinary
+  // Delete photos
   if (item.photos?.length) {
     for (const photoUrl of item.photos) {
       try {
-        const publicId = photoUrl.split('/').pop().split('.')[0];
+        const publicId = photoUrl.split("/").pop().split(".")[0];
         await cloudinary.uploader.destroy(`market/photos/${publicId}`);
       } catch (error) {
         console.error(`Error deleting photo ${photoUrl}:`, error);
@@ -365,14 +420,16 @@ export const adminDeleteBySeller = asyncHandler(async (req, res, next) => {
     }
   }
 
-  if (item.video) {
-    try {
-      const publicId = item.video.split('/').pop().split('.')[0];
-      await cloudinary.uploader.destroy(`market/videos/${publicId}`, {
-        resource_type: 'video'
-      });
-    } catch (error) {
-      console.error("Error deleting video:", error);
+  if (item.videos?.length) {
+    for (const videoUrl of item.videos) {
+      try {
+        const publicId = videoUrl.split("/").pop().split(".")[0];
+        await cloudinary.uploader.destroy(`market/videos/${publicId}`, {
+          resource_type: "video",
+        });
+      } catch (error) {
+        console.error(`Error deleting video ${videoUrl}:`, error);
+      }
     }
   }
 
