@@ -122,17 +122,40 @@ export const createMyMarketItem = asyncHandler(async (req, res, next) => {
   res.status(201).json({ success: true, data: item });
 });
 
-
-
 export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
   const item = await MarketItem.findOne({ seller: req.user._id });
   if (!item) return next(new ErrorResponse("Market item not found", 404));
 
-  const { title, description, price, location, status } = req.body;
+  const { title, description, price, location, status, removedPhotos = [] } = req.body;
 
   const validLocations = ["New Orleans", "Biloxi", "Mobile", "Pensacola", ""];
   if (location !== undefined && !validLocations.includes(location)) {
     return next(new ErrorResponse("Invalid location", 400));
+  }
+
+  // Handle removed photos
+  if (removedPhotos && Array.isArray(removedPhotos)) {
+    for (const photoUrl of removedPhotos) {
+      if (photoUrl && photoUrl.includes('cloudinary')) {
+        try {
+          const publicId = photoUrl.split('/').pop().split('.')[0];
+          
+          // Detect resource type
+          if (photoUrl.includes('/video/') || photoUrl.includes('.mp4')) {
+            await cloudinary.uploader.destroy(`market/videos/${publicId}`, {
+              resource_type: "video"
+            });
+          } else {
+            await cloudinary.uploader.destroy(`market/photos/${publicId}`);
+          }
+        } catch (error) {
+          console.error("Error deleting photo from Cloudinary:", error);
+        }
+      }
+    }
+    
+    // Remove from array
+    item.photos = item.photos.filter(photo => !removedPhotos.includes(photo));
   }
 
   if (title !== undefined) item.title = title;
@@ -141,9 +164,6 @@ export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
   if (location !== undefined) item.location = location;
   if (status !== undefined) item.status = status;
 
-  /* =====================
-     PHOTOS
-  ===================== */
   if (req.files?.photos?.length) {
     const newPhotos = req.files.photos.map((file) => file.path);
     const totalPhotos = (item.photos?.length || 0) + newPhotos.length;
@@ -155,18 +175,12 @@ export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
     item.photos = [...(item.photos || []), ...newPhotos];
   }
 
-  /* =====================
-     VIDEO DELETE
-  ===================== */
-  if (
-    req.body.videos &&
-    Array.isArray(req.body.videos) &&
-    req.body.videos.length === 0
-  ) {
+  // If user wants to remove video
+  if (req.body.removeVideo === 'true') {
     if (item.videos?.length) {
       for (const v of item.videos) {
         try {
-          const publicId = v.split("/").pop().split(".")[0];
+          const publicId = v.split('/').pop().split('.')[0];
           await cloudinary.uploader.destroy(`market/videos/${publicId}`, {
             resource_type: "video",
           });
@@ -178,13 +192,13 @@ export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
     item.videos = [];
   }
 
+  // Upload new video
   if (req.files?.video?.length) {
-
-    // delete old video first
+    // Delete old video first if exists
     if (item.videos?.length) {
       for (const v of item.videos) {
         try {
-          const publicId = v.split("/").pop().split(".")[0];
+          const publicId = v.split('/').pop().split('.')[0];
           await cloudinary.uploader.destroy(`market/videos/${publicId}`, {
             resource_type: "video",
           });
@@ -194,12 +208,20 @@ export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
       }
     }
 
-    // save new video
+    // Save new video
     item.videos = [req.files.video[0].path];
   }
 
   await item.save();
-  res.status(200).json({ success: true, data: item });
+  
+  // Populate seller info
+  await item.populate('seller', 'name userType subscriptionPlan isVerified');
+  
+  res.status(200).json({ 
+    success: true, 
+    message: "Market item updated successfully",
+    data: item 
+  });
 });
 
 
@@ -216,18 +238,28 @@ export const deletePhotoFromMyItem = asyncHandler(async (req, res, next) => {
 
   const photoUrlToDelete = item.photos[photoIndex];
 
-  // Delete from Cloudinary
-  try {
-    const publicId = photoUrlToDelete.split('/').pop().split('.')[0];
-    await cloudinary.uploader.destroy(`market/photos/${publicId}`);
-  } catch (error) {
-    console.error("Error deleting photo from Cloudinary:", error);
+  // Delete from Cloudinary only if it's a cloudinary URL
+  if (photoUrlToDelete && photoUrlToDelete.includes('cloudinary')) {
+    try {
+      const publicId = photoUrlToDelete.split('/').pop().split('.')[0];
+      
+      // Try to detect if it's a video or image
+      if (photoUrlToDelete.includes('/video/') || photoUrlToDelete.includes('.mp4')) {
+        await cloudinary.uploader.destroy(`market/videos/${publicId}`, {
+          resource_type: "video"
+        });
+      } else {
+        await cloudinary.uploader.destroy(`market/photos/${publicId}`);
+      }
+    } catch (error) {
+      console.error("Error deleting from Cloudinary:", error);
+    }
   }
 
   // Remove from array
   item.photos.splice(photoIndex, 1);
-
   await item.save();
+
   res.status(200).json({
     success: true,
     message: "Photo deleted successfully",
