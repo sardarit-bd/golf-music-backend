@@ -35,6 +35,7 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
   let removedPhotos = [];
   let removedAudios = [];
 
+  // Parse removed files
   if (req.body.removedPhotos) {
     removedPhotos = Array.isArray(req.body.removedPhotos)
       ? req.body.removedPhotos
@@ -47,40 +48,45 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
       : [req.body.removedAudios];
   }
 
+  // If plan doesn't allow photos/audios, clear removed arrays
   if (rules.photos === 0) removedPhotos = [];
   if (rules.mp3 === 0) removedAudios = [];
 
+  // Delete photos from Cloudinary
   for (const filename of removedPhotos) {
-    const photo = artist.photos.find(p => p.filename === filename);
-
-    if (photo?.publicId) {
-      await cloudinary.uploader.destroy(photo.publicId, {
-        resource_type: "image",
-      });
+    try {
+      const publicId = filename.replace(/\.[^/.]+$/, "");
+      await cloudinary.uploader.destroy(publicId);
+    } catch (err) {
+      console.log("Failed to delete photo:", filename);
     }
   }
 
 
+  // Delete audios from Cloudinary
   for (const filename of removedAudios) {
-    const audio = artist.mp3Files.find(a => a.filename === filename);
-
-    if (audio?.publicId) {
-      await cloudinary.uploader.destroy(audio.publicId, {
-        resource_type: "video",
-      });
+    try {
+      const publicId = filename.replace(/\.[^/.]+$/, "");
+      await cloudinary.uploader.destroy(publicId);
+    } catch (err) {
+      console.log("Failed to delete audio:", filename);
     }
   }
 
 
-  const oldPhotos =
-    artist?.photos?.filter((p) => !removedPhotos.includes(p.filename)) || [];
+  // Filter out removed photos and audios
+  const oldPhotos = artist?.photos?.filter((p) => 
+    p && p.filename && !removedPhotos.includes(p.filename)
+  ) || [];
 
-  const oldAudios =
-    artist?.mp3Files?.filter((a) => !removedAudios.includes(a.filename)) || [];
+  const oldAudios = artist?.mp3Files?.filter((a) => 
+    a && a.filename && !removedAudios.includes(a.filename)
+  ) || [];
 
   let newPhotos = [];
   let newAudios = [];
 
+  // Handle new photo uploads
   if (req.files?.photos?.length) {
     if (rules.photos === 0) {
       return next(
@@ -91,14 +97,25 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
       );
     }
 
+    // Check if total photos exceed limit
+    const totalPhotos = oldPhotos.length + req.files.photos.length;
+    if (totalPhotos > rules.photos) {
+      return next(
+        new ErrorResponse(
+          `You can only upload ${rules.photos} photos on your current plan.`,
+          400
+        )
+      );
+    }
+
     newPhotos = req.files.photos.map((file) => ({
       url: file.path,
-      filename: file.originalname,
-      publicId: file.filename,
+      filename: file.filename,
     }));
 
   }
 
+  // Handle new audio uploads
   if (req.files?.mp3Files?.length) {
     if (rules.mp3 === 0) {
       return next(
@@ -109,24 +126,26 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
       );
     }
 
+    const totalAudios = oldAudios.length + req.files.mp3Files.length;
+    if (totalAudios > rules.mp3) {
+      return next(
+        new ErrorResponse(
+          `You can only upload ${rules.mp3} audio files on your current plan.`,
+          400
+        )
+      );
+    }
+
     newAudios = req.files.mp3Files.map((file) => ({
       url: file.path,
       filename: file.originalname,
       originalName: file.originalname,
-      publicId: file.filename,
     }));
 
   }
 
-  const mergedPhotos =
-    rules.photos > 0
-      ? [...oldPhotos, ...newPhotos].slice(0, rules.photos)
-      : oldPhotos;
-
-  const mergedAudios =
-    rules.mp3 > 0
-      ? [...oldAudios, ...newAudios].slice(0, rules.mp3)
-      : oldAudios;
+  const mergedPhotos = [...oldPhotos, ...newPhotos].slice(0, rules.photos);
+  const mergedAudios = [...oldAudios, ...newAudios].slice(0, rules.mp3);
 
   const finalBiography = rules.biography
     ? biography
@@ -141,29 +160,36 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
     mp3Files: mergedAudios,
     photosLimit: rules.photos,
     mp3Limit: rules.mp3,
-    featuresLocked: Object.values({
-      biography: rules.biography,
-      photos: rules.photos > 0,
-      mp3: rules.mp3 > 0,
-    }).every(v => v === false)
+    featuresLocked: !(rules.biography || rules.photos > 0 || rules.mp3 > 0)
   };
 
-  artist = artist
-    ? await Artist.findByIdAndUpdate(artist._id, artistData, {
-      new: true,
-      runValidators: true,
-    })
-    : await Artist.create({ user: user.id, ...artistData });
+  const options = {
+    new: true,
+    runValidators: true,
+    upsert: !artist
+  };
+
+  if (artist) {
+    artist = await Artist.findByIdAndUpdate(artist._id, artistData, options);
+  } else {
+    artist = await Artist.create({ user: user.id, ...artistData });
+  }
 
   const safeArtist = sanitizeArtistForPlan(artist, rules);
 
   return res.status(200).json({
     success: true,
-    message: `Artist profile updated successfully (${user.subscriptionPlan.toUpperCase()} Plan)`,
-    data: { artist: safeArtist },
+    message: `Artist profile ${artist ? 'updated' : 'created'} successfully (${user.subscriptionPlan.toUpperCase()} Plan)`,
+    data: { 
+      artist: safeArtist,
+      limits: {
+        photos: rules.photos,
+        mp3: rules.mp3,
+        biography: rules.biography
+      }
+    },
   });
 });
-
 
 
 
