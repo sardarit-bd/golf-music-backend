@@ -51,22 +51,26 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
   if (rules.mp3 === 0) removedAudios = [];
 
   for (const filename of removedPhotos) {
-    try {
-      const publicId = filename.replace(/\.[^/.]+$/, "");
-      await cloudinary.uploader.destroy(publicId);
-    } catch (err) {
-      console.log("Failed to delete photo:", filename);
+    const photo = artist.photos.find(p => p.filename === filename);
+
+    if (photo?.publicId) {
+      await cloudinary.uploader.destroy(photo.publicId, {
+        resource_type: "image",
+      });
     }
   }
 
+
   for (const filename of removedAudios) {
-    try {
-      const publicId = filename.replace(/\.[^/.]+$/, "");
-      await cloudinary.uploader.destroy(publicId);
-    } catch (err) {
-      console.log("Failed to delete audio:", filename);
+    const audio = artist.mp3Files.find(a => a.filename === filename);
+
+    if (audio?.publicId) {
+      await cloudinary.uploader.destroy(audio.publicId, {
+        resource_type: "video",
+      });
     }
   }
+
 
   const oldPhotos =
     artist?.photos?.filter((p) => !removedPhotos.includes(p.filename)) || [];
@@ -89,8 +93,10 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
 
     newPhotos = req.files.photos.map((file) => ({
       url: file.path,
-      filename: file.filename,
+      filename: file.originalname,
+      publicId: file.filename,
     }));
+
   }
 
   if (req.files?.mp3Files?.length) {
@@ -105,9 +111,11 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
 
     newAudios = req.files.mp3Files.map((file) => ({
       url: file.path,
-      filename: file.filename,
+      filename: file.originalname,
       originalName: file.originalname,
+      publicId: file.filename,
     }));
+
   }
 
   const mergedPhotos =

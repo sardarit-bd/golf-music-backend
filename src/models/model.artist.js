@@ -47,6 +47,7 @@ const artistSchema = new mongoose.Schema({
     {
       url: String,
       filename: String,
+      publicId: String,
     },
   ],
 
@@ -55,6 +56,7 @@ const artistSchema = new mongoose.Schema({
       url: String,
       filename: String,
       originalName: String,
+      publicId: String,
     },
   ],
 
