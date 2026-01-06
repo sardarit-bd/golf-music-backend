@@ -113,6 +113,12 @@ const userSchema = new mongoose.Schema({
     default: null,
   },
 
+  // ===== Stripe Connect (Market sellers) =====
+  stripeAccountId: {
+    type: String,
+    default: null,
+  },
+
 
   resetPasswordToken: { type: String },
   resetPasswordExpire: { type: Date },

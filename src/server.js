@@ -28,6 +28,8 @@ import featuredSectionRoutes from './routes/router.featuredSection.js';
 import photographerRoutes from './routes/routes.photographer.js';
 import marketRoutes from './routes/route.market.js';
 import subscriptionRoutes from './routes/route.subscription.js';
+import marketCheckoutRoutes from './routes/marketCheckout.routes.js';
+import stripeConnectRoutes from './routes/stripe.routes.js';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -145,6 +147,9 @@ app.use("/api/footer", footerRoutes);
 app.use("/api/photographers", photographerRoutes);
 app.use("/api/market", marketRoutes);
 app.use("/api/subscription", subscriptionRoutes);
+app.use("/api/market-checkout", marketCheckoutRoutes);
+app.use("/api/stripe", stripeConnectRoutes);
+
 
 // ===============================
 // Server Health Check
