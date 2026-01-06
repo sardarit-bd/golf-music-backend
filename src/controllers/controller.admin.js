@@ -83,51 +83,63 @@ export const getDashboardStats = async (req, res, next) => {
     // NEW: Get color statistics
     const colorStats = await Venue.aggregate([
       { $match: { colorCode: { $exists: true, $ne: null } } },
-      { $group: { 
-        _id: "$city", 
-        total: { $sum: 1 },
-        colorsUsed: { $addToSet: "$colorCode" }
-      }},
-      { $project: {
-        city: "$_id",
-        total: 1,
-        colorsUsedCount: { $size: "$colorsUsed" },
-        _id: 0
-      }}
+      {
+        $group: {
+          _id: "$city",
+          total: { $sum: 1 },
+          colorsUsed: { $addToSet: "$colorCode" }
+        }
+      },
+      {
+        $project: {
+          city: "$_id",
+          total: 1,
+          colorsUsedCount: { $size: "$colorsUsed" },
+          _id: 0
+        }
+      }
     ]);
 
     const subscriptionStats = await User.aggregate([
       { $match: { subscriptionPlan: { $in: ["pro", "free"] } } },
-      { $group: { 
-        _id: "$subscriptionPlan", 
-        count: { $sum: 1 },
-        users: { $push: { username: "$username", email: "$email" } }
-      }},
-      { $project: {
-        plan: "$_id",
-        count: 1,
-        sampleUsers: { $slice: ["$users", 3] },
-        _id: 0
-      }}
+      {
+        $group: {
+          _id: "$subscriptionPlan",
+          count: { $sum: 1 },
+          users: { $push: { username: "$username", email: "$email" } }
+        }
+      },
+      {
+        $project: {
+          plan: "$_id",
+          count: 1,
+          sampleUsers: { $slice: ["$users", 3] },
+          _id: 0
+        }
+      }
     ]);
     const cityStats = await Venue.aggregate([
-      { $group: { 
-        _id: "$city", 
-        count: { $sum: 1 },
-        verified: { $sum: { $cond: [{ $gt: ["$verifiedOrder", 0] }, 1, 0] } },
-        withColor: { $sum: { $cond: [{ $ne: ["$colorCode", null] }, 1, 0] } }
-      }},
-      { $project: {
-        city: { 
-          $toUpper: { $substrCP: ["$_id", 0, 1] } 
-        },
-        count: 1,
-        verified: 1,
-        withColor: 1,
-        percentageVerified: { $multiply: [{ $divide: ["$verified", "$count"] }, 100] },
-        percentageWithColor: { $multiply: [{ $divide: ["$withColor", "$count"] }, 100] },
-        _id: 0
-      }},
+      {
+        $group: {
+          _id: "$city",
+          count: { $sum: 1 },
+          verified: { $sum: { $cond: [{ $gt: ["$verifiedOrder", 0] }, 1, 0] } },
+          withColor: { $sum: { $cond: [{ $ne: ["$colorCode", null] }, 1, 0] } }
+        }
+      },
+      {
+        $project: {
+          city: {
+            $toUpper: { $substrCP: ["$_id", 0, 1] }
+          },
+          count: 1,
+          verified: 1,
+          withColor: 1,
+          percentageVerified: { $multiply: [{ $divide: ["$verified", "$count"] }, 100] },
+          percentageWithColor: { $multiply: [{ $divide: ["$withColor", "$count"] }, 100] },
+          _id: 0
+        }
+      },
       { $sort: { count: -1 } }
     ]);
     const recentVenues = await Venue.find({})
@@ -136,17 +148,17 @@ export const getDashboardStats = async (req, res, next) => {
       .sort({ createdAt: -1 })
       .limit(5);
     const upcomingEventsByCity = await Event.aggregate([
-      { 
-        $match: { 
+      {
+        $match: {
           isActive: true,
           date: { $gte: new Date() }
         }
       },
-      { 
-        $group: { 
+      {
+        $group: {
           _id: "$city",
           count: { $sum: 1 },
-          events: { 
+          events: {
             $push: {
               id: "$_id",
               title: "$artistBandName",
@@ -156,7 +168,7 @@ export const getDashboardStats = async (req, res, next) => {
           }
         }
       },
-      { 
+      {
         $lookup: {
           from: "venues",
           localField: "events.venue",
@@ -166,8 +178,8 @@ export const getDashboardStats = async (req, res, next) => {
       },
       {
         $project: {
-          city: { 
-            $toUpper: { $substrCP: ["$_id", 0, 1] } 
+          city: {
+            $toUpper: { $substrCP: ["$_id", 0, 1] }
           },
           count: 1,
           upcomingEvents: { $slice: ["$events", 3] },
@@ -222,7 +234,7 @@ export const getDashboardStats = async (req, res, next) => {
           totalEvents,
           pendingContacts,
           venuesWithColor: await Venue.countDocuments({ colorCode: { $exists: true, $ne: null } }),
-          venuesWithoutColor: await Venue.countDocuments({ 
+          venuesWithoutColor: await Venue.countDocuments({
             $or: [
               { colorCode: { $exists: false } },
               { colorCode: null }
@@ -230,7 +242,7 @@ export const getDashboardStats = async (req, res, next) => {
           }),
           colorCoverage: {
             withColor: await Venue.countDocuments({ colorCode: { $exists: true, $ne: null } }),
-            withoutColor: await Venue.countDocuments({ 
+            withoutColor: await Venue.countDocuments({
               $or: [
                 { colorCode: { $exists: false } },
                 { colorCode: null }
@@ -238,8 +250,8 @@ export const getDashboardStats = async (req, res, next) => {
             }),
             total: await Venue.countDocuments(),
             percentage: Math.round(
-              (await Venue.countDocuments({ colorCode: { $exists: true, $ne: null } }) / 
-              await Venue.countDocuments()) * 100
+              (await Venue.countDocuments({ colorCode: { $exists: true, $ne: null } }) /
+                await Venue.countDocuments()) * 100
             ) || 0
           }
         },
@@ -247,7 +259,7 @@ export const getDashboardStats = async (req, res, next) => {
         subscriptionStats,
         colorStats: {
           totalVenuesWithColor: await Venue.countDocuments({ colorCode: { $exists: true, $ne: null } }),
-          totalVenuesWithoutColor: await Venue.countDocuments({ 
+          totalVenuesWithoutColor: await Venue.countDocuments({
             $or: [
               { colorCode: { $exists: false } },
               { colorCode: null }
@@ -275,16 +287,16 @@ export const getDashboardStats = async (req, res, next) => {
         recentVenues: formattedRecentVenues,
         upcomingEventsByCity,
         quickStats: {
-          totalActiveEvents: await Event.countDocuments({ 
-            isActive: true, 
-            date: { $gte: new Date() } 
+          totalActiveEvents: await Event.countDocuments({
+            isActive: true,
+            date: { $gte: new Date() }
           }),
           totalVerifiedVenues: await Venue.countDocuments({ verifiedOrder: { $gt: 0 } }),
           totalProUsers: await User.countDocuments({ subscriptionPlan: "pro" }),
           totalUnreadContacts: pendingContacts,
           colorAssignmentRate: Math.round(
-            (await Venue.countDocuments({ colorCode: { $exists: true, $ne: null } }) / 
-            await Venue.countDocuments()) * 100
+            (await Venue.countDocuments({ colorCode: { $exists: true, $ne: null } }) /
+              await Venue.countDocuments()) * 100
           ) || 0
         }
       },
@@ -473,7 +485,7 @@ export const getContentForModeration = async (req, res, next) => {
     }
 
     const total = await model.countDocuments(query);
-    
+
     // UPDATE: For venues, also select colorCode
     let content;
     if (type === "venues") {
@@ -607,7 +619,7 @@ export const updateUser = async (req, res) => {
       userType,
       isVerified,
       subscriptionPlan,
-      giveTrial 
+      giveTrial
     } = req.body;
 
 
@@ -920,39 +932,31 @@ export const updateAdminProfile = async (req, res, next) => {
 
     const { fullName, bio, phone, email } = req.body;
 
-    // --- UPDATE USER TABLE (email, username) ---
+    // --- UPDATE USER EMAIL ---
     const user = await User.findById(admin.user);
 
     if (email) {
-      // Prevent duplicates
       const emailExists = await User.findOne({ email });
       if (emailExists && emailExists._id.toString() !== user._id.toString()) {
         return next(new ErrorResponse("Email already in use", 400));
       }
-
       user.email = email.toLowerCase().trim();
+      await user.save();
     }
 
-    await user.save();  // update user info
-
-    // --- UPDATE ADMIN PROFILE FIELDS ---
     admin.fullName = fullName || admin.fullName;
     admin.bio = bio || admin.bio;
     admin.phone = phone || admin.phone;
 
-    // Photo upload
+
     if (req.file) {
       if (admin.profilePhoto?.filename) {
         await cloudinary.uploader.destroy(admin.profilePhoto.filename);
       }
 
-      const uploadRes = await cloudinary.uploader.upload(req.file.path, {
-        folder: "admin/profile",
-      });
-
       admin.profilePhoto = {
-        url: uploadRes.secure_url,
-        filename: uploadRes.public_id,
+        url: req.file.path,
+        filename: req.file.filename,
       };
     }
 
@@ -966,21 +970,21 @@ export const updateAdminProfile = async (req, res, next) => {
         user: { email: user.email }
       },
     });
-
   } catch (error) {
     next(error);
   }
 };
 
 
+
 // NEW: Get color management for admin
 export const getColorManagement = async (req, res, next) => {
   try {
     const { city } = req.query;
-    
+
     const validCities = ["new orleans", "biloxi", "mobile", "pensacola"];
-    const selectedCity = city && validCities.includes(city.toLowerCase()) 
-      ? city.toLowerCase() 
+    const selectedCity = city && validCities.includes(city.toLowerCase())
+      ? city.toLowerCase()
       : "mobile";
 
     // Color palettes (same as in venue controller)
@@ -1012,17 +1016,17 @@ export const getColorManagement = async (req, res, next) => {
     };
 
     // Get venues with colors for the selected city
-    const venues = await Venue.find({ 
+    const venues = await Venue.find({
       city: selectedCity,
       colorCode: { $exists: true, $ne: null }
     })
-    .select("venueName colorCode verifiedOrder isActive")
-    .sort({ venueName: 1 });
+      .select("venueName colorCode verifiedOrder isActive")
+      .sort({ venueName: 1 });
 
     // Get used colors
     const usedColors = venues.map(v => v.colorCode);
     const cityColors = CITY_COLOR_PALETTES[selectedCity] || CITY_COLOR_PALETTES['mobile'];
-    
+
     const availableColors = cityColors.filter(
       color => !usedColors.includes(color)
     );
@@ -1047,7 +1051,7 @@ export const getColorManagement = async (req, res, next) => {
       success: true,
       data: {
         city: selectedCity,
-        cityName: selectedCity.split(' ').map(word => 
+        cityName: selectedCity.split(' ').map(word =>
           word.charAt(0).toUpperCase() + word.slice(1)
         ).join(' '),
         totalColors: cityColors.length,
@@ -1085,10 +1089,10 @@ export const assignVenueColor = async (req, res, next) => {
     }
 
     const isValidColor = await ColorAssigner.validateColorForCity(
-      colorCode, 
+      colorCode,
       venue.city
     );
-    
+
     if (!isValidColor) {
       return next(
         new ErrorResponse(
@@ -1098,18 +1102,18 @@ export const assignVenueColor = async (req, res, next) => {
       );
     }
     const isAvailable = await ColorAssigner.isColorAvailable(
-      colorCode, 
-      venue.city, 
+      colorCode,
+      venue.city,
       venueId
     );
-    
+
     if (!isAvailable) {
       const existingVenue = await Venue.findOne({
         city: venue.city,
         colorCode: colorCode,
         _id: { $ne: venueId }
       });
-      
+
       return next(
         new ErrorResponse(
           `Color ${colorCode} is already assigned to ${existingVenue.venueName}`,
@@ -1134,7 +1138,7 @@ export const assignVenueColor = async (req, res, next) => {
       message: `Color updated from ${oldColor || 'none'} to ${colorCode}`,
       data: { venue }
     });
-    
+
   } catch (error) {
     next(new ErrorResponse("Failed to assign venue color", 500));
   }
@@ -1179,21 +1183,21 @@ export const reassignCityColors = async (req, res, next) => {
     };
 
     const cityColors = CITY_COLOR_PALETTES[city.toLowerCase()] || CITY_COLOR_PALETTES['mobile'];
-    
+
     // Get all active venues in the city, sorted by creation date
-    const venues = await Venue.find({ 
+    const venues = await Venue.find({
       city: city.toLowerCase(),
-      isActive: true 
+      isActive: true
     }).sort({ createdAt: 1 });
 
     let updateResults = [];
-    
+
     // Reassign colors in order
     for (let i = 0; i < venues.length; i++) {
       const venue = venues[i];
       const colorIndex = i % cityColors.length;
       const newColor = cityColors[colorIndex];
-      
+
       const oldColor = venue.colorCode;
       venue.colorCode = newColor;
       await venue.save();
