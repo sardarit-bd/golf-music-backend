@@ -1,4 +1,3 @@
-import { validationResult } from "express-validator";
 import crypto from "crypto";
 import User from "../models/model.user.js";
 import Artist from "../models/model.artist.js";
@@ -7,7 +6,6 @@ import Journalist from "../models/model.journalist.js";
 import { sendResetPasswordEmail, sendVerificationEmail } from "../utils/emailService.js";
 import { generateToken } from "../utils/helpers.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { formatValidationErrors } from "../utils/validationFormatter.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import Photographer from "../models/model.photographer.js";
 
@@ -16,8 +14,27 @@ import Photographer from "../models/model.photographer.js";
    REGISTER
 ======================================================== */
 export const register = asyncHandler(async (req, res, next) => {
-  const { username, email, password, userType, genre, location } = req.body;
+  const {
+    username,
+    email,
+    password,
+    userType,
+    genre,
+    location,
+    plan,
+  } = req.body;
 
+  let subscriptionPlan = "free";
+  let subscriptionStatus = "none";
+
+  if (["artist", "venue", "photographer"].includes(userType)) {
+    if (plan === "pro") {
+      subscriptionPlan = "pro";
+      subscriptionStatus = "active";
+    }
+  }
+
+  // Check if user exists
   const existingUser = await User.findOne({
     $or: [{ email }, { username }],
   });
@@ -26,7 +43,7 @@ export const register = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("User with this email or username already exists", 400));
   }
 
-  // Create User
+
   const user = await User.create({
     username,
     email,
@@ -34,16 +51,17 @@ export const register = asyncHandler(async (req, res, next) => {
     userType,
     genre: genre?.toLowerCase(),
     location: location?.toLowerCase(),
+    subscriptionPlan,
+    subscriptionStatus,
     verificationRequested: userType !== "fan",
   });
 
-  // Artist creation
   if (userType === "artist") {
     await Artist.create({
       user: user._id,
-      name: user.username,
-      city: user.location || "new orleans",
-      genre: user.genre,
+      name: username,
+      city: location?.toLowerCase() || "new orleans",
+      genre: genre?.toLowerCase(),
       biography: "",
       photos: [],
       mp3Files: [],
@@ -51,14 +69,14 @@ export const register = asyncHandler(async (req, res, next) => {
     });
   }
 
-  // Venue creation
   if (userType === "venue") {
     await Venue.create({
       user: user._id,
-      venueName: user.username,
-      city: user.location || "new orleans",
+      venueName: username,
+      city: location?.toLowerCase() || "new orleans",
       address: "",
-      seatingCapacity: 10,
+      seatingCapacity: 0,
+      biography: "",
       openHours: "",
       openDays: "",
       photos: [],
@@ -66,25 +84,23 @@ export const register = asyncHandler(async (req, res, next) => {
     });
   }
 
-  // Journalist creation
   if (userType === "journalist") {
     await Journalist.create({
       user: user._id,
-      fullName: user.username,
+      fullName: username,
       bio: "",
       profilePhoto: null,
-      areasOfCoverage: user.location ? [user.location] : [],
+      areasOfCoverage: location ? [location.toLowerCase()] : [],
       isActive: false,
       isVerified: false,
     });
   }
 
-  // NEW: Photographer creation
   if (userType === "photographer") {
     await Photographer.create({
       user: user._id,
-      name: user.username,
-      city: user.location || "new orleans",
+      name: username,
+      city: location?.toLowerCase() || "new orleans",
       biography: "",
       services: [],
       photos: [],
@@ -93,16 +109,16 @@ export const register = asyncHandler(async (req, res, next) => {
     });
   }
 
-  // Send verification email (non-fans only)
+  // Send verification email
   if (userType !== "fan") {
-    await sendVerificationEmail(user.email, user.userType);
+    await sendVerificationEmail(user.email, userType);
   }
 
   const token = generateToken(user._id);
 
   res.status(201).json({
     success: true,
-    message: "Registration successful! Please verify your email to activate your account.",
+    message: "Registration successful!",
     data: {
       token,
       user: {
@@ -110,12 +126,13 @@ export const register = asyncHandler(async (req, res, next) => {
         username: user.username,
         email: user.email,
         userType: user.userType,
-        genre: user.genre,
-        location: user.location,
+        subscriptionPlan,
       },
     },
   });
 });
+
+
 
 /* ========================================================
    LOGIN
@@ -218,6 +235,7 @@ export const getMe = asyncHandler(async (req, res, next) => {
   }
 
   const user = await User.findById(req.user.id);
+
   if (!user) {
     return next(new ErrorResponse("User not found or account deleted.", 404));
   }
@@ -233,12 +251,16 @@ export const getMe = asyncHandler(async (req, res, next) => {
         userType: user.userType,
         genre: user.genre,
         location: user.location,
+        subscriptionPlan: user.subscriptionPlan,
+        subscriptionStatus: user.subscriptionStatus,
         isVerified: user.isVerified,
+        isActive: user.isActive,
         createdAt: user.createdAt,
       },
     },
   });
 });
+
 
 /* ========================================================
    FORGOT PASSWORD

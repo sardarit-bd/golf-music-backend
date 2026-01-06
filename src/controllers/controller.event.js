@@ -3,21 +3,15 @@ import Venue from "../models/model.venue.js";
 import Event from "../models/models.event.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 
-const venueColors = [
-  "#0000FF", // 1 - Blue
-  "#008000", // 2 - Green
-  "#FF0000", // 3 - Red
-  "#800080", // 4 - Purple
-  "#FFA500", // 5 - Orange
-  "#FFFF00", // 6 - Yellow
-  "#FFC0CB", // 7 - Pink
-  "#A52A2A", // 8 - Brown
-  "#FFFFFF", // 9 - White
-  "#000000", // 10 - Black
-];
 
-//  CREATE EVENT
+const validCities = ["new orleans", "biloxi", "mobile", "pensacola"];
 
+const buildUtcDateOnly = (dateInput) => {
+  const d = new Date(dateInput);
+  return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+};
+
+// CREATE EVENT
 export const createEvent = async (req, res, next) => {
   try {
     const errors = validationResult(req);
@@ -29,7 +23,6 @@ export const createEvent = async (req, res, next) => {
 
     const { artistBandName, time, date, description } = req.body;
 
-    // Find venue by user
     const venue = await Venue.findOne({ user: req.user.id });
     if (!venue) {
       return next(
@@ -40,23 +33,45 @@ export const createEvent = async (req, res, next) => {
       );
     }
 
-    // Use venue's colorCode for events
-    const color = venue.colorCode || "#000000";
+    const isPro = req.user.subscriptionPlan === "pro";
 
-    // IMAGE HANDLING
+    // FREE PLAN → LIMIT 1 EVENT PER MONTH
+    if (!isPro) {
+      const now = new Date();
+      const startOfMonth = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
+      const endOfMonth = new Date(
+        Date.UTC(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999)
+      );
+
+      const eventsThisMonth = await Event.countDocuments({
+        venue: venue._id,
+        date: { $gte: startOfMonth, $lte: endOfMonth },
+        isActive: true,
+      });
+
+      if (eventsThisMonth >= 1) {
+        return next(
+          new ErrorResponse(
+            "Free plan allows only 1 show per month. Upgrade to Pro for unlimited shows.",
+            403
+          )
+        );
+      }
+    }
     const imageData = req.file
       ? { url: req.file.path, filename: req.file.filename }
       : null;
 
+    const utcDate = buildUtcDateOnly(date);
+
     const event = await Event.create({
       artistBandName,
       time,
-      date,
+      date: utcDate,
       description,
       image: imageData,
       venue: venue._id,
-      city: venue.city, // Automatically use venue's city
-      color,
+      city: venue.city,
     });
 
     await event.populate("venue", "venueName city address colorCode");
@@ -71,20 +86,16 @@ export const createEvent = async (req, res, next) => {
   }
 };
 
-//  GET EVENTS BY CITY
-
 // GET EVENTS BY CITY - FIXED DEFAULT CITY
 export const getEventsByCity = async (req, res, next) => {
   try {
-    const { city = "mobile" } = req.query; // Default to Mobile
+    const { city = "mobile" } = req.query;
     let query = { isActive: true };
 
-    // Validate city
-    const validCities = ["new orleans", "biloxi", "mobile", "pensacola"];
     if (city && city !== "all" && validCities.includes(city.toLowerCase())) {
       query.city = city.toLowerCase();
     } else {
-      query.city = "mobile"; // Default to Mobile
+      query.city = "mobile";
     }
 
     const events = await Event.find(query)
@@ -111,12 +122,9 @@ export const getCalendarEvents = async (req, res, next) => {
   try {
     const { city = "mobile" } = req.query;
 
-    // Validate city parameter
-    const validCities = ["new orleans", "biloxi", "mobile", "pensacola"];
     const selectedCity = validCities.includes(city.toLowerCase())
       ? city.toLowerCase()
       : "mobile";
-
     const events = await Event.find({
       city: selectedCity,
       isActive: true,
@@ -124,18 +132,21 @@ export const getCalendarEvents = async (req, res, next) => {
     })
       .populate("venue", "venueName colorCode verifiedOrder")
       .sort({ date: 1, time: 1 })
-      .select("artistBandName date time venue color city image");
+      .select("artistBandName date time venue city image");
 
-    // Transform data for calendar
     const calendarEvents = events.map((event) => ({
       id: event._id,
       title: event.artistBandName,
       date: event.date,
       time: event.time,
       venue: event.venue?.venueName || "Unknown Venue",
+      // COLOR CORRECTLY ASSIGNED
       color: event.venue?.colorCode || "#000000",
       city: event.city,
       image: event.image,
+      // Venue info for filtering
+      venueId: event.venue?._id,
+      verified: event.venue?.verifiedOrder > 0,
     }));
 
     res.status(200).json({
@@ -151,13 +162,12 @@ export const getCalendarEvents = async (req, res, next) => {
   }
 };
 
-//  GET SINGLE EVENT BY ID
-
+// GET SINGLE EVENT BY ID
 export const getEvent = async (req, res, next) => {
   try {
     const event = await Event.findById(req.params.id).populate(
       "venue",
-      "venueName city address seatingCapacity openHours openDays"
+      "venueName city address seatingCapacity openHours openDays colorCode"
     );
 
     if (!event) {
@@ -173,8 +183,7 @@ export const getEvent = async (req, res, next) => {
   }
 };
 
-//  GET EVENTS OF CURRENT VENUE OWNER
-
+// GET EVENTS OF CURRENT VENUE OWNER
 export const getMyEvents = async (req, res, next) => {
   try {
     const venue = await Venue.findOne({ user: req.user.id });
@@ -183,7 +192,7 @@ export const getMyEvents = async (req, res, next) => {
     }
 
     const events = await Event.find({ venue: venue._id })
-      .populate("venue", "venueName city")
+      .populate("venue", "venueName city colorCode")
       .sort({ date: -1 });
 
     res.status(200).json({
@@ -195,8 +204,7 @@ export const getMyEvents = async (req, res, next) => {
   }
 };
 
-//  UPDATE EVENT
-
+// UPDATE EVENT
 export const updateEvent = async (req, res, next) => {
   try {
     const errors = validationResult(req);
@@ -224,7 +232,8 @@ export const updateEvent = async (req, res, next) => {
       req.params.id,
       { artistBandName, time, date, description },
       { new: true, runValidators: true }
-    ).populate("venue", "venueName city address");
+    )
+      .populate("venue", "venueName city address colorCode");
 
     res.status(200).json({
       success: true,
@@ -236,8 +245,7 @@ export const updateEvent = async (req, res, next) => {
   }
 };
 
-//  DELETE (SOFT DELETE)
-
+// DELETE (SOFT DELETE)
 export const deleteEvent = async (req, res, next) => {
   try {
     const event = await Event.findById(req.params.id).populate("venue");
@@ -263,8 +271,7 @@ export const deleteEvent = async (req, res, next) => {
   }
 };
 
-//  UPCOMING EVENTS
-
+// UPCOMING EVENTS
 export const getUpcomingEvents = async (req, res, next) => {
   try {
     const { limit = 10 } = req.query;
@@ -273,7 +280,7 @@ export const getUpcomingEvents = async (req, res, next) => {
       isActive: true,
       date: { $gte: new Date() },
     })
-      .populate("venue", "venueName city address")
+      .populate("venue", "venueName city address colorCode")
       .sort({ date: 1 })
       .limit(parseInt(limit));
 
@@ -320,32 +327,52 @@ export const getEventsForAdmin = async (req, res, next) => {
       query.city = city.toLowerCase();
     }
 
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
     const events = await Event.find(query)
-      .populate("venue", "venueName city address seatingCapacity")
+      .populate({
+        path: "venue",
+        select: "venueName city address seatingCapacity colorCode",
+        options: { 
+          lean: true,
+          allowNull: true 
+        }
+      })
       .sort({ date: -1, time: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .limit(parseInt(limit))
+      .skip(skip);
 
     const total = await Event.countDocuments(query);
+
+    const processedEvents = events.map(event => ({
+      ...event.toObject(),
+      venue: event.venue || {
+        venueName: "N/A",
+        city: "Unknown",
+        address: "",
+        seatingCapacity: 0,
+        colorCode: "#cccccc"
+      }
+    }));
 
     res.status(200).json({
       success: true,
       data: {
-        events,
+        events: processedEvents,
         pagination: {
-          current: page,
+          current: parseInt(page),
           pages: Math.ceil(total / limit),
           total,
         },
       },
     });
   } catch (error) {
-    next(error);
+    console.error("Error in getEventsForAdmin:", error);
+    next(new ErrorResponse("Failed to fetch events: " + error.message, 500));
   }
 };
 
-//  UPDATE EVENT BY ADMIN
-
+// UPDATE EVENT BY ADMIN
 export const updateEventByAdmin = async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -369,7 +396,8 @@ export const updateEventByAdmin = async (req, res, next) => {
     event = await Event.findByIdAndUpdate(id, updateData, {
       new: true,
       runValidators: true,
-    }).populate("venue", "venueName city address seatingCapacity");
+    })
+      .populate("venue", "venueName city address seatingCapacity colorCode");
 
     res.status(200).json({
       success: true,
@@ -381,8 +409,7 @@ export const updateEventByAdmin = async (req, res, next) => {
   }
 };
 
-//  TOGGLE EVENT STATUS (ACTIVE/INACTIVE)
-
+// TOGGLE EVENT STATUS (ACTIVE/INACTIVE)
 export const toggleEventStatus = async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -397,9 +424,8 @@ export const toggleEventStatus = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: `Event ${
-        event.isActive ? "activated" : "deactivated"
-      } successfully`,
+      message: `Event ${event.isActive ? "activated" : "deactivated"
+        } successfully`,
       data: { event },
     });
   } catch (error) {
@@ -407,8 +433,7 @@ export const toggleEventStatus = async (req, res, next) => {
   }
 };
 
-//  DELETE EVENT BY ADMIN
-
+// DELETE EVENT BY ADMIN
 export const deleteEventByAdmin = async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -423,6 +448,87 @@ export const deleteEventByAdmin = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: "Event permanently deleted successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// NEW: GET EVENTS BY VENUE ID (for admin color management)
+export const getEventsByVenueId = async (req, res, next) => {
+  try {
+    const { venueId } = req.params;
+    const { page = 1, limit = 10 } = req.query;
+
+    const venue = await Venue.findById(venueId);
+    if (!venue) {
+      return next(new ErrorResponse("Venue not found", 404));
+    }
+
+    const events = await Event.find({ venue: venueId })
+      .populate("venue", "venueName city colorCode")
+      .sort({ date: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await Event.countDocuments({ venue: venueId });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        venue: {
+          id: venue._id,
+          name: venue.venueName,
+          city: venue.city,
+          colorCode: venue.colorCode,
+          totalEvents: total
+        },
+        events,
+        pagination: {
+          current: page,
+          pages: Math.ceil(total / limit),
+          total,
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// NEW: BULK UPDATE EVENT COLORS (for admin when venue color changes)
+export const bulkUpdateEventColors = async (req, res, next) => {
+  try {
+    const { venueId } = req.params;
+    const { colorCode } = req.body;
+
+    if (!colorCode) {
+      return next(new ErrorResponse("Color code is required", 400));
+    }
+
+    const venue = await Venue.findById(venueId);
+    if (!venue) {
+      return next(new ErrorResponse("Venue not found", 404));
+    }
+
+    // ✅ ONLY update venue color
+    venue.colorCode = colorCode;
+    await venue.save();
+
+    // Count events for info only
+    const totalEvents = await Event.countDocuments({ venue: venueId });
+
+    res.status(200).json({
+      success: true,
+      message: `Venue color updated successfully`,
+      data: {
+        venue: {
+          id: venue._id,
+          name: venue.venueName,
+          colorCode: venue.colorCode,
+        },
+        affectedEvents: totalEvents
+      }
     });
   } catch (error) {
     next(error);

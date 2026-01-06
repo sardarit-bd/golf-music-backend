@@ -43,10 +43,6 @@ const eventSchema = new mongoose.Schema({
     },
     set: (v) => v.toLowerCase().trim(),
   },
-  color: {
-    type: String,
-    default: "#000000"
-  },
   isActive: {
     type: Boolean,
     default: true,
@@ -77,8 +73,23 @@ eventSchema.virtual('formattedDate').get(function () {
   });
 });
 
+// New virtual field for color (venue theke niye asbe)
+eventSchema.virtual('eventColor').get(function () {
+  return this.populated('venue') ? this.venue.colorCode : "#000000";
+});
+
 // Ensure virtual fields show in JSON output
-eventSchema.set('toJSON', { virtuals: true });
+eventSchema.set('toJSON', { 
+  virtuals: true,
+  transform: function(doc, ret) {
+    if (doc.populated('venue') && doc.venue.colorCode) {
+      ret.color = doc.venue.colorCode;
+    } else {
+      ret.color = "#000000";
+    }
+    return ret;
+  }
+});
 
 const Event = mongoose.model('Event', eventSchema);
 export default Event;

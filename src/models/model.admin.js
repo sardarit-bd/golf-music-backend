@@ -6,16 +6,34 @@ const adminSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+
   fullName: {
     type: String,
     required: [true, 'Full name is required'],
     trim: true
   },
+
+  profilePhoto: {
+    url: { type: String, default: null },
+    filename: { type: String, default: null }
+  },
+
+  bio: {
+    type: String,
+    default: ""
+  },
+
+  phone: {
+    type: String,
+    default: ""
+  },
+
   role: {
     type: String,
     enum: ['super_admin', 'content_admin', 'moderator'],
     default: 'content_admin'
   },
+
   permissions: [{
     type: String,
     enum: [
@@ -28,19 +46,16 @@ const adminSchema = new mongoose.Schema({
       'system_settings'
     ]
   }],
+
   isActive: {
     type: Boolean,
     default: true
   },
-  lastLogin: {
-    type: Date
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
+
+  lastLogin: { type: Date },
+
+  createdAt: { type: Date, default: Date.now }
 });
 
 const Admin = mongoose.model('Admin', adminSchema);
-
 export default Admin;

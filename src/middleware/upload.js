@@ -9,6 +9,11 @@ const upload = multer({
 
 
 
+// === ADMIN PROFILE PHOTO UPLOAD ===
+export const uploadAdminProfilePhoto = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+}).single("profilePhoto");
 
 const memoryStorage = multer.memoryStorage();
 

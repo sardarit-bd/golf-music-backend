@@ -1,3 +1,4 @@
+import { cloudinary } from "../config/cloudinary.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import Admin from "../models/model.admin.js";
 import Artist from "../models/model.artist.js";
@@ -8,13 +9,9 @@ import User from "../models/model.user.js";
 import Venue from "../models/model.venue.js";
 import Contact from "../models/models.contact.js";
 import Event from "../models/models.event.js";
-
-
-
-
+import { ColorAssigner } from "../utils/colorAssigner.js";
 
 // Promote User To Admin
-
 export const promoteUserToAdmin = async (req, res, next) => {
   try {
     const { id } = req.params; // user ID to promote
@@ -73,7 +70,8 @@ export const getDashboardStats = async (req, res, next) => {
       Contact.countDocuments({ isRead: false }),
       User.find().sort({ createdAt: -1 }).limit(5),
       Event.find({ isActive: true })
-        .populate("venue", "venueName city")
+        // UPDATE: Include venue colorCode in population
+        .populate("venue", "venueName city colorCode")
         .sort({ date: 1 })
         .limit(5),
     ]);
@@ -81,6 +79,149 @@ export const getDashboardStats = async (req, res, next) => {
     const userStats = await User.aggregate([
       { $group: { _id: "$userType", count: { $sum: 1 } } },
     ]);
+
+    // NEW: Get color statistics
+    const colorStats = await Venue.aggregate([
+      { $match: { colorCode: { $exists: true, $ne: null } } },
+      {
+        $group: {
+          _id: "$city",
+          total: { $sum: 1 },
+          colorsUsed: { $addToSet: "$colorCode" }
+        }
+      },
+      {
+        $project: {
+          city: "$_id",
+          total: 1,
+          colorsUsedCount: { $size: "$colorsUsed" },
+          _id: 0
+        }
+      }
+    ]);
+
+    const subscriptionStats = await User.aggregate([
+      { $match: { subscriptionPlan: { $in: ["pro", "free"] } } },
+      {
+        $group: {
+          _id: "$subscriptionPlan",
+          count: { $sum: 1 },
+          users: { $push: { username: "$username", email: "$email" } }
+        }
+      },
+      {
+        $project: {
+          plan: "$_id",
+          count: 1,
+          sampleUsers: { $slice: ["$users", 3] },
+          _id: 0
+        }
+      }
+    ]);
+    const cityStats = await Venue.aggregate([
+      {
+        $group: {
+          _id: "$city",
+          count: { $sum: 1 },
+          verified: { $sum: { $cond: [{ $gt: ["$verifiedOrder", 0] }, 1, 0] } },
+          withColor: { $sum: { $cond: [{ $ne: ["$colorCode", null] }, 1, 0] } }
+        }
+      },
+      {
+        $project: {
+          city: {
+            $toUpper: { $substrCP: ["$_id", 0, 1] }
+          },
+          count: 1,
+          verified: 1,
+          withColor: 1,
+          percentageVerified: { $multiply: [{ $divide: ["$verified", "$count"] }, 100] },
+          percentageWithColor: { $multiply: [{ $divide: ["$withColor", "$count"] }, 100] },
+          _id: 0
+        }
+      },
+      { $sort: { count: -1 } }
+    ]);
+    const recentVenues = await Venue.find({})
+      .populate("user", "username email subscriptionPlan")
+      .select("venueName city colorCode verifiedOrder createdAt")
+      .sort({ createdAt: -1 })
+      .limit(5);
+    const upcomingEventsByCity = await Event.aggregate([
+      {
+        $match: {
+          isActive: true,
+          date: { $gte: new Date() }
+        }
+      },
+      {
+        $group: {
+          _id: "$city",
+          count: { $sum: 1 },
+          events: {
+            $push: {
+              id: "$_id",
+              title: "$artistBandName",
+              date: "$date",
+              venue: "$venue"
+            }
+          }
+        }
+      },
+      {
+        $lookup: {
+          from: "venues",
+          localField: "events.venue",
+          foreignField: "_id",
+          as: "venueDetails"
+        }
+      },
+      {
+        $project: {
+          city: {
+            $toUpper: { $substrCP: ["$_id", 0, 1] }
+          },
+          count: 1,
+          upcomingEvents: { $slice: ["$events", 3] },
+          venueColors: {
+            $map: {
+              input: "$venueDetails",
+              as: "venue",
+              in: "$$venue.colorCode"
+            }
+          },
+          _id: 0
+        }
+      },
+      { $sort: { count: -1 } }
+    ]);
+    const formatCityName = (city) => {
+      if (!city) return "Unknown";
+      return city
+        .split(" ")
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ");
+    };
+    const formattedRecentEvents = recentEvents.map(event => ({
+      id: event._id,
+      title: event.artistBandName,
+      date: event.date,
+      time: event.time,
+      venue: event.venue?.venueName || "Unknown Venue",
+      city: formatCityName(event.city),
+      color: event.venue?.colorCode || "#000000",
+      hasColor: !!event.venue?.colorCode
+    }));
+    const formattedRecentVenues = recentVenues.map(venue => ({
+      id: venue._id,
+      name: venue.venueName,
+      city: formatCityName(venue.city),
+      colorCode: venue.colorCode || "Not assigned",
+      verified: venue.verifiedOrder > 0,
+      subscriptionPlan: venue.user?.subscriptionPlan || "free",
+      createdAt: venue.createdAt,
+      hasColor: !!venue.colorCode
+    }));
 
     res.status(200).json({
       success: true,
@@ -92,13 +233,76 @@ export const getDashboardStats = async (req, res, next) => {
           totalNews,
           totalEvents,
           pendingContacts,
+          venuesWithColor: await Venue.countDocuments({ colorCode: { $exists: true, $ne: null } }),
+          venuesWithoutColor: await Venue.countDocuments({
+            $or: [
+              { colorCode: { $exists: false } },
+              { colorCode: null }
+            ]
+          }),
+          colorCoverage: {
+            withColor: await Venue.countDocuments({ colorCode: { $exists: true, $ne: null } }),
+            withoutColor: await Venue.countDocuments({
+              $or: [
+                { colorCode: { $exists: false } },
+                { colorCode: null }
+              ]
+            }),
+            total: await Venue.countDocuments(),
+            percentage: Math.round(
+              (await Venue.countDocuments({ colorCode: { $exists: true, $ne: null } }) /
+                await Venue.countDocuments()) * 100
+            ) || 0
+          }
         },
         userStats,
+        subscriptionStats,
+        colorStats: {
+          totalVenuesWithColor: await Venue.countDocuments({ colorCode: { $exists: true, $ne: null } }),
+          totalVenuesWithoutColor: await Venue.countDocuments({
+            $or: [
+              { colorCode: { $exists: false } },
+              { colorCode: null }
+            ]
+          }),
+          byCity: colorStats,
+          coverageByCity: cityStats.map(city => ({
+            city: formatCityName(city.city),
+            totalVenues: city.count,
+            verified: city.verified,
+            withColor: city.withColor,
+            colorCoveragePercentage: city.percentageWithColor.toFixed(1),
+            verificationPercentage: city.percentageVerified.toFixed(1)
+          }))
+        },
+        cityDistribution: cityStats.map(city => ({
+          city: formatCityName(city.city),
+          total: city.count,
+          verified: city.verified,
+          withColor: city.withColor,
+          colorCoverage: Math.round(city.percentageWithColor) || 0
+        })),
         recentUsers,
-        upcomingEvents: recentEvents,
+        recentEvents: formattedRecentEvents,
+        recentVenues: formattedRecentVenues,
+        upcomingEventsByCity,
+        quickStats: {
+          totalActiveEvents: await Event.countDocuments({
+            isActive: true,
+            date: { $gte: new Date() }
+          }),
+          totalVerifiedVenues: await Venue.countDocuments({ verifiedOrder: { $gt: 0 } }),
+          totalProUsers: await User.countDocuments({ subscriptionPlan: "pro" }),
+          totalUnreadContacts: pendingContacts,
+          colorAssignmentRate: Math.round(
+            (await Venue.countDocuments({ colorCode: { $exists: true, $ne: null } }) /
+              await Venue.countDocuments()) * 100
+          ) || 0
+        }
       },
     });
   } catch (error) {
+    console.error("Dashboard stats error:", error);
     next(new ErrorResponse("Failed to fetch dashboard stats", 500));
   }
 };
@@ -244,6 +448,7 @@ export const getContentForModeration = async (req, res, next) => {
         break;
       case "venues":
         model = Venue;
+        // UPDATE: Include colorCode in venue population
         populateField = { path: "user", select: "username email" };
         break;
       case "news":
@@ -252,7 +457,8 @@ export const getContentForModeration = async (req, res, next) => {
         break;
       case "events":
         model = Event;
-        populateField = { path: "venue", select: "venueName city" };
+        // UPDATE: Include venue colorCode in event population
+        populateField = { path: "venue", select: "venueName city colorCode" };
         break;
       case "photographers":
         model = Photographer;
@@ -279,12 +485,23 @@ export const getContentForModeration = async (req, res, next) => {
     }
 
     const total = await model.countDocuments(query);
-    const content = await model
-      .find(query)
-      .populate(populateField)
-      .sort({ createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+
+    // UPDATE: For venues, also select colorCode
+    let content;
+    if (type === "venues") {
+      content = await model.find(query)
+        .populate(populateField)
+        .select("+colorCode")
+        .sort({ createdAt: -1 })
+        .limit(limit * 1)
+        .skip((page - 1) * limit);
+    } else {
+      content = await model.find(query)
+        .populate(populateField)
+        .sort({ createdAt: -1 })
+        .limit(limit * 1)
+        .skip((page - 1) * limit);
+    }
 
     res.status(200).json({
       success: true,
@@ -396,60 +613,95 @@ export const markContactAsRead = async (req, res, next) => {
 export const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const { username, email, userType, isVerified } = req.body;
+    const {
+      username,
+      email,
+      userType,
+      isVerified,
+      subscriptionPlan,
+      giveTrial
+    } = req.body;
 
-    // Find user and update
-    const user = await User.findByIdAndUpdate(
-      id,
-      {
-        username,
-        email,
-        userType,
-        isVerified,
-        updatedAt: Date.now()
-      },
-      { new: true, runValidators: true }
-    );
 
+    const user = await User.findById(id);
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found'
+        message: "User not found",
       });
     }
+
+    // Basic fields update
+    if (username) user.username = username;
+    if (email) user.email = email.toLowerCase().trim();
+    if (userType) user.userType = userType;
+    if (typeof isVerified === "boolean") user.isVerified = isVerified;
+
+
+    const proEligibleTypes = ["artist", "venue", "photographer"];
+
+    if (subscriptionPlan) {
+      if (subscriptionPlan === "pro") {
+        if (!proEligibleTypes.includes(user.userType)) {
+          return res.status(400).json({
+            success: false,
+            message: "Only artists, venues, and photographers can be Pro users.",
+          });
+        }
+
+        user.subscriptionPlan = "pro";
+        user.subscriptionStatus = "active";
+
+
+        if (giveTrial) {
+          const now = new Date();
+          const trialEnds = new Date(
+            now.getTime() + 30 * 24 * 60 * 60 * 1000
+          );
+          user.trialEndsAt = trialEnds;
+        }
+      } else if (subscriptionPlan === "free") {
+        user.subscriptionPlan = "free";
+        user.subscriptionStatus = "none";
+        user.trialEndsAt = null;
+        user.stripeSubscriptionId = undefined;
+      }
+    }
+
+    user.updatedAt = Date.now();
+    await user.save();
 
     res.json({
       success: true,
-      message: 'User updated successfully',
-      data: { user }
+      message: "User updated successfully",
+      data: { user },
     });
   } catch (error) {
-    console.error('Update user error:', error);
+    console.error("Update user error:", error);
 
-    // Handle validation errors
-    if (error.name === 'ValidationError') {
-      const errors = Object.values(error.errors).map(err => err.message);
+    if (error.name === "ValidationError") {
+      const errors = Object.values(error.errors).map((err) => err.message);
       return res.status(400).json({
         success: false,
-        message: 'Validation error',
-        errors
+        message: "Validation error",
+        errors,
       });
     }
 
-    // Handle duplicate key error
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
-        message: 'Email or username already exists'
+        message: "Email or username already exists",
       });
     }
 
     res.status(500).json({
       success: false,
-      message: 'Error updating user'
+      message: "Error updating user",
     });
   }
 };
+
 
 // @desc    Delete contact
 export const deleteContactMessage = async (req, res, next) => {
@@ -652,5 +904,328 @@ export const deleteNewsByAdmin = async (req, res, next) => {
     });
   } catch (error) {
     next(error);
+  }
+};
+
+
+export const getAdminProfile = async (req, res, next) => {
+  try {
+    const admin = await Admin.findOne({ user: req.user.id }).populate("user", "email username");
+
+    if (!admin) return next(new ErrorResponse("Admin profile not found", 404));
+
+    res.status(200).json({
+      success: true,
+      data: admin,
+    });
+
+  } catch (error) {
+    next(new ErrorResponse("Failed to load admin profile", 500));
+  }
+};
+
+
+export const updateAdminProfile = async (req, res, next) => {
+  try {
+    const admin = await Admin.findOne({ user: req.user.id });
+    if (!admin) return next(new ErrorResponse("Admin profile not found", 404));
+
+    const { fullName, bio, phone, email } = req.body;
+
+    // --- UPDATE USER EMAIL ---
+    const user = await User.findById(admin.user);
+
+    if (email) {
+      const emailExists = await User.findOne({ email });
+      if (emailExists && emailExists._id.toString() !== user._id.toString()) {
+        return next(new ErrorResponse("Email already in use", 400));
+      }
+      user.email = email.toLowerCase().trim();
+      await user.save();
+    }
+
+    admin.fullName = fullName || admin.fullName;
+    admin.bio = bio || admin.bio;
+    admin.phone = phone || admin.phone;
+
+
+    if (req.file) {
+      if (admin.profilePhoto?.filename) {
+        await cloudinary.uploader.destroy(admin.profilePhoto.filename);
+      }
+
+      admin.profilePhoto = {
+        url: req.file.path,
+        filename: req.file.filename,
+      };
+    }
+
+    await admin.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Admin profile updated successfully",
+      data: {
+        admin,
+        user: { email: user.email }
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+
+// NEW: Get color management for admin
+export const getColorManagement = async (req, res, next) => {
+  try {
+    const { city } = req.query;
+
+    const validCities = ["new orleans", "biloxi", "mobile", "pensacola"];
+    const selectedCity = city && validCities.includes(city.toLowerCase())
+      ? city.toLowerCase()
+      : "mobile";
+
+    // Color palettes (same as in venue controller)
+    const CITY_COLOR_PALETTES = {
+      'new orleans': [
+        "#FF6B6B", "#4ECDC4", "#FFD166", "#06D6A0", "#118AB2",
+        "#073B4C", "#EF476F", "#7209B7", "#FF9E00", "#8338EC",
+        "#3A86FF", "#FB5607", "#FF006E", "#8338EC", "#3A86FF",
+        "#06D6A0", "#FFD166", "#EF476F", "#118AB2", "#7209B7"
+      ],
+      'biloxi': [
+        "#E74C3C", "#3498DB", "#2ECC71", "#F39C12", "#9B59B6",
+        "#1ABC9C", "#D35400", "#C0392B", "#27AE60", "#8E44AD",
+        "#16A085", "#E67E22", "#2980B9", "#D68910", "#A569BD",
+        "#138D75", "#CA6F1E", "#7D3C98", "#117A65", "#B9770E"
+      ],
+      'mobile': [
+        "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF",
+        "#00FFFF", "#FFA500", "#800080", "#008000", "#800000",
+        "#008080", "#000080", "#808000", "#808080", "#C0C0C0",
+        "#FFD700", "#DA70D6", "#32CD32", "#FF4500", "#9400D3"
+      ],
+      'pensacola': [
+        "#1F77B4", "#FF7F0E", "#2CA02C", "#D62728", "#9467BD",
+        "#8C564B", "#E377C2", "#7F7F7F", "#BCBD22", "#17BECF",
+        "#393B79", "#637939", "#8C6D31", "#843C39", "#7B4173",
+        "#5254A3", "#8CA252", "#BD9E39", "#AD494A", "#A55194"
+      ]
+    };
+
+    // Get venues with colors for the selected city
+    const venues = await Venue.find({
+      city: selectedCity,
+      colorCode: { $exists: true, $ne: null }
+    })
+      .select("venueName colorCode verifiedOrder isActive")
+      .sort({ venueName: 1 });
+
+    // Get used colors
+    const usedColors = venues.map(v => v.colorCode);
+    const cityColors = CITY_COLOR_PALETTES[selectedCity] || CITY_COLOR_PALETTES['mobile'];
+
+    const availableColors = cityColors.filter(
+      color => !usedColors.includes(color)
+    );
+
+    // Group venues by color for display
+    const colorAssignments = cityColors.map(color => {
+      const venue = venues.find(v => v.colorCode === color);
+      return {
+        color,
+        hex: color,
+        venue: venue ? {
+          id: venue._id,
+          name: venue.venueName,
+          verified: venue.verifiedOrder > 0,
+          active: venue.isActive
+        } : null,
+        isAvailable: !venue
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        city: selectedCity,
+        cityName: selectedCity.split(' ').map(word =>
+          word.charAt(0).toUpperCase() + word.slice(1)
+        ).join(' '),
+        totalColors: cityColors.length,
+        usedColors: usedColors.length,
+        availableColors: availableColors.length,
+        colorAssignments,
+        availableColorsList: availableColors,
+        venuesWithoutColor: await Venue.find({
+          city: selectedCity,
+          $or: [
+            { colorCode: { $exists: false } },
+            { colorCode: null }
+          ]
+        }).select("venueName _id").lean()
+      }
+    });
+  } catch (error) {
+    next(new ErrorResponse("Failed to fetch color management data", 500));
+  }
+};
+
+// NEW: Assign/Change venue color by admin
+export const assignVenueColor = async (req, res, next) => {
+  try {
+    const { venueId } = req.params;
+    const { colorCode } = req.body;
+
+    if (!colorCode) {
+      return next(new ErrorResponse("Color code is required", 400));
+    }
+
+    const venue = await Venue.findById(venueId);
+    if (!venue) {
+      return next(new ErrorResponse("Venue not found", 404));
+    }
+
+    const isValidColor = await ColorAssigner.validateColorForCity(
+      colorCode,
+      venue.city
+    );
+
+    if (!isValidColor) {
+      return next(
+        new ErrorResponse(
+          `Invalid color for ${venue.city}. Must be one of the 20 city colors.`,
+          400
+        )
+      );
+    }
+    const isAvailable = await ColorAssigner.isColorAvailable(
+      colorCode,
+      venue.city,
+      venueId
+    );
+
+    if (!isAvailable) {
+      const existingVenue = await Venue.findOne({
+        city: venue.city,
+        colorCode: colorCode,
+        _id: { $ne: venueId }
+      });
+
+      return next(
+        new ErrorResponse(
+          `Color ${colorCode} is already assigned to ${existingVenue.venueName}`,
+          400
+        )
+      );
+    }
+
+    // Update venue color
+    const oldColor = venue.colorCode;
+    venue.colorCode = colorCode;
+    await venue.save();
+
+    // Update events
+    await Event.updateMany(
+      { venue: venueId },
+      { $set: { color: colorCode } }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: `Color updated from ${oldColor || 'none'} to ${colorCode}`,
+      data: { venue }
+    });
+
+  } catch (error) {
+    next(new ErrorResponse("Failed to assign venue color", 500));
+  }
+};
+
+// NEW: Reassign all colors for a city
+export const reassignCityColors = async (req, res, next) => {
+  try {
+    const { city } = req.params;
+
+    const validCities = ["new orleans", "biloxi", "mobile", "pensacola"];
+    if (!validCities.includes(city.toLowerCase())) {
+      return next(new ErrorResponse("Invalid city", 400));
+    }
+
+    // Color palettes
+    const CITY_COLOR_PALETTES = {
+      'new orleans': [
+        "#FF6B6B", "#4ECDC4", "#FFD166", "#06D6A0", "#118AB2",
+        "#073B4C", "#EF476F", "#7209B7", "#FF9E00", "#8338EC",
+        "#3A86FF", "#FB5607", "#FF006E", "#8338EC", "#3A86FF",
+        "#06D6A0", "#FFD166", "#EF476F", "#118AB2", "#7209B7"
+      ],
+      'biloxi': [
+        "#E74C3C", "#3498DB", "#2ECC71", "#F39C12", "#9B59B6",
+        "#1ABC9C", "#D35400", "#C0392B", "#27AE60", "#8E44AD",
+        "#16A085", "#E67E22", "#2980B9", "#D68910", "#A569BD",
+        "#138D75", "#CA6F1E", "#7D3C98", "#117A65", "#B9770E"
+      ],
+      'mobile': [
+        "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF",
+        "#00FFFF", "#FFA500", "#800080", "#008000", "#800000",
+        "#008080", "#000080", "#808000", "#808080", "#C0C0C0",
+        "#FFD700", "#DA70D6", "#32CD32", "#FF4500", "#9400D3"
+      ],
+      'pensacola': [
+        "#1F77B4", "#FF7F0E", "#2CA02C", "#D62728", "#9467BD",
+        "#8C564B", "#E377C2", "#7F7F7F", "#BCBD22", "#17BECF",
+        "#393B79", "#637939", "#8C6D31", "#843C39", "#7B4173",
+        "#5254A3", "#8CA252", "#BD9E39", "#AD494A", "#A55194"
+      ]
+    };
+
+    const cityColors = CITY_COLOR_PALETTES[city.toLowerCase()] || CITY_COLOR_PALETTES['mobile'];
+
+    // Get all active venues in the city, sorted by creation date
+    const venues = await Venue.find({
+      city: city.toLowerCase(),
+      isActive: true
+    }).sort({ createdAt: 1 });
+
+    let updateResults = [];
+
+    // Reassign colors in order
+    for (let i = 0; i < venues.length; i++) {
+      const venue = venues[i];
+      const colorIndex = i % cityColors.length;
+      const newColor = cityColors[colorIndex];
+
+      const oldColor = venue.colorCode;
+      venue.colorCode = newColor;
+      await venue.save();
+
+      // Update events for this venue
+      await Event.updateMany(
+        { venue: venue._id },
+        { $set: { color: newColor } }
+      );
+
+      updateResults.push({
+        venueId: venue._id,
+        venueName: venue.venueName,
+        oldColor,
+        newColor
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Colors reassigned for ${venues.length} venues in ${city}`,
+      data: {
+        city,
+        totalVenues: venues.length,
+        updates: updateResults
+      }
+    });
+  } catch (error) {
+    next(new ErrorResponse("Failed to reassign city colors", 500));
   }
 };

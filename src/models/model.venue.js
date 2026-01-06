@@ -1,5 +1,5 @@
+// models/model.venue.js
 import mongoose from "mongoose";
-
 
 const showSchema = new mongoose.Schema({
   artist: { type: String, required: true },
@@ -13,74 +13,84 @@ const venueSchema = new mongoose.Schema({
     ref: "User",
     required: true,
   },
+
+  // BASIC FIELDS (free & pro)
   venueName: {
     type: String,
     required: [true, "Venue name is required"],
     trim: true,
     maxlength: [100, "Venue name cannot exceed 100 characters"],
   },
+
   city: {
     type: String,
     required: [true, "City is required"],
-    enum: {
-      values: ["new orleans", "biloxi", "mobile", "pensacola"],
-      message: "City must be New Orleans, Biloxi, Mobile, or Pensacola",
-    },
+    enum: ["new orleans", "biloxi", "mobile", "pensacola"],
     set: (v) => v.toLowerCase().trim(),
   },
+
   address: {
     type: String,
-    required: [false, "Address is required"],
     trim: true,
   },
+
   seatingCapacity: {
     type: Number,
-    required: [false, "Seating capacity is required"],
-    min: [1, "Seating capacity must be at least 1"],
+    min: [0, "Seating capacity must be at least 1"],
     default: 0,
   },
+
   biography: {
     type: String,
-    maxlength: [2000, "Biography cannot exceed 2000 characters"],
+    maxlength: 2000,
   },
-  openHours: {
-    type: String,
-    required: [false, "Open hours are required"],
-  },
-  openDays: {
-    type: String,
-    required: [false, "Open days are required"],
-  },
+
+  openHours: { type: String },
+  openDays: { type: String },
+
   photos: [
     {
       url: String,
       filename: String,
     },
   ],
-   verifiedOrder: {
+
+  featuresLocked: {
+    type: Boolean,
+    default: true,
+  },
+
+  showLimit: {
+    type: Number,
+    default: 1,
+  },
+
+  photosLimit: {
     type: Number,
     default: 0,
   },
+
+  verifiedOrder: {
+    type: Number,
+    default: 0,
+  },
+
   colorCode: {
     type: String,
-    default: "Gray",
+    default: "#000000",
   },
+
   shows: [showSchema],
+
   isActive: {
     type: Boolean,
     default: false,
   },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now,
-  },
+
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
 });
 
-// Automatically update `updatedAt` before saving
 venueSchema.pre("save", function (next) {
   this.updatedAt = Date.now();
   next();

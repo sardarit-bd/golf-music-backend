@@ -105,6 +105,8 @@ export const validateArtistProfile = [
     .isLength({ max: 2000 })
     .withMessage("Biography cannot exceed 2000 characters"),
 ];
+
+
 export const validateVenueProfile = [
   body("venueName")
     .notEmpty()
@@ -118,24 +120,32 @@ export const validateVenueProfile = [
     .custom((value) => {
       const validCities = ["new orleans", "biloxi", "mobile", "pensacola"];
       if (!validCities.includes(value.toLowerCase().trim())) {
-        throw new Error(
-          "City must be New Orleans, Biloxi, Mobile, or Pensacola"
-        );
+        throw new Error("City must be New Orleans, Biloxi, Mobile, or Pensacola");
       }
       return true;
     }),
 
-  body("address").notEmpty().withMessage("Address is required"),
+  body("address")
+    .optional({ checkFalsy: true })
+    .isString()
+    .withMessage("Address must be a string"),
 
   body("seatingCapacity")
-    .optional()
+    .optional({ checkFalsy: true })
     .isInt({ min: 1 })
     .withMessage("Seating capacity must be a positive number"),
 
-  body("openHours").notEmpty().withMessage("Open hours are required"),
+  body("openHours")
+    .optional({ checkFalsy: true })
+    .isString()
+    .withMessage("Open hours must be a string"),
 
-  body("openDays").notEmpty().withMessage("Open days are required"),
+  body("openDays")
+    .optional({ checkFalsy: true })
+    .isString()
+    .withMessage("Open days must be a string"),
 ];
+
 
 export const validateNews = [
   body("title")

@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
 const userSchema = new mongoose.Schema({
+
   username: {
     type: String,
     required: [true, "Username is required"],
@@ -44,17 +45,7 @@ const userSchema = new mongoose.Schema({
 
   genre: {
     type: String,
-    enum: [
-      "rap",
-      "country",
-      "pop",
-      "rock",
-      "jazz",
-      "reggae",
-      "edm",
-      "classical",
-      "other",
-    ],
+    enum: ["rap", "country", "pop", "rock", "jazz", "reggae", "edm", "classical", "other"],
     set: (val) => (val ? val.toLowerCase() : val),
     required: function () {
       return this.userType === "artist";
@@ -66,22 +57,81 @@ const userSchema = new mongoose.Schema({
     enum: ["new orleans", "biloxi", "mobile", "pensacola"],
     set: (val) => (val ? val.toLowerCase() : val),
     required: function () {
-      return this.userType === "venue" || this.userType === "journalist" || this.userType === "photographer";
+      return ["venue", "journalist", "photographer"].includes(this.userType);
     },
   },
 
-  // Password Reset Fields
+  subscriptionPlan: {
+    type: String,
+    enum: ["free", "pro"],
+    default: "free",
+  },
+
+  subscriptionStatus: {
+    type: String,
+    enum: [
+      "none",
+      "trialing",
+      "active",
+      "incomplete",
+      "past_due",
+      "canceled",
+      "expired",
+    ],
+    default: "none",
+  },
+
+  cancelAtPeriodEnd: {
+    type: Boolean,
+    default: false,
+  },
+
+  // ===== Trial control =====
+  trialStartedAt: {
+    type: Date,
+    default: null,
+  },
+
+  trialEndsAt: {
+    type: Date,
+    default: null,
+  },
+
+  trialUsed: {
+    type: Boolean,
+    default: false,
+  },
+
+  // ===== Stripe (future ready) =====
+  stripeCustomerId: {
+    type: String,
+    default: null,
+  },
+
+  stripeSubscriptionId: {
+    type: String,
+    default: null,
+  },
+
+  // ===== Stripe Connect (Market sellers) =====
+  stripeAccountId: {
+    type: String,
+    default: null,
+  },
+
+
   resetPasswordToken: { type: String },
   resetPasswordExpire: { type: Date },
 
-  // Status Fields
+
   isActive: { type: Boolean, default: false },
   isVerified: { type: Boolean, default: false },
   verificationRequested: { type: Boolean, default: false },
+
   createdAt: { type: Date, default: Date.now },
 });
 
-// Hash password before saving
+
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
   const salt = await bcrypt.genSalt(10);
@@ -89,26 +139,19 @@ userSchema.pre("save", async function (next) {
   next();
 });
 
-// Match entered password
 userSchema.methods.matchPassword = async function (enteredPassword) {
-  return await bcrypt.compare(enteredPassword, this.password);
+  return bcrypt.compare(enteredPassword, this.password);
 };
 
-// Generate reset password token (used in forgot password flow)
 userSchema.methods.getResetPasswordToken = function () {
-  // Generate plain token
   const resetToken = crypto.randomBytes(20).toString("hex");
 
-  // Hash token before saving to DB
   this.resetPasswordToken = crypto
     .createHash("sha256")
     .update(resetToken)
     .digest("hex");
 
-  // Set expiry time (15 mins)
   this.resetPasswordExpire = Date.now() + 15 * 60 * 1000;
-
-  // Return the plain token (will be sent in email)
   return resetToken;
 };
 

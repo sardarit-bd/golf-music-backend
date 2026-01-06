@@ -2,36 +2,52 @@ import mongoose from "mongoose";
 
 const OrderSchema = new mongoose.Schema(
   {
-    merch: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Merch",
+    // 🔑 Order Type
+    orderType: {
+      type: String,
+      enum: ["merch", "market"],
       required: true,
     },
+
     buyer: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
-    quantity: { 
-      type: Number, 
-      required: true,
-      min: 1
-    },
-    totalPrice: { 
-      type: Number, 
-      required: true,
-      min: 0
+
+    seller: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: function () {
+        return this.orderType === "market";
+      },
     },
 
-    paymentMethod: { 
-      type: String, 
-      enum: ["stripe", "cod"], 
-      required: true 
+    /* ======================
+       MERCH ORDER FIELDS
+    ====================== */
+    merch: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Merch",
+      required: function () {
+        return this.orderType === "merch";
+      },
     },
-    paymentStatus: {
+
+    quantity: {
+      type: Number,
+      min: 1,
+      required: function () {
+        return this.orderType === "merch";
+      },
+    },
+
+    paymentMethod: {
       type: String,
-      enum: ["pending", "paid", "failed", "refunded"],
-      default: "pending",
+      enum: ["stripe", "cod"],
+      required: function () {
+        return this.orderType === "merch";
+      },
     },
 
     deliveryStatus: {
@@ -43,7 +59,7 @@ const OrderSchema = new mongoose.Schema(
         "ready-for-pickup",
         "shipped",
         "delivered",
-        "cancelled"
+        "cancelled",
       ],
       default: "pending",
     },
@@ -57,16 +73,54 @@ const OrderSchema = new mongoose.Schema(
       postalCode: String,
       note: String,
     },
+
+    /* ======================
+       MARKET ORDER FIELDS
+    ====================== */
+    marketItem: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "MarketItem",
+      required: function () {
+        return this.orderType === "market";
+      },
+    },
+
+    platformFee: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    /* ======================
+       COMMON FIELDS
+    ====================== */
+    totalPrice: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+
+    paymentStatus: {
+      type: String,
+      enum: ["pending", "paid", "failed", "refunded"],
+      default: "pending",
+    },
+
+    stripePaymentIntentId: {
+      type: String,
+      default: null,
+    },
   },
-  { 
-    timestamps: true 
+  {
+    timestamps: true,
   }
 );
 
-// Index for better performance
+// Indexes
 OrderSchema.index({ createdAt: -1 });
 OrderSchema.index({ buyer: 1 });
-OrderSchema.index({ deliveryStatus: 1 });
+OrderSchema.index({ seller: 1 });
 OrderSchema.index({ paymentStatus: 1 });
+OrderSchema.index({ orderType: 1 });
 
 export default mongoose.model("Order", OrderSchema);
