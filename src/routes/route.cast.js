@@ -1,37 +1,18 @@
 import express from "express";
-import { 
-  getAllCasts, 
-  createCast, 
-  updateCast, 
-  deleteCast 
+import {
+  getAllCasts,
+  createCast,
+  updateCast,
+  deleteCast,
 } from "../controllers/controller.cast.js";
 import { protect, authorize } from "../middleware/auth.js";
-import { validateCast } from "../middleware/validation.js";
-import { uploadCastThumbnail } from "../middleware/upload.js";
 
 const router = express.Router();
 
-// Public route
 router.get("/", getAllCasts);
 
-// Admin routes
-router.post(
-  "/",
-  protect,
-  authorize("admin"),
-  uploadCastThumbnail,
-  validateCast,
-  createCast
-);
-
-router.put(
-  "/:id",
-  protect,
-  authorize("admin"),
-  uploadCastThumbnail,
-  validateCast,
-  updateCast
-);
+router.post("/", protect, authorize("admin"), createCast);
+router.put("/:id", protect, authorize("admin"), updateCast);
 router.delete("/:id", protect, authorize("admin"), deleteCast);
 
 export default router;
