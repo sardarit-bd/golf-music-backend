@@ -43,7 +43,7 @@ export const handleSubscriptionWebhook = async (event) => {
           : null,
       });
 
-      console.log("Subscription checkout completed:", subscription.id);
+      // console.log("Subscription checkout completed:", subscription.id);
     }
 
     if (event.type === "customer.subscription.updated") {
@@ -60,13 +60,13 @@ export const handleSubscriptionWebhook = async (event) => {
         }
       );
 
-      console.log(
-        "🔄 Subscription updated:",
-        sub.id,
-        sub.status,
-        "cancel_at_period_end:",
-        sub.cancel_at_period_end
-      );
+      // console.log(
+      //   "🔄 Subscription updated:",
+      //   sub.id,
+      //   sub.status,
+      //   "cancel_at_period_end:",
+      //   sub.cancel_at_period_end
+      // );
     }
 
 
@@ -84,7 +84,7 @@ export const handleSubscriptionWebhook = async (event) => {
         }
       );
 
-      console.log("❌ Subscription fully cancelled:", sub.id);
+      // console.log("❌ Subscription fully cancelled:", sub.id);
     }
   } catch (err) {
     console.error("❌ Subscription webhook error:", err.message);

@@ -152,6 +152,6 @@ export const handleUploadErrors = (error, req, res, next) => {
     }
   }
 
-  console.log('Upload Error:', error);
+  // console.log('Upload Error:', error);
   next(error);
 };

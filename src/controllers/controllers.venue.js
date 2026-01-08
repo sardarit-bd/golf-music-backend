@@ -712,7 +712,7 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
       
       changes.push(`Updated ${updateResult.modifiedCount} events with new color`);
       
-      console.log(`Color sync: Updated ${updateResult.modifiedCount} events for ${venue.venueName}`);
+      // console.log(`Color sync: Updated ${updateResult.modifiedCount} events for ${venue.venueName}`);
     } catch (error) {
       console.error("Error updating event colors:", error);
       changes.push("Warning: Failed to update event colors");

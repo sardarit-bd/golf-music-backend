@@ -470,7 +470,7 @@ export const getArtistsForAdmin = asyncHandler(async (req, res, next) => {
     type = "artists"
   } = req.query;
 
-  console.log("Admin fetching artists with params:", req.query);
+  // console.log("Admin fetching artists with params:", req.query);
 
   // Build query
   let query = {};

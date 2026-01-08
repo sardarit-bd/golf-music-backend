@@ -289,14 +289,14 @@ export const deletePhoto = asyncHandler(async (req, res, next) => {
   try {
     // Delete from Cloudinary
     if (photoToDelete.public_id) {
-      console.log("Deleting from Cloudinary:", photoToDelete.public_id);
+      // console.log("Deleting from Cloudinary:", photoToDelete.public_id);
 
       const result = await cloudinary.uploader.destroy(photoToDelete.public_id, {
         resource_type: "image",
         invalidate: true
       });
 
-      console.log("Cloudinary delete result:", result);
+      // console.log("Cloudinary delete result:", result);
 
       if (result.result !== 'ok') {
         console.warn("Cloudinary deletion may have failed:", result);
