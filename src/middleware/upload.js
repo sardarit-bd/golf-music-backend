@@ -1,12 +1,60 @@
 import multer from "multer";
-import { storage } from "../config/cloudinary.js"; 
+import { storage } from "../config/cloudinary.js";
 
 // === Multer with Cloudinary Storage ===
 const upload = multer({
   storage,
-  limits: { fileSize: 20 * 1024 * 1024 },
+  limits: { fileSize: 200 * 1024 * 1024 }, // 200MB
+  fileFilter: (req, file, cb) => {
+    // Accept video files for "video" field
+    if (file.fieldname === "video") {
+      const allowedTypes = ["video/mp4", "video/mov", "video/avi", "video/webm", "video/mkv"];
+      if (!allowedTypes.includes(file.mimetype)) {
+        return cb(new Error("Invalid video format. Use MP4, MOV, AVI, MKV, or WebM"), false);
+      }
+    }
+
+    // Accept image files for "thumbnail" field
+    if (file.fieldname === "thumbnail") {
+      const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+      if (!allowedTypes.includes(file.mimetype)) {
+        return cb(new Error("Invalid image format. Use JPG, PNG, WebP or GIF"), false);
+      }
+    }
+
+    cb(null, true);
+  }
 });
 
+
+export const uploadCastFiles = (req, res, next) => {
+  upload.fields([
+    { name: "video", maxCount: 1 },
+    { name: "thumbnail", maxCount: 1 }
+  ])(req, res, function(err) {
+    if (err instanceof multer.MulterError) {
+      console.error("Multer Error:", err);
+      return res.status(400).json({
+        success: false,
+        message: err.code === "LIMIT_FILE_SIZE" 
+          ? "File too large. Maximum 200MB allowed." 
+          : err.message
+      });
+    } else if (err) {
+      console.error("Upload Error:", err);
+      return res.status(400).json({
+        success: false,
+        message: err.message || "File upload error"
+      });
+    }
+    next();
+  });
+};
+
+export const uploadCastVideo = multer({
+  storage,
+  limits: { fileSize: 200 * 1024 * 1024 }, // 200MB
+}).single("video");
 
 
 // === ADMIN PROFILE PHOTO UPLOAD ===
@@ -35,7 +83,7 @@ export const uploadFooterLogo = multer({
 
 export const uploadArtistFiles = upload.fields([
   { name: "photos", maxCount: 5 },
-  { name: "mp3Files", maxCount: 5 }, 
+  { name: "mp3Files", maxCount: 5 },
 ]);
 
 

@@ -2,6 +2,7 @@ import { validationResult } from "express-validator";
 import Wave from "../models/model.wave.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { extractYouTubeId, getYouTubeThumbnail } from "../utils/youtube.js";
 
 // GET all waves (public)
 export const getAllWaves = asyncHandler(async (req, res) => {
@@ -22,25 +23,26 @@ export const createWave = asyncHandler(async (req, res, next) => {
   }
 
   const { title, youtubeUrl } = req.body;
-  let thumbnailUrl = "";
 
-
-  if (req.file && req.file.path) {
-    thumbnailUrl = req.file.path;
-  } else if (req.body.thumbnail) {
-    thumbnailUrl = req.body.thumbnail;
-  } else {
-    return next(new ErrorResponse("Thumbnail is required", 400));
+  const videoId = extractYouTubeId(youtubeUrl);
+  if (!videoId) {
+    return next(new ErrorResponse("Invalid YouTube URL", 400));
   }
 
-  // Duplicate checks
+  let thumbnailUrl = "";
+
+  if (req.file?.path) {
+    thumbnailUrl = req.file.path;
+  }
+  else {
+    thumbnailUrl = getYouTubeThumbnail(videoId);
+  }
+
   const [titleExists, videoExists] = await Promise.all([
     Wave.findOne({ title: new RegExp(`^${title}$`, "i") }),
     Wave.findOne({ youtubeUrl }),
   ]);
 
-  if (titleExists && videoExists)
-    return next(new ErrorResponse("Wave with same title and YouTube video already exists", 400));
   if (titleExists)
     return next(new ErrorResponse("Wave title already exists", 400));
   if (videoExists)
