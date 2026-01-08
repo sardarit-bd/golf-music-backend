@@ -41,7 +41,7 @@ export const updateHeroSection = async (req, res) => {
         await cloudinary.uploader.destroy(heroData.videoUrl, {
           resource_type: "video"
         });
-        console.log("Old video deleted:", heroData.videoUrl);
+        // console.log("Old video deleted:", heroData.videoUrl);
       } catch (deleteErr) {
         console.error("Failed to delete old video:", deleteErr);
       }

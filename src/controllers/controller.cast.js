@@ -114,7 +114,6 @@ export const updateCast = asyncHandler(async (req, res, next) => {
     cast.videoType = videoType;
   }
 
-  // ▶️ YouTube
   if (cast.videoType === "youtube") {
     const videoId = extractYouTubeId(youtubeUrl);
     if (!videoId) {

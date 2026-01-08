@@ -23,7 +23,7 @@ export const handleMerchWebhook = async (event) => {
       stripePaymentIntentId: session.payment_intent,
     });
 
-    console.log("Market order completed:", orderId);
+    // console.log("Market order completed:", orderId);
     return;
   }
 
@@ -39,5 +39,5 @@ export const handleMerchWebhook = async (event) => {
   await sendOrderConfirmationEmail(order.buyer.email, order);
   await sendAdminNewOrderEmail(order);
 
-  console.log("Merch order completed:", orderId);
+  // console.log("Merch order completed:", orderId);
 };
