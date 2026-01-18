@@ -14,32 +14,32 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 // Get all orders with advanced filtering
 export const getAllOrders = asyncHandler(async (req, res, next) => {
-  const { 
-    page = 1, 
-    limit = 10, 
+  const {
+    page = 1,
+    limit = 10,
     status,
     paymentStatus,
     paymentMethod,
-    search 
+    search
   } = req.query;
-  
+
   const skip = (page - 1) * parseInt(limit);
-  
+
   // Build query
   const query = {};
-  
+
   if (status && status !== 'all') {
     query.deliveryStatus = status;
   }
-  
+
   if (paymentStatus && paymentStatus !== 'all') {
     query.paymentStatus = paymentStatus;
   }
-  
+
   if (paymentMethod && paymentMethod !== 'all') {
     query.paymentMethod = paymentMethod;
   }
-  
+
   // Search functionality
   if (search) {
     const searchRegex = new RegExp(search, 'i');
@@ -72,7 +72,7 @@ export const updateOrderStatus = asyncHandler(async (req, res, next) => {
 
   const validStatuses = [
     "pending",
-    "confirmed", 
+    "confirmed",
     "processing",
     "ready-for-pickup",
     "shipped",
@@ -96,7 +96,7 @@ export const updateOrderStatus = asyncHandler(async (req, res, next) => {
       merch.stock += parseInt(order.quantity);
       await merch.save();
     }
-    
+
     // If paid with stripe, mark for refund
     if (order.paymentStatus === "paid" && order.paymentMethod === "stripe") {
       order.paymentStatus = "refunded";
@@ -112,7 +112,7 @@ export const updateOrderStatus = asyncHandler(async (req, res, next) => {
     } else {
       return next(new ErrorResponse("Insufficient stock", 400));
     }
-    
+
     // Reset payment status if it was refunded
     if (order.paymentStatus === "refunded") {
       order.paymentStatus = order.paymentMethod === "cod" ? "pending" : "paid";
@@ -406,9 +406,9 @@ export const createOrder = asyncHandler(async (req, res, next) => {
   const { merchId, quantity, paymentMethod, shippingInfo } = req.body;
   const userId = req.user._id;
 
-    const allowedRoles = ["fan", "user", "artist", "venue", "journalist", "photographer", "admin"];
+  const allowedRoles = ["fan", "user", "artist", "venue", "journalist", "photographer", "admin"];
 
-  
+
   if (!allowedRoles.includes(req.user.userType)) {
     return next(new ErrorResponse("Unauthorized to create orders", 403));
   }
@@ -433,6 +433,7 @@ export const createOrder = asyncHandler(async (req, res, next) => {
   let deliveryStatus = "pending";
 
   const order = await Order.create({
+    orderType: "merch",
     merch: merch._id,
     buyer: userId,
     quantity: parseInt(quantity),
@@ -521,11 +522,11 @@ export const handleStripeWebhook = asyncHandler(async (req, res, next) => {
 
 
 export const getUserOrders = asyncHandler(async (req, res) => {
-    const orders = await Order.find({ buyer: req.user._id })
-        .populate("merch", "name price image description");
+  const orders = await Order.find({ buyer: req.user._id })
+    .populate("merch", "name price image description");
 
-    return res.json({
-        success: true,
-        data: orders
-    });
+  return res.json({
+    success: true,
+    data: orders
+  });
 });

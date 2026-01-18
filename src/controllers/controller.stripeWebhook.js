@@ -13,20 +13,18 @@ export const handleStripeWebhook = async (req, res) => {
       process.env.STRIPE_WEBHOOK_SECRET
     );
   } catch (err) {
-    console.log("❌ Webhook signature failed:", err.message);
+    console.error("❌ Webhook signature failed:", err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
   try {
-    // MERCH
     await handleMerchWebhook(event);
 
-    // SUBSCRIPTION
     await handleSubscriptionWebhook(event);
 
     res.json({ received: true });
   } catch (err) {
-    console.error("Webhook handler error:", err);
+    console.error("❌ Webhook handler error:", err);
     res.status(500).send("Webhook handler failed");
   }
 };
