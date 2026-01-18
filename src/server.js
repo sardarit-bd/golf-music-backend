@@ -40,10 +40,6 @@ await connectDB();
 
 const app = express();
 
-// ===============================
-// Security middleware
-// ===============================
-app.use(helmet());
 
 // ===============================
 // STRIPE WEBHOOK (MUST BE FIRST)
@@ -54,6 +50,12 @@ app.post(
   express.raw({ type: "application/json" }),
   handleStripeWebhook
 );
+
+// ===============================
+// Security middleware
+// ===============================
+app.use(helmet());
+
 
 // ===============================
 // Rate limiting

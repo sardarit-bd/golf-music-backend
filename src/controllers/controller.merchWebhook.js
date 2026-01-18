@@ -14,22 +14,16 @@ export const handleMerchWebhook = async (event) => {
   const orderId = session.metadata?.orderId;
   if (!orderId) return;
 
-  /* =========================
-     MARKET ORDER HANDLING
-  ========================= */
+  // MARKET
   if (session.metadata?.type === "market") {
     await Order.findByIdAndUpdate(orderId, {
       paymentStatus: "paid",
       stripePaymentIntentId: session.payment_intent,
     });
-
-    // console.log("Market order completed:", orderId);
     return;
   }
 
-  /* =========================
-     MERCH ORDER HANDLING
-  ========================= */
+  // MERCH
   const order = await Order.findById(orderId).populate("buyer");
   if (!order) return;
 
@@ -38,6 +32,4 @@ export const handleMerchWebhook = async (event) => {
 
   await sendOrderConfirmationEmail(order.buyer.email, order);
   await sendAdminNewOrderEmail(order);
-
-  // console.log("Merch order completed:", orderId);
 };
