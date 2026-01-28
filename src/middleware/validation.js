@@ -1,4 +1,6 @@
+// middleware/validation.js
 import { body } from "express-validator";
+import { STATE_CITY_MAPPING } from "../utils/constants.js";
 
 export const validateRegistration = [
   body("username")
@@ -18,8 +20,8 @@ export const validateRegistration = [
 
   body("userType")
     .customSanitizer((value) => value?.toLowerCase())
-    .isIn(["artist", "venue", "journalist", "fan", "photographer"])
-    .withMessage("User type must be artist, venue, journalist, or fan"),
+    .isIn(["artist", "venue", "journalist", "fan", "photographer", "admin"])
+    .withMessage("User type must be artist, venue, journalist, photographer, fan, or admin"),
 
   body("genre")
     .if(body("userType").equals("artist"))
@@ -42,15 +44,54 @@ export const validateRegistration = [
       return true;
     }),
 
-  body("location")
-    .customSanitizer((value) => value?.toLowerCase())
+  // STATE validation (for non-fan users)
+  body("state")
     .custom((value, { req }) => {
-      const validLocations = ["new orleans", "biloxi", "mobile", "pensacola"];
-
-      if (req.body.userType !== "fan" && !validLocations.includes(value)) {
-        throw new Error("Invalid location selected");
+      const userType = req.body.userType;
+      const requiresState = ["artist", "venue", "journalist", "photographer"].includes(userType);
+      
+      if (requiresState) {
+        if (!value) {
+          throw new Error("State is required for this user type");
+        }
+        
+        const validStates = Object.keys(STATE_CITY_MAPPING);
+        if (!validStates.includes(value)) {
+          throw new Error(`Invalid state. Must be one of: ${validStates.join(", ")}`);
+        }
       }
       return true;
+    })
+    .customSanitizer((value) => {
+      if (!value) return value;
+      // Capitalize first letter, lowercase rest
+      return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+    }),
+
+  // CITY validation (for non-fan users)
+  body("city")
+    .custom((value, { req }) => {
+      const userType = req.body.userType;
+      const requiresCity = ["artist", "venue", "journalist", "photographer"].includes(userType);
+      
+      if (requiresCity) {
+        if (!value) {
+          throw new Error("City is required for this user type");
+        }
+        
+        const state = req.body.state;
+        if (state) {
+          const stateCities = STATE_CITY_MAPPING[state] || [];
+          if (!stateCities.includes(value.toLowerCase())) {
+            throw new Error(`City "${value}" is not valid for state "${state}"`);
+          }
+        }
+      }
+      return true;
+    })
+    .customSanitizer((value) => {
+      if (!value) return value;
+      return value.toLowerCase().trim();
     }),
 ];
 
@@ -80,7 +121,30 @@ export const validateArtistProfile = [
     .isLength({ max: 100 })
     .withMessage("Name cannot exceed 100 characters"),
 
-  body("city").notEmpty().withMessage("City is required"),
+  body("state")
+    .notEmpty()
+    .withMessage("State is required")
+    .custom((value) => {
+      const validStates = Object.keys(STATE_CITY_MAPPING);
+      if (!validStates.includes(value)) {
+        throw new Error(`Invalid state. Must be one of: ${validStates.join(", ")}`);
+      }
+      return true;
+    }),
+
+  body("city")
+    .notEmpty()
+    .withMessage("City is required")
+    .custom((value, { req }) => {
+      const state = req.body.state;
+      if (state) {
+        const stateCities = STATE_CITY_MAPPING[state] || [];
+        if (!stateCities.includes(value.toLowerCase())) {
+          throw new Error(`City "${value}" is not valid for state "${state}"`);
+        }
+      }
+      return true;
+    }),
 
   body("genre").custom((value) => {
     const validGenres = [
@@ -106,7 +170,6 @@ export const validateArtistProfile = [
     .withMessage("Biography cannot exceed 2000 characters"),
 ];
 
-
 export const validateVenueProfile = [
   body("venueName")
     .notEmpty()
@@ -114,13 +177,27 @@ export const validateVenueProfile = [
     .isLength({ max: 100 })
     .withMessage("Venue name cannot exceed 100 characters"),
 
+  body("state")
+    .notEmpty()
+    .withMessage("State is required")
+    .custom((value) => {
+      const validStates = Object.keys(STATE_CITY_MAPPING);
+      if (!validStates.includes(value)) {
+        throw new Error(`Invalid state. Must be one of: ${validStates.join(", ")}`);
+      }
+      return true;
+    }),
+
   body("city")
     .notEmpty()
     .withMessage("City is required")
-    .custom((value) => {
-      const validCities = ["new orleans", "biloxi", "mobile", "pensacola"];
-      if (!validCities.includes(value.toLowerCase().trim())) {
-        throw new Error("City must be New Orleans, Biloxi, Mobile, or Pensacola");
+    .custom((value, { req }) => {
+      const state = req.body.state;
+      if (state) {
+        const stateCities = STATE_CITY_MAPPING[state] || [];
+        if (!stateCities.includes(value.toLowerCase())) {
+          throw new Error(`City "${value}" is not valid for state "${state}"`);
+        }
       }
       return true;
     }),
@@ -146,7 +223,6 @@ export const validateVenueProfile = [
     .withMessage("Open days must be a string"),
 ];
 
-
 export const validateNews = [
   body("title")
     .notEmpty()
@@ -160,15 +236,27 @@ export const validateNews = [
     .isLength({ max: 5000 })
     .withMessage("Description cannot exceed 5000 characters"),
 
-  body("location")
+  body("state")
     .notEmpty()
-    .withMessage("Location is required")
+    .withMessage("State is required")
     .custom((value) => {
-      const validLocations = ["new orleans", "biloxi", "mobile", "pensacola"];
-      if (!validLocations.includes(value.toLowerCase().trim())) {
-        throw new Error(
-          "Location must be New Orleans, Biloxi, Mobile, or Pensacola"
-        );
+      const validStates = Object.keys(STATE_CITY_MAPPING);
+      if (!validStates.includes(value)) {
+        throw new Error(`Invalid state. Must be one of: ${validStates.join(", ")}`);
+      }
+      return true;
+    }),
+
+  body("city")
+    .notEmpty()
+    .withMessage("City is required")
+    .custom((value, { req }) => {
+      const state = req.body.state;
+      if (state) {
+        const stateCities = STATE_CITY_MAPPING[state] || [];
+        if (!stateCities.includes(value.toLowerCase())) {
+          throw new Error(`City "${value}" is not valid for state "${state}"`);
+        }
       }
       return true;
     }),
@@ -178,62 +266,123 @@ export const validateNews = [
 
 // Validate Event Creation
 export const validateEvent = [
-  body("artistBandName")
-    .notEmpty()
-    .withMessage("Artist/Band name is required")
-    .isLength({ max: 100 })
-    .withMessage("Artist/Band name cannot exceed 100 characters"),
+  body('artistBandName')
+    .trim()
+    .notEmpty().withMessage('Artist/Band name is required')
+    .isLength({ min: 2, max: 100 }).withMessage('Artist/Band name must be between 2-100 characters'),
 
-  body("time").notEmpty().withMessage("Time is required"),
-
-  body("date")
-    .isISO8601()
-    .withMessage("Date must be a valid date")
+  body('date')
+    .notEmpty().withMessage('Date is required')
     .custom((value) => {
-      const eventDate = new Date(value);
+      // Validate MM/DD/YYYY format
+      const regex = /^(0?[1-9]|1[0-2])\/(0?[1-9]|[12][0-9]|3[01])\/\d{4}$/;
+      if (!regex.test(value)) {
+        throw new Error('Date must be in MM/DD/YYYY format (e.g., 01/21/2024)');
+      }
+
+      const [month, day, year] = value.split('/').map(Number);
+      const date = new Date(year, month - 1, day);
+
+      // Check if date is valid
+      if (
+        date.getFullYear() !== year ||
+        date.getMonth() + 1 !== month ||
+        date.getDate() !== day
+      ) {
+        throw new Error('Invalid date (e.g., February 30th)');
+      }
+
+      // Check if date is not in past
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      if (eventDate < today) {
-        throw new Error("Event date cannot be in the past");
+      date.setHours(0, 0, 0, 0);
+
+      if (date < today) {
+        throw new Error('Event date cannot be in the past');
       }
+
       return true;
     }),
 
-  body("description")
+  body('time')
+    .notEmpty().withMessage('Time is required')
+    .matches(/^(0?[1-9]|1[0-2]):[0-5][0-9]\s?(am|pm|AM|PM)$/)
+    .withMessage('Time must be in HH:MM AM/PM format (e.g., 08:30 PM)'),
+
+  body('description')
     .optional()
-    .isLength({ max: 1000 })
-    .withMessage("Description cannot exceed 1000 characters"),
+    .trim()
+    .isLength({ max: 1000 }).withMessage('Description cannot exceed 1000 characters'),
+
+  // Note: state and city will be automatically taken from venue profile
 ];
 
 // Validate Event Update
 export const validateEventUpdate = [
-  body("artistBandName")
+  body('artistBandName')
     .optional()
-    .isLength({ max: 100 })
-    .withMessage("Artist/Band name cannot exceed 100 characters"),
+    .trim()
+    .isLength({ min: 2, max: 100 }).withMessage('Artist/Band name must be between 2-100 characters'),
 
-  body("time").optional(),
-
-  body("date")
+  body('date')
     .optional()
-    .isISO8601()
-    .withMessage("Date must be a valid date")
     .custom((value) => {
-      if (value) {
-        const eventDate = new Date(value);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        if (eventDate < today) {
-          throw new Error("Event date cannot be in the past");
+      if (!value) return true;
+
+      const regex = /^(0?[1-9]|1[0-2])\/(0?[1-9]|[12][0-9]|3[01])\/\d{4}$/;
+      if (!regex.test(value)) {
+        throw new Error('Date must be in MM/DD/YYYY format');
+      }
+
+      const [month, day, year] = value.split('/').map(Number);
+      const date = new Date(year, month - 1, day);
+
+      if (
+        date.getFullYear() !== year ||
+        date.getMonth() + 1 !== month ||
+        date.getDate() !== day
+      ) {
+        throw new Error('Invalid date');
+      }
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      date.setHours(0, 0, 0, 0);
+
+      if (date < today) {
+        throw new Error('Event date cannot be in the past');
+      }
+
+      return true;
+    }),
+
+  body('time')
+    .optional()
+    .matches(/^(0?[1-9]|1[0-2]):[0-5][0-9]\s?(am|pm|AM|PM)$/)
+    .withMessage('Time must be in HH:MM AM/PM format'),
+
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ max: 1000 }).withMessage('Description cannot exceed 1000 characters'),
+
+  body('state')
+    .optional()
+    .isIn(Object.keys(STATE_CITY_MAPPING)).withMessage('Invalid state'),
+
+  body('city')
+    .optional()
+    .custom((value, { req }) => {
+      if (!value) return true;
+
+      if (req.body.state) {
+        const stateCities = STATE_CITY_MAPPING[req.body.state] || [];
+        if (!stateCities.includes(value.toLowerCase())) {
+          throw new Error(`City "${value}" is not valid for state "${req.body.state}"`);
         }
       }
       return true;
     }),
-
-  body("description")
-    .optional()
-    .isLength({ max: 1000 })
-    .withMessage("Description cannot exceed 1000 characters"),
 ];
 
 export const validateContact = [
@@ -260,6 +409,32 @@ export const validateJournalistProfile = [
     .optional()
     .isLength({ max: 100 })
     .withMessage("Full name cannot exceed 100 characters"),
+
+  body("state")
+    .optional()
+    .custom((value) => {
+      if (!value) return true;
+      const validStates = Object.keys(STATE_CITY_MAPPING);
+      if (!validStates.includes(value)) {
+        throw new Error(`Invalid state. Must be one of: ${validStates.join(", ")}`);
+      }
+      return true;
+    }),
+
+  body("cities")
+    .optional()
+    .custom((value) => {
+      if (!value) return true;
+      try {
+        const cities = JSON.parse(value);
+        if (!Array.isArray(cities)) {
+          throw new Error("Cities must be a valid JSON array");
+        }
+        return true;
+      } catch {
+        throw new Error("Cities must be a valid JSON array");
+      }
+    }),
 
   body("bio")
     .optional()
@@ -294,7 +469,6 @@ export const validateAdminActions = [
 ];
 
 // MERCH VALIDATION
-
 export const validateMerch = [
   // Product name validation
   body("name")
@@ -322,7 +496,7 @@ export const validateMerch = [
     .isLength({ max: 1000 })
     .withMessage("Description cannot exceed 1000 characters"),
 
-  // Image validation (optional if you’re using file upload)
+  // Image validation (optional if you're using file upload)
   body("image").optional().isURL().withMessage("Image must be a valid URL"),
 
   // Stock validation
@@ -340,8 +514,7 @@ export const validateMerch = [
     .withMessage("Quantity must be at least 1"),
 ];
 
-//  CAST (PODCAST) VALIDATION
-
+// CAST (PODCAST) VALIDATION
 export const validateCast = [
   body("title")
     .notEmpty()

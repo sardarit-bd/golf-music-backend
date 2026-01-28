@@ -52,13 +52,45 @@ const userSchema = new mongoose.Schema({
     },
   },
 
-  location: {
+  // ===== NEW STATE & CITY FIELDS =====
+  state: {
     type: String,
-    enum: ["new orleans", "biloxi", "mobile", "pensacola"],
-    set: (val) => (val ? val.toLowerCase() : val),
-    required: function () {
-      return ["venue", "journalist", "photographer"].includes(this.userType);
+    enum: ["Louisiana", "Mississippi", "Alabama", "Florida", null],
+    default: null,
+    set: (val) => {
+      if (!val) return null;
+      return val.charAt(0).toUpperCase() + val.slice(1).toLowerCase();
     },
+    required: function () {
+      return ["artist", "venue", "journalist", "photographer"].includes(this.userType);
+    },
+  },
+  
+  city: {
+    type: String,
+    set: (val) => (val ? val.toLowerCase().trim() : val),
+    required: function () {
+      return ["artist", "venue", "journalist", "photographer"].includes(this.userType);
+    },
+    validate: {
+      validator: function(v) {
+        if (!v || !this.state) return true;
+        
+        // State-city mapping validation
+        const stateCityMapping = {
+          'Louisiana': ['new orleans', 'baton rouge', 'lafayette', 'shreveport', 'lake charles', 'monroe'],
+          'Mississippi': ['jackson', 'biloxi', 'gulfport', 'oxford', 'hattiesburg'],
+          'Alabama': ['birmingham', 'mobile', 'huntsville', 'tuscaloosa'],
+          'Florida': ['tampa', 'st. petersburg', 'clearwater', 'pensacola', 'panama city', 'fort myers']
+        };
+        
+        const validCities = stateCityMapping[this.state] || [];
+        return validCities.includes(v.toLowerCase());
+      },
+      message: function(props) {
+        return `City "${props.value}" is not valid for state "${this.state}"`;
+      }
+    }
   },
 
   subscriptionPlan: {
@@ -119,19 +151,24 @@ const userSchema = new mongoose.Schema({
     default: null,
   },
 
-
   resetPasswordToken: { type: String },
   resetPasswordExpire: { type: Date },
-
 
   isActive: { type: Boolean, default: false },
   isVerified: { type: Boolean, default: false },
   verificationRequested: { type: Boolean, default: false },
 
   createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
 });
 
+// Update timestamp on save
+userSchema.pre("save", function(next) {
+  this.updatedAt = Date.now();
+  next();
+});
 
+// Password hashing middleware
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
   const salt = await bcrypt.genSalt(10);
@@ -139,10 +176,12 @@ userSchema.pre("save", async function (next) {
   next();
 });
 
+// Method to compare password
 userSchema.methods.matchPassword = async function (enteredPassword) {
   return bcrypt.compare(enteredPassword, this.password);
 };
 
+// Method to generate reset password token
 userSchema.methods.getResetPasswordToken = function () {
   const resetToken = crypto.randomBytes(20).toString("hex");
 
@@ -154,6 +193,24 @@ userSchema.methods.getResetPasswordToken = function () {
   this.resetPasswordExpire = Date.now() + 15 * 60 * 1000;
   return resetToken;
 };
+
+// Virtual for backward compatibility (if needed)
+userSchema.virtual('displayLocation').get(function() {
+  if (this.city && this.state) {
+    return `${this.city.charAt(0).toUpperCase() + this.city.slice(1)}, ${this.state}`;
+  }
+  return null;
+});
+
+// Indexes for faster queries
+userSchema.index({ state: 1, city: 1 });
+userSchema.index({ userType: 1, state: 1 });
+userSchema.index({ email: 1 });
+userSchema.index({ username: 1 });
+
+// Ensure virtuals are included in JSON
+userSchema.set('toJSON', { virtuals: true });
+userSchema.set('toObject', { virtuals: true });
 
 const User = mongoose.model("User", userSchema);
 export default User;

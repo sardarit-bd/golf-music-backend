@@ -1,37 +1,38 @@
-
-
-
-export const sanitizeVenueForPlan = (venueDoc, rules) => {
-  const v = venueDoc.toObject ? venueDoc.toObject() : { ...venueDoc };
-
-  const hiddenPhotosCount = (v.photos?.length || 0);
-
-  return {
-    ...v,
-
-    // Pro-only fields masked on free
-    biography: rules.biography ? v.biography : "",
-    openHours: rules.openHours ? v.openHours : "",
-    openDays: rules.openHours ? v.openDays : "",
-
-    // Photos hidden on free
-    photos: rules.photos > 0 ? v.photos : [],
-
-    // Metadata for UI
-    _entitlements: {
-      plan: rules ? true : false,
-      locked: {
-        biography: !rules.biography,
-        openHours: !rules.openHours,
-        photos: rules.photos === 0,
-      },
-      hiddenCounts: {
-        photos: rules.photos > 0 ? 0 : hiddenPhotosCount,
-      },
-      limits: {
-        photos: rules.photos,
-        shows: rules.shows,
-      },
-    },
+export const sanitizeVenueForPlan = (venue, rules) => {
+  const venueObj = venue.toObject ? venue.toObject() : { ...venue };
+  
+  const sanitized = {
+    ...venueObj,
+    // NEW: Include state
+    state: venueObj.state,
+    city: venueObj.city,
+    venueName: venueObj.venueName,
+    address: rules.address ? venueObj.address : undefined,
+    seatingCapacity: rules.seatingCapacity ? venueObj.seatingCapacity : undefined,
+    biography: rules.biography ? venueObj.biography : undefined,
+    openHours: rules.openHours ? venueObj.openHours : undefined,
+    openDays: rules.openHours ? venueObj.openDays : undefined,
+    phone: venueObj.phone || undefined,
+    website: venueObj.website || undefined,
+    photos: rules.photos > 0 
+      ? (venueObj.photos || []).slice(0, rules.photos) 
+      : undefined,
+    colorCode: venueObj.colorCode,
+    verifiedOrder: venueObj.verifiedOrder,
+    isActive: venueObj.isActive,
+    createdAt: venueObj.createdAt,
+    updatedAt: venueObj.updatedAt,
+    featuresLocked: venueObj.featuresLocked,
+    showLimit: venueObj.showLimit,
+    photosLimit: venueObj.photosLimit,
   };
+
+  // Remove undefined fields
+  Object.keys(sanitized).forEach(key => {
+    if (sanitized[key] === undefined) {
+      delete sanitized[key];
+    }
+  });
+
+  return sanitized;
 };

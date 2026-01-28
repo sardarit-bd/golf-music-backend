@@ -8,10 +8,10 @@ import { generateToken } from "../utils/helpers.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import Photographer from "../models/model.photographer.js";
-
+import { STATE_CITY_MAPPING } from "../utils/constants.js";
 
 /* ========================================================
-   REGISTER
+   REGISTER - UPDATED WITH STATE & CITY
 ======================================================== */
 export const register = asyncHandler(async (req, res, next) => {
   const {
@@ -20,7 +20,8 @@ export const register = asyncHandler(async (req, res, next) => {
     password,
     userType,
     genre,
-    location,
+    state,
+    city,
     plan,
   } = req.body;
 
@@ -43,24 +44,51 @@ export const register = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("User with this email or username already exists", 400));
   }
 
+  // Validate state-city combination for non-fan users
+  if (["artist", "venue", "journalist", "photographer"].includes(userType)) {
+    if (!state || !city) {
+      return next(new ErrorResponse("State and city are required for this user type", 400));
+    }
 
+    // Validate state
+    const validStates = Object.keys(STATE_CITY_MAPPING);
+    if (!validStates.includes(state)) {
+      return next(new ErrorResponse(`Invalid state. Must be one of: ${validStates.join(", ")}`, 400));
+    }
+
+    // Validate city for the state
+    const stateCities = STATE_CITY_MAPPING[state] || [];
+    const cityLower = city.toLowerCase();
+    
+    if (!stateCities.includes(cityLower)) {
+      return next(new ErrorResponse(
+        `City "${city}" is not valid for state "${state}". Valid cities: ${stateCities.map(c => c.charAt(0).toUpperCase() + c.slice(1)).join(", ")}`,
+        400
+      ));
+    }
+  }
+
+  // Create user with state and city
   const user = await User.create({
     username,
     email,
     password,
     userType,
     genre: genre?.toLowerCase(),
-    location: location?.toLowerCase(),
+    state: state || null,
+    city: city ? city.toLowerCase() : null,
     subscriptionPlan,
     subscriptionStatus,
     verificationRequested: userType !== "fan",
   });
 
+  // Create corresponding profile based on user type
   if (userType === "artist") {
     await Artist.create({
       user: user._id,
       name: username,
-      city: location?.toLowerCase() || "new orleans",
+      state: state || "Alabama",
+      city: city ? city.toLowerCase() : "mobile",
       genre: genre?.toLowerCase(),
       biography: "",
       photos: [],
@@ -73,7 +101,8 @@ export const register = asyncHandler(async (req, res, next) => {
     await Venue.create({
       user: user._id,
       venueName: username,
-      city: location?.toLowerCase() || "new orleans",
+      state: state || "Alabama",
+      city: city ? city.toLowerCase() : "mobile",
       address: "",
       seatingCapacity: 0,
       biography: "",
@@ -81,6 +110,7 @@ export const register = asyncHandler(async (req, res, next) => {
       openDays: "",
       photos: [],
       isActive: false,
+      colorCode: null,
     });
   }
 
@@ -88,9 +118,11 @@ export const register = asyncHandler(async (req, res, next) => {
     await Journalist.create({
       user: user._id,
       fullName: username,
+      state: state || null,
+      cities: city ? [city.toLowerCase()] : [],
       bio: "",
       profilePhoto: null,
-      areasOfCoverage: location ? [location.toLowerCase()] : [],
+      areasOfCoverage: [],
       isActive: false,
       isVerified: false,
     });
@@ -100,7 +132,8 @@ export const register = asyncHandler(async (req, res, next) => {
     await Photographer.create({
       user: user._id,
       name: username,
-      city: location?.toLowerCase() || "new orleans",
+      state: state || "Alabama",
+      city: city ? city.toLowerCase() : "mobile",
       biography: "",
       services: [],
       photos: [],
@@ -109,7 +142,7 @@ export const register = asyncHandler(async (req, res, next) => {
     });
   }
 
-  // Send verification email
+  // Send verification email for non-fan users
   if (userType !== "fan") {
     await sendVerificationEmail(user.email, userType);
   }
@@ -126,19 +159,19 @@ export const register = asyncHandler(async (req, res, next) => {
         username: user.username,
         email: user.email,
         userType: user.userType,
+        state: user.state,
+        city: user.city,
         subscriptionPlan,
+        genre: user.genre,
       },
     },
   });
 });
 
-
-
 /* ========================================================
    LOGIN
 ======================================================== */
 export const login = asyncHandler(async (req, res, next) => {
-
   const { email, password } = req.body;
 
   // Find user - don't include password field initially
@@ -175,7 +208,6 @@ export const login = asyncHandler(async (req, res, next) => {
     );
   }
 
-
   // Require admin verification for specific user types
   const requiresVerification = ["artist", "venue", "journalist"].includes(user.userType);
   if (requiresVerification && !user.isVerified) {
@@ -191,7 +223,7 @@ export const login = asyncHandler(async (req, res, next) => {
     );
   }
 
-  // Check password - THIS IS THE MAIN FIX
+  // Check password
   const isMatch = await userWithPassword.matchPassword(password);
   if (!isMatch) {
     return next(
@@ -209,25 +241,35 @@ export const login = asyncHandler(async (req, res, next) => {
   // Generate token
   const token = generateToken(user._id);
 
+  // Prepare user data for response
+  const userData = {
+    id: user._id,
+    username: user.username,
+    email: user.email,
+    userType: user.userType,
+    state: user.state,
+    city: user.city,
+    genre: user.genre,
+    subscriptionPlan: user.subscriptionPlan,
+    subscriptionStatus: user.subscriptionStatus,
+    isVerified: user.isVerified,
+    isActive: user.isActive,
+    trialEndsAt: user.trialEndsAt,
+    trialUsed: user.trialUsed,
+  };
+
   res.status(200).json({
     success: true,
     message: "Login successful! Redirecting...",
     data: {
       token,
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        userType: user.userType,
-        isVerified: user.isVerified,
-        isActive: user.isActive,
-      },
+      user: userData,
     },
   });
 });
 
 /*========================================================
-   GET CURRENT USER
+   GET CURRENT USER - UPDATED
 ======================================================== */
 export const getMe = asyncHandler(async (req, res, next) => {
   if (!req.user?.id) {
@@ -240,27 +282,34 @@ export const getMe = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("User not found or account deleted.", 404));
   }
 
+  // Prepare user data with state and city
+  const userData = {
+    id: user._id,
+    username: user.username,
+    email: user.email,
+    userType: user.userType,
+    genre: user.genre,
+    state: user.state,
+    city: user.city,
+    subscriptionPlan: user.subscriptionPlan,
+    subscriptionStatus: user.subscriptionStatus,
+    isVerified: user.isVerified,
+    isActive: user.isActive,
+    trialEndsAt: user.trialEndsAt,
+    trialUsed: user.trialUsed,
+    stripeAccountId: user.stripeAccountId,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+  };
+
   res.status(200).json({
     success: true,
     message: "User profile fetched successfully",
     data: {
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        userType: user.userType,
-        genre: user.genre,
-        location: user.location,
-        subscriptionPlan: user.subscriptionPlan,
-        subscriptionStatus: user.subscriptionStatus,
-        isVerified: user.isVerified,
-        isActive: user.isActive,
-        createdAt: user.createdAt,
-      },
+      user: userData,
     },
   });
 });
-
 
 /* ========================================================
    FORGOT PASSWORD
@@ -315,5 +364,104 @@ export const resetPassword = asyncHandler(async (req, res, next) => {
   res.status(200).json({
     success: true,
     message: "Password reset successful. You can now log in.",
+  });
+});
+
+/* ========================================================
+   UPDATE USER PROFILE (Optional - if needed)
+======================================================== */
+export const updateProfile = asyncHandler(async (req, res, next) => {
+  const { state, city, genre } = req.body;
+
+  // Find user
+  const user = await User.findById(req.user.id);
+  if (!user) {
+    return next(new ErrorResponse("User not found", 404));
+  }
+
+  // Validate state-city if provided
+  if (state || city) {
+    const updateState = state || user.state;
+    const updateCity = city || user.city;
+
+    if (updateState && updateCity) {
+      const stateCities = STATE_CITY_MAPPING[updateState] || [];
+      if (!stateCities.includes(updateCity.toLowerCase())) {
+        return next(new ErrorResponse(
+          `City "${updateCity}" is not valid for state "${updateState}"`,
+          400
+        ));
+      }
+    }
+
+    // Update state and city
+    if (state) user.state = state;
+    if (city) user.city = city.toLowerCase();
+  }
+
+  // Update genre if provided and user is artist
+  if (genre && user.userType === "artist") {
+    user.genre = genre.toLowerCase();
+  }
+
+  await user.save();
+
+  res.status(200).json({
+    success: true,
+    message: "Profile updated successfully",
+    data: {
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        userType: user.userType,
+        state: user.state,
+        city: user.city,
+        genre: user.genre,
+      },
+    },
+  });
+});
+
+/* ========================================================
+   GET USER BY TYPE AND LOCATION (For filtering)
+======================================================== */
+export const getUsersByLocation = asyncHandler(async (req, res, next) => {
+  const { state, city, userType } = req.query;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  // Build query
+  const query = { isActive: true, isVerified: true };
+
+  if (state) query.state = state;
+  if (city) query.city = city.toLowerCase();
+  if (userType) query.userType = userType;
+
+  const users = await User.find(query)
+    .select("username email userType state city genre subscriptionPlan createdAt")
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit);
+
+  const total = await User.countDocuments(query);
+
+  res.status(200).json({
+    success: true,
+    message: "Users fetched successfully",
+    data: {
+      users,
+      pagination: {
+        current: page,
+        pages: Math.ceil(total / limit),
+        total,
+      },
+      filters: {
+        state,
+        city,
+        userType,
+      },
+    },
   });
 });

@@ -1,5 +1,5 @@
-// models/model.venue.js
 import mongoose from "mongoose";
+import { STATE_CITY_MAPPING } from "../utils/constants.js";
 
 const showSchema = new mongoose.Schema({
   artist: { type: String, required: true },
@@ -14,7 +14,7 @@ const venueSchema = new mongoose.Schema({
     required: true,
   },
 
-  // BASIC FIELDS (free & pro)
+  // BASIC FIELDS
   venueName: {
     type: String,
     required: [true, "Venue name is required"],
@@ -22,10 +22,18 @@ const venueSchema = new mongoose.Schema({
     maxlength: [100, "Venue name cannot exceed 100 characters"],
   },
 
+  // NEW: STATE FIELD
+  state: {
+    type: String,
+    required: [true, "State is required"],
+    enum: ["Louisiana", "Mississippi", "Alabama", "Florida"],
+    default: "Alabama"
+  },
+
+  // UPDATED: City validation will be dynamic
   city: {
     type: String,
     required: [true, "City is required"],
-    enum: ["new orleans", "biloxi", "mobile", "pensacola"],
     set: (v) => v.toLowerCase().trim(),
   },
 
@@ -47,6 +55,24 @@ const venueSchema = new mongoose.Schema({
 
   openHours: { type: String },
   openDays: { type: String },
+
+  // NEW: Contact fields
+  phone: {
+    type: String,
+    default: ""
+  },
+  
+  website: {
+    type: String,
+    default: "",
+    validate: {
+      validator: function(v) {
+        if (!v) return true;
+        return /^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/.test(v);
+      },
+      message: props => `${props.value} is not a valid URL!`
+    }
+  },
 
   photos: [
     {
@@ -77,7 +103,13 @@ const venueSchema = new mongoose.Schema({
 
   colorCode: {
     type: String,
-    default: "#000000",
+    default: null,
+    validate: {
+      validator: function(v) {
+        return v === null || /^#[0-9A-F]{6}$/i.test(v);
+      },
+      message: props => `${props.value} is not a valid color code!`
+    }
   },
 
   shows: [showSchema],
@@ -91,8 +123,24 @@ const venueSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now },
 });
 
-venueSchema.pre("save", function (next) {
+// Middleware for state-city validation
+venueSchema.pre("save", async function (next) {
   this.updatedAt = Date.now();
+  
+  // If city is being changed or state is being changed
+  if (this.isModified('city') || this.isModified('state')) {
+    try {
+      // Use STATE_CITY_MAPPING directly from constants
+      const stateCities = STATE_CITY_MAPPING[this.state] || [];
+      
+      if (!stateCities.includes(this.city.toLowerCase())) {
+        throw new Error(`City "${this.city}" is not valid for state "${this.state}"`);
+      }
+    } catch (error) {
+      return next(error);
+    }
+  }
+  
   next();
 });
 
