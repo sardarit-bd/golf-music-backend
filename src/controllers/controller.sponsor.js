@@ -114,37 +114,3 @@ export const getSponsorSectionText = asyncHandler(async (req, res) => {
   });
 });
 
-// UPDATE SECTION TEXT (admin)
-export const updateSponsorSectionText = asyncHandler(async (req, res) => {
-  const { sectionTitle, sectionSubtitle } = req.body;
-
-  if (!sectionTitle && !sectionSubtitle) {
-    return next( 
-      new ErrorResponse("At least one field is required to update", 400)
-    );
-  }
-
-  const updateData = {};
-  if (sectionTitle !== undefined) updateData.sectionTitle = sectionTitle.trim();
-  if (sectionSubtitle !== undefined)
-    updateData.sectionSubtitle = sectionSubtitle.trim();
-
-  const pageText = await Sponsor.findOneAndUpdate(
-    { isPageText: true },
-    updateData,
-    {
-      new: true,
-      upsert: true,
-      runValidators: true,
-    }
-  );
-
-  res.status(200).json({
-    success: true,
-    message: "Section text updated successfully!",
-    data: {
-      sectionTitle: pageText.sectionTitle,
-      sectionSubtitle: pageText.sectionSubtitle,
-    },
-  });
-});
