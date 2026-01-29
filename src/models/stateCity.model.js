@@ -1,4 +1,3 @@
-// models/StateCity.js
 import mongoose from 'mongoose';
 
 const stateCitySchema = new mongoose.Schema({

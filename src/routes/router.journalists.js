@@ -6,7 +6,9 @@ import {
   createOrUpdateProfile,
   deleteJournalistProfile, 
   getAllJournalists, 
-  getJournalist,  
+  getJournalist,
+  getJournalistsByLocation,
+  getJournalistsForAdmin,
   getProfile, 
   updateJournalistProfile, 
   verifyJournalist 
@@ -15,9 +17,11 @@ import {
 
 const router = express.Router();
 
+/* =========================
+   JOURNALIST SELF ROUTES
+   ========================= */
 
-    // CREATE or UPDATE (Auto)
-
+// CREATE or UPDATE (Auto)
 router.post(
   '/profile',
   protect,
@@ -28,9 +32,7 @@ router.post(
   createOrUpdateProfile
 );
 
-
 // UPDATE (Explicit PUT)
-
 router.put(
   '/profile',
   protect,
@@ -41,8 +43,7 @@ router.put(
   updateJournalistProfile
 );
 
-
-//  DELETE Journalist Profile
+// DELETE Journalist Profile
 router.delete(
   '/profile',
   protect,
@@ -50,20 +51,33 @@ router.delete(
   deleteJournalistProfile
 );
 
-
-//  GET Own Profile
+// GET Own Profile
 router.get('/profile', protect, authorize('journalist'), getProfile);
 
+/* =========================
+   PUBLIC ROUTES
+   ========================= */
 
-// PUBLIC ROUTES
-
+// Get all journalists (with filters)
 router.get('/', getAllJournalists);
-router.get('/:id', getJournalist);
-// router.get('/:id/news', getJournalistNews);
 
+// Get journalists by location (for homepage dropdown)
+router.get('/location', getJournalistsByLocation);
+
+// Get single journalist by ID
+router.get('/:id', getJournalist);
+
+/* =========================
+   ADMIN ROUTES
+   ========================= */
+router.get(
+  '/admin/journalists',
+  protect,
+  authorize('admin'),
+  getJournalistsForAdmin
+);
 
 // VERIFY Journalist (Admin)
-
 router.put('/:id/verify', protect, authorize('admin'), verifyJournalist);
 
 export default router;

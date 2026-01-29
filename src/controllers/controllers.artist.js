@@ -8,6 +8,47 @@ import { cloudinary } from "../config/cloudinary.js";
 import { sanitizeArtistForPlan } from "../utils/sanitizeArtist.js";
 
 
+// Helper function to get state from city
+const getStateFromCity = (city) => {
+  if (!city) return '';
+  
+  const cityLower = city.toLowerCase();
+  
+  // Map cities to states based on client requirement
+  const stateMap = {
+    // Louisiana cities
+    'new orleans': 'Louisiana',
+    'baton rouge': 'Louisiana',
+    'lafayette': 'Louisiana',
+    'shreveport': 'Louisiana',
+    'lake charles': 'Louisiana',
+    'monroe': 'Louisiana',
+    
+    // Mississippi cities
+    'jackson': 'Mississippi',
+    'biloxi': 'Mississippi',
+    'gulfport': 'Mississippi',
+    'oxford': 'Mississippi',
+    'hattiesburg': 'Mississippi',
+    
+    // Alabama cities
+    'birmingham': 'Alabama',
+    'mobile': 'Alabama',
+    'huntsville': 'Alabama',
+    'tuscaloosa': 'Alabama',
+    
+    // Florida cities
+    'tampa': 'Florida',
+    'st. petersburg': 'Florida',
+    'clearwater': 'Florida',
+    'pensacola': 'Florida',
+    'panama city': 'Florida',
+    'fort myers': 'Florida',
+  };
+  
+  return stateMap[cityLower] || '';
+};
+
 //  CREATE or UPDATE Artist Profile
 
 export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
@@ -29,6 +70,8 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
 
   const { name, city, genre, biography } = req.body;
   const normalizedGenre = genre?.toLowerCase();
+  const normalizedCity = city?.toLowerCase();
+  const state = getStateFromCity(normalizedCity);
 
   let artist = await Artist.findOne({ user: user.id });
 
@@ -48,10 +91,6 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
       : [req.body.removedAudios];
   }
 
-  // If plan doesn't allow photos/audios, clear removed arrays
-  if (rules.photos === 0) removedPhotos = [];
-  if (rules.mp3 === 0) removedAudios = [];
-
   // Delete photos from Cloudinary
   for (const filename of removedPhotos) {
     try {
@@ -62,7 +101,6 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
     }
   }
 
-
   // Delete audios from Cloudinary
   for (const filename of removedAudios) {
     try {
@@ -72,7 +110,6 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
       console.log("Failed to delete audio:", filename);
     }
   }
-
 
   // Filter out removed photos and audios
   const oldPhotos = artist?.photos?.filter((p) => 
@@ -86,23 +123,14 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
   let newPhotos = [];
   let newAudios = [];
 
-  // Handle new photo uploads
+  // Handle new photo uploads - CLIENT REQUIREMENT: Max 5 photos for all users
   if (req.files?.photos?.length) {
-    if (rules.photos === 0) {
-      return next(
-        new ErrorResponse(
-          "Free plan users cannot upload artist photos. Upgrade to Pro.",
-          403
-        )
-      );
-    }
-
-    // Check if total photos exceed limit
+    // Check if total photos exceed 5 (client requirement)
     const totalPhotos = oldPhotos.length + req.files.photos.length;
-    if (totalPhotos > rules.photos) {
+    if (totalPhotos > 5) {
       return next(
         new ErrorResponse(
-          `You can only upload ${rules.photos} photos on your current plan.`,
+          `You can only upload up to 5 photos.`,
           400
         )
       );
@@ -112,25 +140,16 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
       url: file.path,
       filename: file.filename,
     }));
-
   }
 
-  // Handle new audio uploads
+  // Handle new audio uploads - CLIENT REQUIREMENT: Max 1 audio for all users
   if (req.files?.mp3Files?.length) {
-    if (rules.mp3 === 0) {
-      return next(
-        new ErrorResponse(
-          "Free plan users cannot upload audio files. Upgrade to Pro.",
-          403
-        )
-      );
-    }
-
+    // Check if total audio files exceed 1 (client requirement)
     const totalAudios = oldAudios.length + req.files.mp3Files.length;
-    if (totalAudios > rules.mp3) {
+    if (totalAudios > 5) {
       return next(
         new ErrorResponse(
-          `You can only upload ${rules.mp3} audio files on your current plan.`,
+          `You can only upload up to 5 audio files.`,
           400
         )
       );
@@ -141,26 +160,23 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
       filename: file.originalname,
       originalName: file.originalname,
     }));
-
   }
 
-  const mergedPhotos = [...oldPhotos, ...newPhotos].slice(0, rules.photos);
-  const mergedAudios = [...oldAudios, ...newAudios].slice(0, rules.mp3);
+  const mergedPhotos = [...oldPhotos, ...newPhotos].slice(0, 5); // Max 5 photos
+  const mergedAudios = [...oldAudios, ...newAudios].slice(0, 5); // Max 1 audio
 
-  const finalBiography = rules.biography
-    ? biography
-    : artist?.biography || "";
+  const finalBiography = biography || artist?.biography || "";
 
   const artistData = {
     name,
-    city,
+    city: normalizedCity,
+    state,
     genre: normalizedGenre,
     biography: finalBiography,
     photos: mergedPhotos,
     mp3Files: mergedAudios,
-    photosLimit: rules.photos,
-    mp3Limit: rules.mp3,
-    featuresLocked: !(rules.biography || rules.photos > 0 || rules.mp3 > 0)
+    subscriptionPlan: user.subscriptionPlan,
+    isActive: true, // All artists are active by default
   };
 
   const options = {
@@ -179,13 +195,13 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
 
   return res.status(200).json({
     success: true,
-    message: `Artist profile ${artist ? 'updated' : 'created'} successfully (${user.subscriptionPlan.toUpperCase()} Plan)`,
+    message: `Artist profile ${artist ? 'updated' : 'created'} successfully`,
     data: { 
       artist: safeArtist,
       limits: {
-        photos: rules.photos,
-        mp3: rules.mp3,
-        biography: rules.biography
+        photos: 5,
+        mp3: 5,
+        biography: true
       }
     },
   });
@@ -213,13 +229,20 @@ export const getMyArtistProfile = asyncHandler(async (req, res, next) => {
 });
 
 
-//  GET Artists by Genre
+//  GET Artists by Genre and Location
 
 export const getArtistsByGenre = asyncHandler(async (req, res, next) => {
-  const { genre } = req.query;
+  const { genre, state, city } = req.query;
   let query = { isActive: true };
 
+  // Genre filter
   if (genre && genre !== "all") query.genre = genre.toLowerCase();
+  
+  // State filter (for location-based categorization)
+  if (state && state !== "all") query.state = state;
+  
+  // City filter
+  if (city && city !== "all") query.city = city.toLowerCase();
 
   const artists = await Artist.find(query)
     .populate("user", "username email subscriptionPlan")
@@ -260,50 +283,6 @@ export const getArtist = asyncHandler(async (req, res, next) => {
 
 
 
-//  UPDATE Artist Profile
-
-// export const updateArtistProfile = asyncHandler(async (req, res, next) => {
-//   const { name, city, genre, biography } = req.body;
-//   const normalizedGenre = genre?.toLowerCase();
-
-//   const updateData = {
-//     name,
-//     city,
-//     genre: normalizedGenre,
-//     biography,
-//     photos: req.files?.photos
-//       ? req.files.photos.map((file) => ({
-//         url: `/uploads/${file.filename}`,
-//         filename: file.filename,
-//       }))
-//       : undefined,
-//     mp3Files: req.files?.mp3Files
-//       ? req.files.mp3Files.map((file) => ({
-//         url: `/uploads/${file.filename}`,
-//         filename: file.filename,
-//         originalName: file.originalname,
-//       }))
-//       : undefined,
-//   };
-
-//   const artist = await Artist.findOneAndUpdate(
-//     { user: req.user.id },
-//     updateData,
-//     { new: true, runValidators: true }
-//   );
-
-//   if (!artist) {
-//     return next(new ErrorResponse("Artist profile not found", 404));
-//   }
-
-//   res.status(200).json({
-//     success: true,
-//     message: "Artist profile updated successfully",
-//     data: { artist },
-//   });
-// });
-
-
 //  DELETE Artist Profile
 
 export const deleteArtistProfile = asyncHandler(async (req, res, next) => {
@@ -311,6 +290,32 @@ export const deleteArtistProfile = asyncHandler(async (req, res, next) => {
 
   if (!artist) {
     return next(new ErrorResponse("Artist profile not found", 404));
+  }
+
+  // Delete photos from Cloudinary
+  if (artist.photos && artist.photos.length > 0) {
+    for (const photo of artist.photos) {
+      if (photo.publicId) {
+        try {
+          await cloudinary.uploader.destroy(photo.publicId);
+        } catch (err) {
+          console.log("Failed to delete photo:", photo.publicId);
+        }
+      }
+    }
+  }
+
+  // Delete audios from Cloudinary
+  if (artist.mp3Files && artist.mp3Files.length > 0) {
+    for (const audio of artist.mp3Files) {
+      if (audio.publicId) {
+        try {
+          await cloudinary.uploader.destroy(audio.publicId);
+        } catch (err) {
+          console.log("Failed to delete audio:", audio.publicId);
+        }
+      }
+    }
   }
 
   await artist.deleteOne();
@@ -326,17 +331,18 @@ export const deleteArtistProfile = asyncHandler(async (req, res, next) => {
 
 export const updateArtistByAdmin = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
-  const { name, city, genre, biography, website, phone, isActive } = req.body;
+  const { name, city, genre, biography, isActive } = req.body;
 
   const normalizedGenre = genre?.toLowerCase();
+  const normalizedCity = city?.toLowerCase();
+  const state = getStateFromCity(normalizedCity);
 
   const updateData = {
     ...(name && { name }),
-    ...(city && { city }),
+    ...(city && { city: normalizedCity }),
+    ...(city && { state }),
     ...(genre && { genre: normalizedGenre }),
-    ...(biography && { biography }),
-    ...(website && { website }),
-    ...(phone && { phone }),
+    ...(biography !== undefined && { biography }),
     ...(isActive !== undefined && { isActive }),
     updatedAt: Date.now()
   };
@@ -368,6 +374,32 @@ export const deleteArtistByAdmin = asyncHandler(async (req, res, next) => {
 
   if (!artist) {
     return next(new ErrorResponse("Artist not found", 404));
+  }
+
+  // Delete photos from Cloudinary
+  if (artist.photos && artist.photos.length > 0) {
+    for (const photo of artist.photos) {
+      if (photo.publicId) {
+        try {
+          await cloudinary.uploader.destroy(photo.publicId);
+        } catch (err) {
+          console.log("Failed to delete photo:", photo.publicId);
+        }
+      }
+    }
+  }
+
+  // Delete audios from Cloudinary
+  if (artist.mp3Files && artist.mp3Files.length > 0) {
+    for (const audio of artist.mp3Files) {
+      if (audio.publicId) {
+        try {
+          await cloudinary.uploader.destroy(audio.publicId);
+        } catch (err) {
+          console.log("Failed to delete audio:", audio.publicId);
+        }
+      }
+    }
   }
 
   await artist.deleteOne();
@@ -426,19 +458,8 @@ export const changeArtistPlanByAdmin = asyncHandler(async (req, res, next) => {
 
   await user.save();
 
-  const rules =
-    SUBSCRIPTION_RULES.artist[subscriptionPlan] ||
-    SUBSCRIPTION_RULES.artist.free;
-
-  artist.photosLimit = rules.photos;
-  artist.mp3Limit = rules.mp3;
-
-  artist.featuresLocked = !(
-    rules.biography ||
-    rules.photos > 0 ||
-    rules.mp3 > 0
-  );
-
+  // Update artist subscription plan
+  artist.subscriptionPlan = subscriptionPlan;
   artist.updatedAt = Date.now();
   await artist.save();
 
@@ -466,11 +487,10 @@ export const getArtistsForAdmin = asyncHandler(async (req, res, next) => {
     search = "",
     status = "all",
     city = "",
+    state = "all",
     plan = "all",
     type = "artists"
   } = req.query;
-
-  // console.log("Admin fetching artists with params:", req.query);
 
   // Build query
   let query = {};
@@ -495,18 +515,21 @@ export const getArtistsForAdmin = asyncHandler(async (req, res, next) => {
     query.city = city.toLowerCase();
   }
 
-  // Plan filter - via user subscription plan
+  // State filter (location-based categorization)
+  if (state !== "all") {
+    query.state = state;
+  }
+
+  // Plan filter - via user subscription plan or artist subscriptionPlan
   if (plan !== "all") {
-    const users = await User.find({ subscriptionPlan: plan }).select("_id");
-    const userIds = users.map(u => u._id);
-    query.user = { $in: userIds };
+    query.subscriptionPlan = plan;
   }
 
   const skip = (Number(page) - 1) * Number(limit);
 
   // Get artists with populated user info
   const artists = await Artist.find(query)
-    .populate("user", "username email subscriptionPlan subscriptionStatus createdAt")
+    .populate("user", "username email createdAt")
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(Number(limit));
@@ -515,16 +538,18 @@ export const getArtistsForAdmin = asyncHandler(async (req, res, next) => {
   const total = await Artist.countDocuments(query);
 
   // Calculate stats
-  const proCount = await Artist.countDocuments({
-    user: { $in: await User.find({ subscriptionPlan: "pro" }).select("_id") }
-  });
-
-  const freeCount = await Artist.countDocuments({
-    user: { $in: await User.find({ subscriptionPlan: "free" }).select("_id") }
-  });
-
+  const proCount = await Artist.countDocuments({ subscriptionPlan: "pro" });
+  const freeCount = await Artist.countDocuments({ subscriptionPlan: "free" });
   const activeCount = await Artist.countDocuments({ isActive: true });
   const inactiveCount = await Artist.countDocuments({ isActive: false });
+
+  // Get state-wise counts for location categorization
+  const stateCounts = {
+    Louisiana: await Artist.countDocuments({ state: 'Louisiana' }),
+    Mississippi: await Artist.countDocuments({ state: 'Mississippi' }),
+    Alabama: await Artist.countDocuments({ state: 'Alabama' }),
+    Florida: await Artist.countDocuments({ state: 'Florida' }),
+  };
 
   res.status(200).json({
     success: true,
@@ -541,7 +566,46 @@ export const getArtistsForAdmin = asyncHandler(async (req, res, next) => {
         free: freeCount,
         active: activeCount,
         inactive: inactiveCount,
+        byState: stateCounts
       }
+    },
+  });
+});
+
+// Get artists by location (for homepage dropdown)
+export const getArtistsByLocation = asyncHandler(async (req, res, next) => {
+  const { state, city } = req.query;
+  
+  if (!state) {
+    return next(new ErrorResponse("State parameter is required", 400));
+  }
+
+  let query = { 
+    state: state,
+    isActive: true 
+  };
+
+  if (city && city !== "all") {
+    query.city = city.toLowerCase();
+  }
+
+  const artists = await Artist.find(query)
+    .populate("user", "username email subscriptionPlan")
+    .sort({ name: 1 })
+    .limit(50); // Limit for performance
+
+  const safeArtists = artists.map((a) => {
+    const ownerPlan = a.user?.subscriptionPlan || "free";
+    const rules = SUBSCRIPTION_RULES.artist[ownerPlan] || SUBSCRIPTION_RULES.artist.free;
+    return sanitizeArtistForPlan(a, rules);
+  });
+
+  res.status(200).json({
+    success: true,
+    data: { 
+      artists: safeArtists,
+      location: { state, city },
+      count: safeArtists.length
     },
   });
 });
