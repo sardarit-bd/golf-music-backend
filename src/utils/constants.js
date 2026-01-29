@@ -1,4 +1,3 @@
-// utils/constants.js
 export const STATE_CITY_MAPPING = {
   'Louisiana': [
     'new orleans', 'baton rouge', 'lafayette', 'shreveport', 

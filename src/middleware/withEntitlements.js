@@ -1,6 +1,7 @@
 import { SUBSCRIPTION_RULES } from "../config/subscriptionRules.js";
 
 
+
 export const withEntitlements = (resourceKey) => (req, res, next) => {
   const plan = req.user?.subscriptionPlan || "free";
 

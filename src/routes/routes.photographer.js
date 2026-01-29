@@ -4,6 +4,7 @@ import {
   addService,
   addVideo,
   changePhotographerPlanByAdmin,
+  createPhotographerProfile,
   deletePhoto,
   deletePhotographerAdmin,
   deleteService,
@@ -33,6 +34,12 @@ router.get("/profile", protect, authorize("photographer"), getPhotographerProfil
 
 // dynamic ID route
 router.get("/:id", getPhotographerById);
+
+router.post(
+  "/profile",
+  protect,
+  createPhotographerProfile
+);
 
 // ===================
 // PHOTOGRAPHER ROUTES
