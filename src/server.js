@@ -31,6 +31,7 @@ import subscriptionRoutes from './routes/route.subscription.js';
 import marketCheckoutRoutes from './routes/marketCheckout.routes.js';
 import stripeConnectRoutes from './routes/stripe.routes.js';
 import sponsorSectionRoutes from './routes/routes.sponsorSection.js';
+import studioRoutes from './routes/studio.routes.js';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -153,6 +154,7 @@ app.use("/api/market", marketRoutes);
 app.use("/api/subscription", subscriptionRoutes);
 app.use("/api/market-checkout", marketCheckoutRoutes);
 app.use("/api/stripe", stripeConnectRoutes);
+app.use("/api/studios", studioRoutes);
 
 
 // ===============================

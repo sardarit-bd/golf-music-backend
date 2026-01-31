@@ -14,6 +14,7 @@ import {
   adminDeleteMarketItem,
   adminDeleteBySeller,
   deletePhotoFromMyItem,
+  getMarketItemsByState,
 } from "../controllers/controller.market.js";
 
 import { authorize, protect } from "../middleware/auth.js";
@@ -22,7 +23,10 @@ import uploadMarketMedia from "../middleware/uploadMarketMedia.js";
 
 const router = express.Router();
 
+
+// PUBLIC ROUTES
 router.get("/", getAllMarketItemsPublic);
+router.get("/state/:state", getMarketItemsByState);
 
 router.get("/me", protect, getMyMarketItem);
 
@@ -50,8 +54,11 @@ router.delete(
 
 router.delete("/me", protect, deleteMyMarketItem);
 
+// PUBLIC ROUTE (ID-based) - শেষে রাখুন
+router.get("/:id", getMarketItemByIdPublic);
+
 /* ======================
-   ADMIN
+   ADMIN ROUTES
 ====================== */
 router.get(
   "/admin/stats",
@@ -94,7 +101,5 @@ router.delete(
   authorize("admin"),
   adminDeleteBySeller
 );
-
-router.get("/:id", getMarketItemByIdPublic);
 
 export default router;

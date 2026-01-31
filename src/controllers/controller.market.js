@@ -8,10 +8,10 @@ const isSellerTypeAllowed = (userType) =>
 
 const normalizeSellerType = (t) => String(t || "").toLowerCase();
 
+const validLocations = ["Louisiana", "Mississippi", "Alabama", "Florida", ""];
+
 /**
  * PUBLIC: Get all active items
- * GET /api/market
- * query: search, sellerType, location, page, limit
  */
 export const getAllMarketItemsPublic = asyncHandler(async (req, res) => {
   const { search, sellerType, location } = req.query;
@@ -52,8 +52,30 @@ export const getAllMarketItemsPublic = asyncHandler(async (req, res) => {
 });
 
 /**
+ * PUBLIC: Get items by state (Homepage dropdown filtering)
+ */
+export const getMarketItemsByState = asyncHandler(async (req, res, next) => {
+  const { state } = req.params;
+  
+  if (!validLocations.includes(state)) {
+    return next(new ErrorResponse("Invalid state. Must be: Louisiana, Mississippi, Alabama, Florida", 400));
+  }
+  
+  const items = await MarketItem.find({ 
+    location: state,
+    status: "active" 
+  })
+  .sort({ createdAt: -1 })
+  .populate("seller", "name userType subscriptionPlan isVerified");
+  
+  res.status(200).json({ 
+    success: true, 
+    data: items 
+  });
+});
+
+/**
  * PUBLIC: Get single item by id
- * GET /api/market/:id
  */
 export const getMarketItemByIdPublic = asyncHandler(async (req, res, next) => {
   const item = await MarketItem.findById(req.params.id).populate(
@@ -96,9 +118,8 @@ export const createMyMarketItem = asyncHandler(async (req, res, next) => {
     );
   }
 
-  const validLocations = ["New Orleans", "Biloxi", "Mobile", "Pensacola", ""];
   if (location && !validLocations.includes(location)) {
-    return next(new ErrorResponse("Invalid location", 400));
+    return next(new ErrorResponse("Invalid location. Must be: Louisiana, Mississippi, Alabama, Florida", 400));
   }
 
   const photos = req.files?.photos?.map((file) => file.path) || [];
@@ -128,9 +149,8 @@ export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
 
   const { title, description, price, location, status, removedPhotos = [] } = req.body;
 
-  const validLocations = ["New Orleans", "Biloxi", "Mobile", "Pensacola", ""];
   if (location !== undefined && !validLocations.includes(location)) {
-    return next(new ErrorResponse("Invalid location", 400));
+    return next(new ErrorResponse("Invalid location. Must be: Louisiana, Mississippi, Alabama, Florida", 400));
   }
 
   // Handle removed photos

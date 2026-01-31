@@ -39,7 +39,7 @@ const userSchema = new mongoose.Schema({
   userType: {
     type: String,
     required: [true, "User type is required"],
-    enum: ["artist", "venue", "journalist", "fan", "admin", "photographer"],
+    enum: ["artist", "venue", "journalist", "fan", "admin", "photographer", "studio"],
     set: (val) => val.toLowerCase(),
   },
 
@@ -62,32 +62,31 @@ const userSchema = new mongoose.Schema({
       return val.charAt(0).toUpperCase() + val.slice(1).toLowerCase();
     },
     required: function () {
-      return ["artist", "venue", "journalist", "photographer"].includes(this.userType);
+      return ["artist", "venue", "journalist", "photographer", "studio"].includes(this.userType);
     },
   },
-  
+
   city: {
     type: String,
     set: (val) => (val ? val.toLowerCase().trim() : val),
     required: function () {
-      return ["artist", "venue", "journalist", "photographer"].includes(this.userType);
+      return ["artist", "venue", "journalist", "photographer", "studio"].includes(this.userType);
     },
     validate: {
-      validator: function(v) {
+      validator: function (v) {
         if (!v || !this.state) return true;
-        
-        // State-city mapping validation
+
         const stateCityMapping = {
           'Louisiana': ['new orleans', 'baton rouge', 'lafayette', 'shreveport', 'lake charles', 'monroe'],
           'Mississippi': ['jackson', 'biloxi', 'gulfport', 'oxford', 'hattiesburg'],
           'Alabama': ['birmingham', 'mobile', 'huntsville', 'tuscaloosa'],
           'Florida': ['tampa', 'st. petersburg', 'clearwater', 'pensacola', 'panama city', 'fort myers']
         };
-        
+
         const validCities = stateCityMapping[this.state] || [];
         return validCities.includes(v.toLowerCase());
       },
-      message: function(props) {
+      message: function (props) {
         return `City "${props.value}" is not valid for state "${this.state}"`;
       }
     }
@@ -163,7 +162,7 @@ const userSchema = new mongoose.Schema({
 });
 
 // Update timestamp on save
-userSchema.pre("save", function(next) {
+userSchema.pre("save", function (next) {
   this.updatedAt = Date.now();
   next();
 });
@@ -195,7 +194,7 @@ userSchema.methods.getResetPasswordToken = function () {
 };
 
 // Virtual for backward compatibility (if needed)
-userSchema.virtual('displayLocation').get(function() {
+userSchema.virtual('displayLocation').get(function () {
   if (this.city && this.state) {
     return `${this.city.charAt(0).toUpperCase() + this.city.slice(1)}, ${this.state}`;
   }

@@ -20,8 +20,8 @@ export const validateRegistration = [
 
   body("userType")
     .customSanitizer((value) => value?.toLowerCase())
-    .isIn(["artist", "venue", "journalist", "fan", "photographer", "admin"])
-    .withMessage("User type must be artist, venue, journalist, photographer, fan, or admin"),
+    .isIn(["artist", "venue", "journalist", "fan", "photographer", "admin", "studio"])
+    .withMessage("User type must be artist, venue, journalist, photographer, studio, fan, or admin"),
 
   body("genre")
     .if(body("userType").equals("artist"))
@@ -48,7 +48,7 @@ export const validateRegistration = [
   body("state")
     .custom((value, { req }) => {
       const userType = req.body.userType;
-      const requiresState = ["artist", "venue", "journalist", "photographer"].includes(userType);
+       const requiresState = ["artist", "venue", "journalist", "photographer", "studio"].includes(userType);
       
       if (requiresState) {
         if (!value) {
@@ -72,7 +72,7 @@ export const validateRegistration = [
   body("city")
     .custom((value, { req }) => {
       const userType = req.body.userType;
-      const requiresCity = ["artist", "venue", "journalist", "photographer"].includes(userType);
+      const requiresCity = ["artist", "venue", "journalist", "photographer", "studio"].includes(userType);
       
       if (requiresCity) {
         if (!value) {

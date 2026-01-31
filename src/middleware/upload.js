@@ -155,3 +155,25 @@ export const handleUploadErrors = (error, req, res, next) => {
   // console.log('Upload Error:', error);
   next(error);
 };
+
+
+// === STUDIO PHOTOS UPLOAD (Up to 5 photos) ===
+export const uploadStudioPhotos = multer({
+  storage, // CloudinaryStorage
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB per photo
+}).array("photos", 5);
+
+// === STUDIO AUDIO UPLOAD (1 file) ===
+export const uploadStudioAudio = multer({
+  storage, // CloudinaryStorage
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB for audio
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ["audio/mpeg", "audio/wav", "audio/mp3", "audio/aac", "audio/flac"];
+    if (!allowedTypes.includes(file.mimetype)) {
+      return cb(new Error("Invalid audio format. Use MP3, WAV, AAC, or FLAC"), false);
+    }
+    cb(null, true);
+  }
+}).single("audio");
+
+

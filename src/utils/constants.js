@@ -36,3 +36,5 @@ export const formatCityName = (city) => {
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 };
+
+export const VALID_USER_TYPES = ["artist", "venue", "journalist", "fan", "admin", "photographer", "studio"];

@@ -9,6 +9,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import Photographer from "../models/model.photographer.js";
 import { STATE_CITY_MAPPING } from "../utils/constants.js";
+import Studio from "../models/model.studio.js";
 
 /* ========================================================
    REGISTER - UPDATED WITH STATE & CITY
@@ -28,7 +29,7 @@ export const register = asyncHandler(async (req, res, next) => {
   let subscriptionPlan = "free";
   let subscriptionStatus = "none";
 
-  if (["artist", "venue", "photographer"].includes(userType)) {
+  if (["artist", "venue", "photographer", "studio"].includes(userType)) {
     if (plan === "pro") {
       subscriptionPlan = "pro";
       subscriptionStatus = "active";
@@ -45,7 +46,7 @@ export const register = asyncHandler(async (req, res, next) => {
   }
 
   // Validate state-city combination for non-fan users
-  if (["artist", "venue", "journalist", "photographer"].includes(userType)) {
+  if (["artist", "venue", "journalist", "photographer", "studio"].includes(userType)) {
     if (!state || !city) {
       return next(new ErrorResponse("State and city are required for this user type", 400));
     }
@@ -59,7 +60,7 @@ export const register = asyncHandler(async (req, res, next) => {
     // Validate city for the state
     const stateCities = STATE_CITY_MAPPING[state] || [];
     const cityLower = city.toLowerCase();
-    
+
     if (!stateCities.includes(cityLower)) {
       return next(new ErrorResponse(
         `City "${city}" is not valid for state "${state}". Valid cities: ${stateCities.map(c => c.charAt(0).toUpperCase() + c.slice(1)).join(", ")}`,
@@ -139,6 +140,23 @@ export const register = asyncHandler(async (req, res, next) => {
       photos: [],
       videos: [],
       isActive: false,
+    });
+  }
+
+  // ========== ADD STUDIO REGISTRATION ==========
+  if (userType === "studio") {
+    await Studio.create({
+      user: user._id,
+      name: username,
+      state: state || "Alabama",
+      city: city ? city.toLowerCase() : "mobile",
+      biography: "",
+      services: [],
+      photos: [],
+      audioFile: null,
+      isActive: true,
+      isVerified: false,
+      isFeatured: false,
     });
   }
 

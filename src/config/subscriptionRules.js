@@ -2,51 +2,51 @@
 
 import { SUBSCRIPTION_CONFIG } from "./SUBSCRIPTION_CONFIG.js";
 
-  // ======================
-  // VENUE PROFILES
-  // ======================
-  // venue: {
-  //   free: {
-  //     photos: 5,
-  //     biography: true,
-  //     openHours: true,
-  //     address: true,
-  //     seatingCapacity: true,
-  //     shows: 5,
-  //     marketFeePercent: 0,
-  //   },
-  //   pro: {
-  //     photos: 5,
-  //     biography: true,
-  //     openHours: true,
-  //     address: true,
-  //     seatingCapacity: true,
-  //     shows: 5,
-  //     marketFeePercent: 0,
-  //   },
-  // },
+// ======================
+// VENUE PROFILES
+// ======================
+// venue: {
+//   free: {
+//     photos: 5,
+//     biography: true,
+//     openHours: true,
+//     address: true,
+//     seatingCapacity: true,
+//     shows: 5,
+//     marketFeePercent: 0,
+//   },
+//   pro: {
+//     photos: 5,
+//     biography: true,
+//     openHours: true,
+//     address: true,
+//     seatingCapacity: true,
+//     shows: 5,
+//     marketFeePercent: 0,
+//   },
+// },
 
-  // ======================
-  // ARTIST PROFILES
-  // ======================
-  // artist: {
-  //   free: {
-  //     photos: 5,
-  //     mp3: 5,
-  //     biography: true,
-  //     marketFeePercent: 0,
-  //   },
-  //   pro: {
-  //     photos: 5,
-  //     mp3: 5,
-  //     biography: true,
-  //     marketFeePercent: 0,
-  //   },
-  // },
+// ======================
+// ARTIST PROFILES
+// ======================
+// artist: {
+//   free: {
+//     photos: 5,
+//     mp3: 5,
+//     biography: true,
+//     marketFeePercent: 0,
+//   },
+//   pro: {
+//     photos: 5,
+//     mp3: 5,
+//     biography: true,
+//     marketFeePercent: 0,
+//   },
+// },
 
-  // ======================
-  // PHOTOGRAPHER / CAMERAS
-  // ======================
+// ======================
+// PHOTOGRAPHER / CAMERAS
+// ======================
 //   photographer: {
 //     free: {
 //       biography: true,
@@ -69,7 +69,7 @@ import { SUBSCRIPTION_CONFIG } from "./SUBSCRIPTION_CONFIG.js";
 // Helper function to get rules based on config
 const getRules = (userType) => {
   const isProEnabled = SUBSCRIPTION_CONFIG.SYSTEM_WIDE.ENABLE_SUBSCRIPTIONS;
-  
+
   const freeRules = {
     // ====================== VENUE ======================
     venue: {
@@ -85,7 +85,7 @@ const getRules = (userType) => {
       stateVisibility: true,
       cityVisibility: true,
     },
-    
+
     // ====================== ARTIST ======================
     artist: {
       photos: SUBSCRIPTION_CONFIG.FEATURES.MAX_PHOTOS.free,
@@ -97,7 +97,7 @@ const getRules = (userType) => {
       stateVisibility: true,
       cityVisibility: true,
     },
-    
+
     // ====================== PHOTOGRAPHER ======================
     photographer: {
       biography: true,
@@ -110,6 +110,20 @@ const getRules = (userType) => {
       stateVisibility: true,
       cityVisibility: true,
     },
+
+
+    // ====================== STUDIO ======================
+    studio: {
+      photos: SUBSCRIPTION_CONFIG.FEATURES.MAX_PHOTOS.free,
+      audioFiles: 1,
+      biography: true,
+      services: true,
+      marketFeePercent: SUBSCRIPTION_CONFIG.FEATURES.MARKETPLACE_FEE.free,
+      locationCategorization: true,
+      stateVisibility: true,
+      cityVisibility: true,
+    },
+
   };
 
   const proRules = {
@@ -133,7 +147,7 @@ const getRules = (userType) => {
       stateVisibility: true,
       cityVisibility: true,
     },
-    
+
     // ====================== ARTIST PRO ======================
     artist: {
       photos: SUBSCRIPTION_CONFIG.FEATURES.MAX_PHOTOS.pro,
@@ -150,7 +164,7 @@ const getRules = (userType) => {
       stateVisibility: true,
       cityVisibility: true,
     },
-    
+
     // ====================== PHOTOGRAPHER PRO ======================
     photographer: {
       biography: true,
@@ -162,6 +176,23 @@ const getRules = (userType) => {
       // Advanced features
       analytics: SUBSCRIPTION_CONFIG.FEATURES.ENABLE_ANALYTICS,
       unlimitedPhotos: true,
+      priorityListing: true,
+      // Location-based categorization (ALWAYS ENABLED)
+      locationCategorization: true,
+      stateVisibility: true,
+      cityVisibility: true,
+    },
+
+    // ====================== STUDIO PRO ======================
+    studio: {
+      photos: SUBSCRIPTION_CONFIG.FEATURES.MAX_PHOTOS.pro,
+      audioFiles: 1,
+      biography: true,
+      services: true,
+      marketFeePercent: SUBSCRIPTION_CONFIG.FEATURES.MARKETPLACE_FEE.pro,
+      trialDays: SUBSCRIPTION_CONFIG.PRICING.TRIAL_DAYS,
+      // Advanced features
+      analytics: SUBSCRIPTION_CONFIG.FEATURES.ENABLE_ANALYTICS,
       priorityListing: true,
       // Location-based categorization (ALWAYS ENABLED)
       locationCategorization: true,
@@ -181,6 +212,7 @@ export const SUBSCRIPTION_RULES = {
   venue: getRules('venue'),
   artist: getRules('artist'),
   photographer: getRules('photographer'),
+  studio: getRules('studio'),
   journalist: getRules('journalist'),
   fan: getRules('fan'),
 };
