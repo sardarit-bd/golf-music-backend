@@ -78,7 +78,7 @@ const studioSchema = new mongoose.Schema({
         virtuals: true,
         getters: true 
     },
-    toObject: { 
+    toObject: {             
         virtuals: true,
         getters: true 
     }
