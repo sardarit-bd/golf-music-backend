@@ -17,6 +17,7 @@ import {
   togglePhotographerStatusAdmin,
   updatePhotographerProfile,
   updateService,
+  updateVideo,
 } from "../controllers/controller.photographer.js";
 
 import { protect, authorize } from "../middleware/auth.js";
@@ -64,6 +65,7 @@ router.delete("/photos/:photoId", protect, authorize("photographer"), deletePhot
 
 // Video management
 router.post("/videos", protect, authorize("photographer"), addVideo);
+router.put("/videos/:videoId",protect,authorize("photographer"),updateVideo);
 router.delete("/videos/:videoId", protect, authorize("photographer"), deleteVideo);
 
 // ===================
@@ -81,8 +83,5 @@ router.get('/admin/photographers',protect, authorize("admin"), getPhotographersF
 router.get('/photographers/:id', protect, authorize("admin"), getPhotographerForAdmin);
 router.put('/photographers/:id/toggle', protect, authorize("admin"), togglePhotographerStatusAdmin);
 router.delete('/photographers/:id', protect, authorize("admin"), deletePhotographerAdmin);
-
-
-
 
 export default router;

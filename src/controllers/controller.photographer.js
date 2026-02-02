@@ -54,10 +54,10 @@ export const createPhotographerProfile = asyncHandler(async (req, res, next) => 
     alabama: ["mobile"],
     florida: ["pensacola"]
   };
-  
+
   const normalizedCity = city.toLowerCase();
   const validCities = stateCityMapping[normalizedState];
-  
+
   if (!validCities.includes(normalizedCity)) {
     return next(new ErrorResponse(
       `City "${city}" is not valid for state "${state}". ` +
@@ -188,9 +188,6 @@ export const updatePhotographerProfile = asyncHandler(async (req, res, next) => 
   });
 });
 
-
-
-
 /* ========================================================
    ADD SERVICE
 ======================================================== */
@@ -207,7 +204,7 @@ export const addService = asyncHandler(async (req, res, next) => {
     console.log("Services feature check bypassed per PDF requirement");
   }
 
-  const { service, price } = req.body;
+  const { service, price, description, duration, category, contact } = req.body;
   if (!service || !price) {
     return next(new ErrorResponse("Service and price are required", 400));
   }
@@ -224,14 +221,30 @@ export const addService = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Service already exists", 400));
   }
 
-  photographer.services.push({ service, price });
+  photographer.services.push({
+    service,
+    price,
+    description: description || "",
+    duration: duration || "",
+    category: category || "photography",
+    contact: {
+      email: contact?.email || photographer.user.email,
+      phone: contact?.phone || "",
+      preferredContact: contact?.preferredContact || "email",
+      showPhonePublicly: contact?.showPhonePublicly || false,
+    },
+  });
+
   await photographer.save();
 
   res.status(201).json({
     success: true,
     message: "Service added successfully",
-    data: { services: photographer.services },
+    data: {
+      service: photographer.services.at(-1),
+    },
   });
+
 });
 
 /* ========================================================
@@ -251,7 +264,7 @@ export const updateService = asyncHandler(async (req, res, next) => {
   }
 
   const { serviceId } = req.params;
-  const { service, price } = req.body;
+  const { service, price, description, duration, category, contact } = req.body;
 
   if (!service && !price) {
     return next(
@@ -272,18 +285,30 @@ export const updateService = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Service not found", 404));
   }
 
-  if (service) serviceToUpdate.service = service;
-  if (price) serviceToUpdate.price = price;
+  if (service !== undefined) serviceToUpdate.service = service;
+  if (price !== undefined) serviceToUpdate.price = price;
+  if (description !== undefined) serviceToUpdate.description = description;
+  if (duration !== undefined) serviceToUpdate.duration = duration;
+  if (category !== undefined) serviceToUpdate.category = category;
+
+  if (contact !== undefined) {
+    serviceToUpdate.contact = {
+      ...serviceToUpdate.contact,
+      ...contact,
+    };
+  }
 
   await photographer.save();
 
   res.status(200).json({
     success: true,
     message: "Service updated successfully",
-    data: { services: photographer.services },
+    data: {
+      service: serviceToUpdate,
+    },
   });
-});
 
+});
 
 /* ========================================================
    DELETE SERVICE
@@ -318,10 +343,12 @@ export const deleteService = asyncHandler(async (req, res, next) => {
   res.status(200).json({
     success: true,
     message: "Service deleted successfully",
-    data: { services: photographer.services },
+    data: {
+      serviceId,
+    },
   });
-});
 
+});
 
 /* ========================================================
    ADD PHOTO
@@ -381,7 +408,6 @@ export const addPhoto = asyncHandler(async (req, res, next) => {
   });
 });
 
-
 /* ========================================================
    DELETE PHOTO - WITH CLOUDINARY CLEANUP
 ======================================================== */
@@ -440,7 +466,8 @@ export const addVideo = asyncHandler(async (req, res, next) => {
   // PDF: All features for free accounts
   const videoLimit = rules.videos || 5; // Default 5 if not specified
 
-  const { url, title, public_id } = req.body;
+  const { url, title, description, public_id } = req.body;
+
   if (!url || !public_id) {
     return next(new ErrorResponse("Video URL and public ID are required", 400));
   }
@@ -459,8 +486,10 @@ export const addVideo = asyncHandler(async (req, res, next) => {
   photographer.videos.push({
     url,
     title: title || "Untitled Video",
+    description: description || "",
     public_id,
   });
+
 
   await photographer.save();
 
@@ -471,6 +500,34 @@ export const addVideo = asyncHandler(async (req, res, next) => {
   });
 });
 
+/* ========================================================
+   UPDATE VIDEO (TITLE / DESCRIPTION)
+======================================================== */
+export const updateVideo = asyncHandler(async (req, res, next) => {
+  const { videoId } = req.params;
+  const { title, description } = req.body;
+
+  const photographer = await Photographer.findOne({ user: req.user.id });
+  if (!photographer) {
+    return next(new ErrorResponse("Photographer profile not found", 404));
+  }
+
+  const video = photographer.videos.id(videoId);
+  if (!video) {
+    return next(new ErrorResponse("Video not found", 404));
+  }
+
+  if (title !== undefined) video.title = title;
+  if (description !== undefined) video.description = description;
+
+  await photographer.save();
+
+  res.status(200).json({
+    success: true,
+    message: "Video updated successfully",
+    data: { video },
+  });
+});
 
 
 /* ========================================================
@@ -512,7 +569,6 @@ export const deleteVideo = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Failed to delete video", 500));
   }
 });
-
 
 /* ========================================================
    GET ALL PHOTOGRAPHERS (PUBLIC)
@@ -586,7 +642,6 @@ export const getAllPhotographers = asyncHandler(async (req, res, next) => {
     },
   });
 });
-
 
 /* ========================================================
    GET PHOTOGRAPHERS BY STATE (FOR DROPDOWN)
@@ -873,7 +928,6 @@ export const getPhotographersForAdmin = asyncHandler(async (req, res, next) => {
     }
   });
 });
-
 
 /* ========================================================
    GET SINGLE PHOTOGRAPHER FOR ADMIN

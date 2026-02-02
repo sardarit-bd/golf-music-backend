@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 
 const STATE_CITY_MAPPING = {
   louisiana: ["new orleans"],
-  mississippi: ["biloxi"], 
+  mississippi: ["biloxi"],
   alabama: ["mobile"],
   florida: ["pensacola"]
 };
@@ -58,13 +58,84 @@ const photographerSchema = new mongoose.Schema({
         required: true,
         trim: true,
       },
+
       price: {
         type: String,
         required: true,
         trim: true,
       },
+
+      description: {
+        type: String,
+        trim: true,
+        default: "",
+        maxlength: 1000,
+      },
+
+      duration: {
+        type: String,
+        enum: [
+          "30min",
+          "1hour",
+          "2hours",
+          "3hours",
+          "4hours",
+          "6hours",
+          "8hours",
+          "fullday",
+          "custom",
+          "",
+        ],
+        default: "",
+      },
+
+      category: {
+        type: String,
+        enum: [
+          "photography",
+          "videography",
+          "editing",
+          "consultation",
+          "workshop",
+          "other",
+        ],
+        default: "photography",
+      },
+
+      contact: {
+        email: {
+          type: String,
+          lowercase: true,
+          trim: true,
+          match: [/^\S+@\S+\.\S+$/, "Invalid email"],
+        },
+
+        phone: {
+          type: String,
+          trim: true,
+          maxlength: 20,
+        },
+
+        preferredContact: {
+          type: String,
+          enum: ["email", "phone"],
+          default: "email",
+        },
+
+        showPhonePublicly: {
+          type: Boolean,
+          default: false,
+        },
+      },
+
+      createdAt: {
+        type: Date,
+        default: Date.now,
+      },
     },
   ],
+
+
 
   // PHOTOS (5 photos for all users - PDF requirement)
   photos: [
@@ -95,23 +166,35 @@ const photographerSchema = new mongoose.Schema({
         type: String,
         required: true,
       },
+
       title: {
         type: String,
         default: "Untitled Video",
       },
+      
+      description: {
+        type: String,
+        trim: true,
+        maxlength: 2000,
+        default: "",
+      },
+
       public_id: {
         type: String,
         required: true,
       },
+
       duration: Number,
       format: String,
       bytes: Number,
+
       uploadedAt: {
         type: Date,
         default: Date.now,
       },
     },
   ],
+
 
   // SUBSCRIPTION-RELATED
   photosLimit: {
@@ -159,24 +242,24 @@ const photographerSchema = new mongoose.Schema({
 // Pre-save middleware for validation and auto-population
 photographerSchema.pre("save", function (next) {
   this.updatedAt = Date.now();
-  
+
   // Validate state-city combination based on PDF requirement
   if (this.isModified('city') || this.isModified('state')) {
     if (!this.state) {
       return next(new Error("State is required"));
     }
-    
+
     if (!this.city) {
       return next(new Error("City is required"));
     }
-    
+
     // Get valid cities for this state
     const validCities = STATE_CITY_MAPPING[this.state.toLowerCase()];
-    
+
     if (!validCities) {
       return next(new Error(`Invalid state: ${this.state}`));
     }
-    
+
     if (!validCities.includes(this.city.toLowerCase())) {
       return next(new Error(
         `City "${this.city}" is not valid for state "${this.state}". ` +
@@ -184,22 +267,22 @@ photographerSchema.pre("save", function (next) {
       ));
     }
   }
-  
+
   // Auto-populate locationTags based on state
   if (this.state) {
     this.locationTags = [this.state.toLowerCase()];
   }
-  
+
   // Enforce photo limit (PDF: 5 photos max)
   if (this.photos && this.photos.length > this.photosLimit) {
     return next(new Error(`Maximum ${this.photosLimit} photos allowed`));
   }
-  
+
   // Enforce video limit (PDF: 1 video max)
   if (this.videos && this.videos.length > this.videosLimit) {
     return next(new Error(`Maximum ${this.videosLimit} video allowed`));
   }
-  
+
   next();
 });
 
@@ -210,16 +293,16 @@ photographerSchema.index({ user: 1 }, { unique: true });
 photographerSchema.index({ locationTags: 1 });
 
 // Virtual for formatted location
-photographerSchema.virtual('formattedLocation').get(function() {
+photographerSchema.virtual('formattedLocation').get(function () {
   if (!this.city || !this.state) return "Location not set";
-  
+
   const formatCity = this.city
     .split(' ')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
-    
+
   const formatState = this.state.charAt(0).toUpperCase() + this.state.slice(1);
-  
+
   return `${formatCity}, ${formatState}`;
 });
 
