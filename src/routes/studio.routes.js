@@ -18,6 +18,7 @@ import {
   deleteStudio,
 } from "../controllers/controllers.studio.js";
 import { uploadStudioAudio, uploadStudioPhotos } from "../middleware/upload.js";
+import multer from "multer";
 
 const router = express.Router();
 
