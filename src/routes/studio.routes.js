@@ -16,6 +16,7 @@ import {
   getStudioById,
   updateStudioStatus,
   deleteStudio,
+  getStudioPublic,
 } from "../controllers/controllers.studio.js";
 import { uploadStudioAudio, uploadStudioPhotos } from "../middleware/upload.js";
 import multer from "multer";
@@ -24,6 +25,7 @@ const router = express.Router();
 
 // Public routes
 router.get("/location", getStudiosByLocation);
+router.get("/public/:id", getStudioPublic); 
 
 // Protected user routes (Studio owners only)
 router.use(protect);

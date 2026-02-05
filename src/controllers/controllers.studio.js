@@ -347,6 +347,34 @@ export const getStudioById = asyncHandler(async (req, res, next) => {
 });
 
 // ========================================================
+// PUBLIC: GET SINGLE STUDIO BY ID (Public access)
+// ========================================================
+export const getStudioPublic = asyncHandler(async (req, res, next) => {
+    const { id } = req.params;
+
+    const studio = await Studio.findById(id)
+        .populate("user", "username email userType")
+        .select("name state city biography services photos audioFile isVerified isFeatured isActive");
+
+    if (!studio) {
+        return next(new ErrorResponse("Studio not found", 404));
+    }
+
+    // Check if studio is active
+    if (!studio.isActive) {
+        return next(new ErrorResponse("Studio is not active", 404));
+    }
+
+    res.status(200).json({
+        success: true,
+        data: {
+            studio: studio,
+            user: studio.user
+        },
+    });
+});
+
+// ========================================================
 // ADMIN: UPDATE STUDIO STATUS (Active/Inactive)
 // ========================================================
 export const updateStudioStatus = asyncHandler(async (req, res, next) => {
