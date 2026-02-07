@@ -16,19 +16,22 @@ import {
 
 const router = express.Router();
 
-// ==================== PUBLIC ROUTES ====================
-router.get('/', getNewsByLocation);
-router.get('/search', searchNews);
-router.get('/featured', getFeaturedNews);
-router.get('/stats', getNewsStats);
-router.get('/:id', getNews);
+// ==================== ROUTE ORDER FIX ====================
 
-// ==================== JOURNALIST ROUTES ====================
-router.use(protect, authorize('journalist'));
+router.get('/search', searchNews);           // GET /api/news/search
+router.get('/featured', getFeaturedNews);    // GET /api/news/featured
+router.get('/stats', getNewsStats);          // GET /api/news/stats
+router.get('/journalist/my-news', protect, authorize('journalist'), getMyNews);
 
-router.get('/journalist/my-news', getMyNews); 
+
+router.get('/', getNewsByLocation);          // GET /api/news
+router.get('/:id', getNews);                 // GET /api/news/:id
+
+
 router.post(
   '/',
+  protect,
+  authorize('journalist'),
   uploadNewsPhotos,
   handleUploadErrors,
   validateNews,
@@ -37,12 +40,19 @@ router.post(
 
 router.put(
   '/:id',
+  protect,
+  authorize('journalist'),
   uploadNewsPhotos,
   handleUploadErrors,
   validateNewsUpdate,
   updateNews
 );
 
-router.delete('/:id', deleteNews);
+router.delete(
+  '/:id',
+  protect,
+  authorize('journalist'),
+  deleteNews
+);
 
 export default router;

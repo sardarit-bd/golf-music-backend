@@ -48,16 +48,13 @@ const getStateFromCity = (city) => {
 export const createNews = asyncHandler(async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return next(
-      new ErrorResponse("Validation failed", 400, { details: errors.array() })
-    );
+    return next(new ErrorResponse("Validation failed", 400, { details: errors.array() }));
   }
 
   const { title, description, location, credit } = req.body;
   const normalizedLocation = location?.toLowerCase();
-  const state = getStateFromCity(normalizedLocation);
 
-  // Upload images to Cloudinary (if any) - Max 5 photos
+  // Upload images (max 5)
   let uploadedPhotos = [];
   if (req.files && req.files.length > 0) {
     const maxPhotos = 5;
@@ -78,11 +75,11 @@ export const createNews = asyncHandler(async (req, res, next) => {
     );
   }
 
+  // Model will auto-calculate state in pre-save middleware
   const news = await News.create({
     title,
     description,
     location: normalizedLocation,
-    state,
     credit,
     photos: uploadedPhotos,
     journalist: req.user.id,

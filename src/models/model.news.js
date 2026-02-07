@@ -87,7 +87,6 @@ const newsSchema = new mongoose.Schema({
   }
 });
 
-// Update timestamp before saving
 newsSchema.pre('save', function (next) {
   this.updatedAt = Date.now();
   

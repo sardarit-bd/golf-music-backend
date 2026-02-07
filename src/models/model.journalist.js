@@ -78,18 +78,13 @@ const journalistSchema = new mongoose.Schema({
   }
 });
 
-// Update timestamp before saving
 journalistSchema.pre('save', function (next) {
   this.updatedAt = Date.now();
-  next();
-});
-
-// Middleware to auto-calculate state from city
-journalistSchema.pre('save', function (next) {
+  
+  // Auto-calculate state from city
   if (this.city && !this.state) {
     const cityLower = this.city.toLowerCase();
     
-    // Map cities to states based on client requirement
     const stateMap = {
       // Louisiana cities
       'new orleans': 'Louisiana',
