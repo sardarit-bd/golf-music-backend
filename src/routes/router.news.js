@@ -1,23 +1,34 @@
 import express from 'express';
 import { authorize, protect } from '../middleware/auth.js';
 import { handleUploadErrors, uploadNewsPhotos } from '../middleware/upload.js';
-import { validateNews } from '../middleware/validation.js';
-import { createNews, deleteNews, getMyNews, getNews, getNewsByLocation, updateNews } from '../controllers/controller.news.js';
-import { deleteNewsByAdmin, getNewsForAdmin, toggleNewsStatus, updateNewsByAdmin } from '../controllers/controller.admin.js';
-
+import { validateNews, validateNewsUpdate } from '../middleware/validation.js';
+import { 
+  createNews, 
+  deleteNews, 
+  getFeaturedNews,
+  getMyNews, 
+  getNews, 
+  getNewsByLocation, 
+  getNewsStats,
+  searchNews,
+  updateNews 
+} from '../controllers/controller.news.js';
 
 const router = express.Router();
 
-router.get('/my-news', protect, authorize('journalist'), getMyNews);
-
+// ==================== PUBLIC ROUTES ====================
 router.get('/', getNewsByLocation);
-
+router.get('/search', searchNews);
+router.get('/featured', getFeaturedNews);
+router.get('/stats', getNewsStats);
 router.get('/:id', getNews);
 
+// ==================== JOURNALIST ROUTES ====================
+router.use(protect, authorize('journalist'));
+
+router.get('/journalist/my-news', getMyNews); 
 router.post(
   '/',
-  protect,
-  authorize('journalist'),
   uploadNewsPhotos,
   handleUploadErrors,
   validateNews,
@@ -26,21 +37,12 @@ router.post(
 
 router.put(
   '/:id',
-  protect,
-  authorize('journalist'),
   uploadNewsPhotos,
   handleUploadErrors,
-  validateNews,
+  validateNewsUpdate,
   updateNews
 );
 
-
-router.delete('/:id', protect, authorize('journalist'), deleteNews);
-
-// NEW: Admin routes for news management
-router.get('/admin/news', protect, authorize('admin'), getNewsForAdmin);
-router.put('/admin/:id', protect, authorize('admin'), updateNewsByAdmin);
-router.put('/admin/:id/toggle', protect, authorize('admin'), toggleNewsStatus);
-router.delete('/admin/:id', protect, authorize('admin'), deleteNewsByAdmin);
+router.delete('/:id', deleteNews);
 
 export default router;

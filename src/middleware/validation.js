@@ -48,13 +48,13 @@ export const validateRegistration = [
   body("state")
     .custom((value, { req }) => {
       const userType = req.body.userType;
-       const requiresState = ["artist", "venue", "journalist", "photographer", "studio"].includes(userType);
-      
+      const requiresState = ["artist", "venue", "journalist", "photographer", "studio"].includes(userType);
+
       if (requiresState) {
         if (!value) {
           throw new Error("State is required for this user type");
         }
-        
+
         const validStates = Object.keys(STATE_CITY_MAPPING);
         if (!validStates.includes(value)) {
           throw new Error(`Invalid state. Must be one of: ${validStates.join(", ")}`);
@@ -73,12 +73,12 @@ export const validateRegistration = [
     .custom((value, { req }) => {
       const userType = req.body.userType;
       const requiresCity = ["artist", "venue", "journalist", "photographer", "studio"].includes(userType);
-      
+
       if (requiresCity) {
         if (!value) {
           throw new Error("City is required for this user type");
         }
-        
+
         const state = req.body.state;
         if (state) {
           const stateCities = STATE_CITY_MAPPING[state] || [];
@@ -224,44 +224,113 @@ export const validateVenueProfile = [
 ];
 
 export const validateNews = [
-  body("title")
-    .notEmpty()
-    .withMessage("Title is required")
-    .isLength({ max: 200 })
-    .withMessage("Title cannot exceed 200 characters"),
+  body('title')
+    .trim()
+    .notEmpty().withMessage('Title is required')
+    .isLength({ min: 5, max: 200 }).withMessage('Title must be between 5 and 200 characters'),
 
-  body("description")
-    .notEmpty()
-    .withMessage("Description is required")
-    .isLength({ max: 5000 })
-    .withMessage("Description cannot exceed 5000 characters"),
+  body('description')
+    .trim()
+    .notEmpty().withMessage('Description is required')
+    .isLength({ min: 50, max: 5000 }).withMessage('Description must be between 50 and 5000 characters'),
 
-  body("state")
-    .notEmpty()
-    .withMessage("State is required")
-    .custom((value) => {
-      const validStates = Object.keys(STATE_CITY_MAPPING);
-      if (!validStates.includes(value)) {
-        throw new Error(`Invalid state. Must be one of: ${validStates.join(", ")}`);
+  body('location')
+    .trim()
+    .notEmpty().withMessage('Location is required')
+    .isIn([
+      'new orleans', 'baton rouge', 'lafayette', 'shreveport', 'lake charles', 'monroe',
+      'jackson', 'biloxi', 'gulfport', 'oxford', 'hattiesburg',
+      'birmingham', 'mobile', 'huntsville', 'tuscaloosa',
+      'tampa', 'st. petersburg', 'clearwater', 'pensacola', 'panama city', 'fort myers'
+    ]).withMessage('Please select a valid Gulf Coast city'),
+
+  body('credit')
+    .trim()
+    .notEmpty().withMessage('Credit is required')
+    .isLength({ max: 200 }).withMessage('Credit cannot exceed 200 characters'),
+
+  // Custom validation for photos
+  (req, res, next) => {
+    if (req.files && req.files.length > 5) {
+      return next(new ErrorResponse('Maximum 5 photos allowed per news article', 400));
+    }
+
+    // Check file types
+    if (req.files) {
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+      const invalidFiles = req.files.filter(file => !allowedTypes.includes(file.mimetype));
+
+      if (invalidFiles.length > 0) {
+        return next(new ErrorResponse(
+          'Only JPEG, PNG, JPG, and WebP image formats are allowed',
+          400
+        ));
       }
-      return true;
-    }),
+    }
 
-  body("city")
-    .notEmpty()
-    .withMessage("City is required")
-    .custom((value, { req }) => {
-      const state = req.body.state;
-      if (state) {
-        const stateCities = STATE_CITY_MAPPING[state] || [];
-        if (!stateCities.includes(value.toLowerCase())) {
-          throw new Error(`City "${value}" is not valid for state "${state}"`);
+    next();
+  }
+];
+
+export const validateNewsUpdate = [
+  body('title')
+    .optional()
+    .trim()
+    .isLength({ min: 5, max: 200 }).withMessage('Title must be between 5 and 200 characters'),
+
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ min: 50, max: 5000 }).withMessage('Description must be between 50 and 5000 characters'),
+
+  body('location')
+    .optional()
+    .trim()
+    .isIn([
+      'new orleans', 'baton rouge', 'lafayette', 'shreveport', 'lake charles', 'monroe',
+      'jackson', 'biloxi', 'gulfport', 'oxford', 'hattiesburg',
+      'birmingham', 'mobile', 'huntsville', 'tuscaloosa',
+      'tampa', 'st. petersburg', 'clearwater', 'pensacola', 'panama city', 'fort myers'
+    ]).withMessage('Please select a valid Gulf Coast city'),
+
+  body('credit')
+    .optional()
+    .trim()
+    .isLength({ max: 200 }).withMessage('Credit cannot exceed 200 characters'),
+
+  body('deletedPhotos')
+    .optional()
+    .custom((value) => {
+      if (value) {
+        try {
+          const parsed = JSON.parse(value);
+          return Array.isArray(parsed);
+        } catch {
+          return false;
         }
       }
       return true;
-    }),
+    }).withMessage('deletedPhotos must be a valid JSON array'),
 
-  body("credit").notEmpty().withMessage("Credit is required"),
+  (req, res, next) => {
+    if (req.files && req.files.length > 5) {
+      return next(new ErrorResponse('Maximum 5 photos allowed per news article', 400));
+    }
+
+    if (req.files) {
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+      const invalidFiles = req.files.filter(file => !allowedTypes.includes(file.mimetype));
+
+      if (invalidFiles.length > 0) {
+        return next(new ErrorResponse(
+          'Only JPEG, PNG, JPG, and WebP image formats are allowed',
+          400
+        ));
+      }
+    }
+
+    next();
+  }
 ];
 
 // Validate Event Creation

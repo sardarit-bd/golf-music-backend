@@ -270,21 +270,16 @@ export const getVenuesByCity = asyncHandler(async (req, res, next) => {
   const { state, city } = req.query;
   const query = { isActive: true };
 
-  // NEW: Filter by state and city
   if (state) {
     query.state = state;
   }
 
   if (city && city !== "all") {
     query.city = city.toLowerCase();
-  } else if (state) {
-    // If state given but city not given, get all cities in that state
+  } 
+  else if (state) {
     const stateCities = STATE_CITY_MAPPING[state] || [];
     query.city = { $in: stateCities };
-  } else {
-    // Default: Mobile, Alabama
-    query.state = "Alabama";
-    query.city = "mobile";
   }
 
   const venues = await Venue.find(query)
@@ -292,22 +287,23 @@ export const getVenuesByCity = asyncHandler(async (req, res, next) => {
     .sort({ venueName: 1 });
 
   const rules = SUBSCRIPTION_RULES.venue.free;
-  const safeVenues = venues.map((v) => {
-    return sanitizeVenueForPlan(v, rules);
-  });
+  const safeVenues = venues.map((v) =>
+    sanitizeVenueForPlan(v, rules)
+  );
 
   res.status(200).json({
     success: true,
     data: {
       venues: safeVenues,
       filters: {
-        currentState: query.state,
-        currentCity: query.city,
-        availableStates: Object.keys(STATE_CITY_MAPPING)
-      }
+        currentState: state || "all",
+        currentCity: city || "all",
+        availableStates: Object.keys(STATE_CITY_MAPPING),
+      },
     },
   });
 });
+
 
 export const getVenue = asyncHandler(async (req, res, next) => {
   const venue = await Venue.findById(req.params.id)

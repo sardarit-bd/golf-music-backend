@@ -376,27 +376,44 @@ export const addPhoto = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse(`Maximum ${photoLimit} photos allowed`, 400));
   }
 
-  const uploadedPhotos = [];
+  // const uploadedPhotos = [];
 
-  for (const file of req.files) {
-    const result = await new Promise((resolve, reject) => {
-      cloudinary.uploader
-        .upload_stream(
-          { folder: "photographers/photos", resource_type: "image" },
-          (error, uploadResult) => {
-            if (error) reject(error);
-            else resolve(uploadResult);
-          }
-        )
-        .end(file.buffer);
-    });
+  // for (const file of req.files) {
+  //   const result = await new Promise((resolve, reject) => {
+  //     cloudinary.uploader
+  //       .upload_stream(
+  //         { folder: "photographers/photos", resource_type: "image" },
+  //         (error, uploadResult) => {
+  //           if (error) reject(error);
+  //           else resolve(uploadResult);
+  //         }
+  //       )
+  //       .end(file.buffer);
+  //   });
 
-    uploadedPhotos.push({
-      url: result.secure_url,
-      public_id: result.public_id,
-      caption: "",
-    });
-  }
+  //   uploadedPhotos.push({
+  //     url: result.secure_url,
+  //     public_id: result.public_id,
+  //     caption: "",
+  //   });
+  // }
+
+  // photographer.photos.push(...uploadedPhotos);
+  // await photographer.save();
+
+
+  // if (!photographer.state || !photographer.city) {
+  //   return next(
+  //     new ErrorResponse("Photographer location missing", 400)
+  //   );
+  // }
+
+  // ✅ Use files already uploaded by middleware
+  const uploadedPhotos = req.files.map(file => ({
+    url: file.path,        // Cloudinary URL
+    public_id: file.filename,
+    caption: "",
+  }));
 
   photographer.photos.push(...uploadedPhotos);
   await photographer.save();

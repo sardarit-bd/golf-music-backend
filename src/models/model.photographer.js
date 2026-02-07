@@ -171,7 +171,7 @@ const photographerSchema = new mongoose.Schema({
         type: String,
         default: "Untitled Video",
       },
-      
+
       description: {
         type: String,
         trim: true,
@@ -244,7 +244,11 @@ photographerSchema.pre("save", function (next) {
   this.updatedAt = Date.now();
 
   // Validate state-city combination based on PDF requirement
-  if (this.isModified('city') || this.isModified('state')) {
+  if (
+    this.isNew ||
+    this.isModified('city') ||
+    this.isModified('state')
+  ) {
     if (!this.state) {
       return next(new Error("State is required"));
     }
