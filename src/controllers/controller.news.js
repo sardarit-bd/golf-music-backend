@@ -7,9 +7,9 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 // Helper function to get state from city
 const getStateFromCity = (city) => {
   if (!city) return '';
-  
+
   const cityLower = city.toLowerCase();
-  
+
   const stateMap = {
     // Louisiana cities
     'new orleans': 'Louisiana',
@@ -18,20 +18,20 @@ const getStateFromCity = (city) => {
     'shreveport': 'Louisiana',
     'lake charles': 'Louisiana',
     'monroe': 'Louisiana',
-    
+
     // Mississippi cities
     'jackson': 'Mississippi',
     'biloxi': 'Mississippi',
     'gulfport': 'Mississippi',
     'oxford': 'Mississippi',
     'hattiesburg': 'Mississippi',
-    
+
     // Alabama cities
     'birmingham': 'Alabama',
     'mobile': 'Alabama',
     'huntsville': 'Alabama',
     'tuscaloosa': 'Alabama',
-    
+
     // Florida cities
     'tampa': 'Florida',
     'st. petersburg': 'Florida',
@@ -40,7 +40,7 @@ const getStateFromCity = (city) => {
     'panama city': 'Florida',
     'fort myers': 'Florida',
   };
-  
+
   return stateMap[cityLower] || '';
 };
 
@@ -59,7 +59,7 @@ export const createNews = asyncHandler(async (req, res, next) => {
   if (req.files && req.files.length > 0) {
     const maxPhotos = 5;
     const filesToUpload = req.files.slice(0, maxPhotos);
-    
+
     uploadedPhotos = await Promise.all(
       filesToUpload.map(async (file) => {
         const uploadRes = await cloudinary.uploader.upload(file.path, {
@@ -123,7 +123,7 @@ export const updateNews = asyncHandler(async (req, res, next) => {
       }
     }
     // Remove deleted photos from array
-    news.photos = news.photos.filter(photo => 
+    news.photos = news.photos.filter(photo =>
       !deletedPhotos.includes(photo.filename)
     );
   }
@@ -131,11 +131,11 @@ export const updateNews = asyncHandler(async (req, res, next) => {
   // Upload new photos (if provided) - Max 5 total photos
   const existingPhotoCount = news.photos.length;
   const availableSlots = Math.max(0, 5 - existingPhotoCount);
-  
+
   let newPhotos = [];
   if (req.files && req.files.length > 0 && availableSlots > 0) {
     const filesToUpload = req.files.slice(0, availableSlots);
-    
+
     newPhotos = await Promise.all(
       filesToUpload.map(async (file) => {
         const uploadRes = await cloudinary.uploader.upload(file.path, {
@@ -149,14 +149,14 @@ export const updateNews = asyncHandler(async (req, res, next) => {
         };
       })
     );
-    
+
     // Add new photos to existing ones
     news.photos = [...news.photos, ...newPhotos];
   }
 
   // Dynamically build update object
   const updateData = {};
-  
+
   if (title !== undefined) updateData.title = title;
   if (description !== undefined) updateData.description = description;
   if (location !== undefined) {
@@ -188,17 +188,19 @@ export const getNewsByLocation = asyncHandler(async (req, res, next) => {
   if (location && location !== "all") {
     query.location = location.toLowerCase();
   }
-  
+
+
   if (state && state !== "all") {
-    query.state = state;
+    query.state =
+      state.charAt(0).toUpperCase() + state.slice(1).toLowerCase();
   }
-  
+
   if (featured === "true") {
     query.isFeatured = true;
   }
 
   const skip = (Number(page) - 1) * Number(limit);
-  
+
   const news = await News.find(query)
     .populate({
       path: 'journalist',
@@ -207,7 +209,7 @@ export const getNewsByLocation = asyncHandler(async (req, res, next) => {
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(Number(limit));
-  
+
   const total = await News.countDocuments(query);
 
   // Increment views for featured/news details if needed
@@ -220,7 +222,7 @@ export const getNewsByLocation = asyncHandler(async (req, res, next) => {
 
   res.status(200).json({
     success: true,
-    data: { 
+    data: {
       news,
       pagination: {
         current: Number(page),
@@ -236,56 +238,73 @@ export const getNewsByLocation = asyncHandler(async (req, res, next) => {
 export const getNews = asyncHandler(async (req, res, next) => {
   const news = await News.findById(req.params.id)
     .populate({
-      path: 'journalist',
-      select: 'username email fullName profilePhoto bio city state'
+      path: "journalist",
+      select: "username email fullName profilePhoto bio city state",
     });
-  
+
   if (!news) {
     return next(new ErrorResponse("News not found", 404));
   }
 
-  // Increment view count
-  news.views += 1;
-  await news.save();
+  // ===== UNIQUE VIEW COUNT =====
+  const userIp =
+    req.headers["x-forwarded-for"]?.split(",")[0] ||
+    req.socket.remoteAddress;
 
-  // Get related news (same location)
+  const now = new Date();
+  const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+  const alreadyViewed = news.viewLogs?.some(
+    (log) => log.ip === userIp && log.viewedAt > last24Hours
+  );
+
+  if (!alreadyViewed) {
+    news.views += 1;
+    news.viewLogs.push({ ip: userIp, viewedAt: now });
+
+    if (news.viewLogs.length > 1000) {
+      news.viewLogs = news.viewLogs.slice(-1000);
+    }
+
+    await news.save();
+  }
+
+  // Related news
   const relatedNews = await News.find({
     _id: { $ne: news._id },
     location: news.location,
-    isActive: true
+    isActive: true,
   })
-  .populate('journalist', 'fullName')
-  .sort({ createdAt: -1 })
-  .limit(3);
+    .populate("journalist", "fullName")
+    .sort({ createdAt: -1 })
+    .limit(3);
 
   res.status(200).json({
     success: true,
-    data: { 
-      news,
-      relatedNews 
-    },
+    data: { news, relatedNews },
   });
 });
+
 
 //  GET MY NEWS (for logged-in journalist)
 export const getMyNews = asyncHandler(async (req, res, next) => {
   const { page = 1, limit = 10, status = "active" } = req.query;
-  
+
   const query = { journalist: req.user.id };
-  
+
   if (status === "active") {
     query.isActive = true;
   } else if (status === "inactive") {
     query.isActive = false;
   }
-  
+
   const skip = (Number(page) - 1) * Number(limit);
-  
+
   const news = await News.find(query)
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(Number(limit));
-  
+
   const total = await News.countDocuments(query);
 
   const stats = {
@@ -300,7 +319,7 @@ export const getMyNews = asyncHandler(async (req, res, next) => {
 
   res.status(200).json({
     success: true,
-    data: { 
+    data: {
       news,
       pagination: {
         current: Number(page),
@@ -337,7 +356,7 @@ export const deleteNews = asyncHandler(async (req, res, next) => {
       }
     }
     await News.findByIdAndDelete(req.params.id);
-    
+
     res.status(200).json({
       success: true,
       message: "News permanently deleted",
@@ -346,7 +365,7 @@ export const deleteNews = asyncHandler(async (req, res, next) => {
     // Soft delete for journalists
     news.isActive = false;
     await news.save();
-    
+
     res.status(200).json({
       success: true,
       message: "News deleted successfully (soft delete)",
@@ -356,9 +375,9 @@ export const deleteNews = asyncHandler(async (req, res, next) => {
 
 //  GET FEATURED NEWS
 export const getFeaturedNews = asyncHandler(async (req, res, next) => {
-  const news = await News.find({ 
-    isFeatured: true, 
-    isActive: true 
+  const news = await News.find({
+    isFeatured: true,
+    isActive: true
   })
     .populate('journalist', 'fullName profilePhoto')
     .sort({ createdAt: -1 })
@@ -404,7 +423,7 @@ export const getNewsStats = asyncHandler(async (req, res, next) => {
 //  SEARCH NEWS
 export const searchNews = asyncHandler(async (req, res, next) => {
   const { q, page = 1, limit = 10 } = req.query;
-  
+
   if (!q || q.trim() === '') {
     return next(new ErrorResponse('Search query is required', 400));
   }
@@ -420,13 +439,13 @@ export const searchNews = asyncHandler(async (req, res, next) => {
   };
 
   const skip = (Number(page) - 1) * Number(limit);
-  
+
   const news = await News.find(query)
     .populate('journalist', 'fullName profilePhoto')
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(Number(limit));
-  
+
   const total = await News.countDocuments(query);
 
   res.status(200).json({

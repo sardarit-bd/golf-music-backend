@@ -9,9 +9,9 @@ import { cloudinary } from "../config/cloudinary.js";
 // Helper function to get state from city
 const getStateFromCity = (city) => {
   if (!city) return '';
-  
+
   const cityLower = city.toLowerCase();
-  
+
   // Map cities to states based on client requirement
   const stateMap = {
     // Louisiana cities
@@ -21,20 +21,20 @@ const getStateFromCity = (city) => {
     'shreveport': 'Louisiana',
     'lake charles': 'Louisiana',
     'monroe': 'Louisiana',
-    
+
     // Mississippi cities
     'jackson': 'Mississippi',
     'biloxi': 'Mississippi',
     'gulfport': 'Mississippi',
     'oxford': 'Mississippi',
     'hattiesburg': 'Mississippi',
-    
+
     // Alabama cities
     'birmingham': 'Alabama',
     'mobile': 'Alabama',
     'huntsville': 'Alabama',
     'tuscaloosa': 'Alabama',
-    
+
     // Florida cities
     'tampa': 'Florida',
     'st. petersburg': 'Florida',
@@ -43,7 +43,7 @@ const getStateFromCity = (city) => {
     'panama city': 'Florida',
     'fort myers': 'Florida',
   };
-  
+
   return stateMap[cityLower] || '';
 };
 
@@ -87,7 +87,7 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
 
   // Handle profile photo removal/update
   let profilePhoto = journalist?.profilePhoto || null;
-  
+
   if (req.body.removedPhoto && journalist?.profilePhoto?.publicId) {
     try {
       await cloudinary.uploader.destroy(journalist.profilePhoto.publicId);
@@ -106,7 +106,7 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
         console.log("Failed to delete old profile photo:", err);
       }
     }
-    
+
     profilePhoto = {
       url: req.file.path,
       filename: req.file.filename,
@@ -175,7 +175,7 @@ export const updateJournalistProfile = asyncHandler(async (req, res, next) => {
 
   // Handle profile photo removal/update
   let profilePhoto = journalist.profilePhoto;
-  
+
   if (req.body.removedPhoto && journalist.profilePhoto?.publicId) {
     try {
       await cloudinary.uploader.destroy(journalist.profilePhoto.publicId);
@@ -194,7 +194,7 @@ export const updateJournalistProfile = asyncHandler(async (req, res, next) => {
         console.log("Failed to delete old profile photo:", err);
       }
     }
-    
+
     profilePhoto = {
       url: req.file.path,
       filename: req.file.filename,
@@ -289,19 +289,21 @@ export const getJournalist = asyncHandler(async (req, res, next) => {
 
 export const getAllJournalists = asyncHandler(async (req, res, next) => {
   const { state, city, isVerified } = req.query;
-  
+
   let query = { isActive: true };
-  
+
   // State filter
   if (state && state !== "all") {
-    query.state = state;
+    query.state =
+      state.charAt(0).toUpperCase() + state.slice(1).toLowerCase();
   }
-  
+
+
   // City filter
   if (city && city !== "all") {
     query.city = city.toLowerCase();
   }
-  
+
   // Verified filter
   if (isVerified === "true") {
     query.isVerified = true;
@@ -324,16 +326,18 @@ export const getAllJournalists = asyncHandler(async (req, res, next) => {
 
 export const getJournalistsByLocation = asyncHandler(async (req, res, next) => {
   const { state, city } = req.query;
-  
+
   if (!state) {
     return next(new ErrorResponse("State parameter is required", 400));
   }
 
-  let query = { 
-    state: state,
+  let query = {
+    state:
+      state.charAt(0).toUpperCase() + state.slice(1).toLowerCase(),
     isActive: true,
-    isVerified: true 
+    isVerified: true
   };
+
 
   if (city && city !== "all") {
     query.city = city.toLowerCase();
@@ -346,7 +350,7 @@ export const getJournalistsByLocation = asyncHandler(async (req, res, next) => {
 
   res.status(200).json({
     success: true,
-    data: { 
+    data: {
       journalists,
       location: { state, city },
       count: journalists.length
