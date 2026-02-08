@@ -54,7 +54,6 @@ router.delete(
 
 router.delete("/me", protect, deleteMyMarketItem);
 
-// PUBLIC ROUTE (ID-based) - শেষে রাখুন
 router.get("/:id", getMarketItemByIdPublic);
 
 /* ======================
