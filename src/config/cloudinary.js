@@ -79,7 +79,7 @@ const generateFolderPath = (req, file) => {
     } else if (req.baseUrl.includes('/api/events')) {
       subFolder = '/events';
     } else if (req.baseUrl.includes('/api/market')) {
-      subFolder = '/market';
+      subFolder = '/market'; // Market specific folder
     }
   }
   
@@ -94,6 +94,8 @@ const generateFolderPath = (req, file) => {
       typeFolder += '/logos';
     } else if (file.fieldname === 'photos') {
       typeFolder += '/gallery';
+    } else if (file.fieldname === 'image') {
+      typeFolder += '/items';
     }
   } else if (file.mimetype.startsWith('video/')) {
     typeFolder = '/videos';
@@ -102,6 +104,8 @@ const generateFolderPath = (req, file) => {
       typeFolder += '/main';
     } else if (file.fieldname === 'trailer') {
       typeFolder += '/trailers';
+    } else if (file.fieldname === 'videos') {
+      typeFolder += '/items';
     }
   } else if (file.mimetype.startsWith('audio/')) {
     typeFolder = '/audio';
@@ -110,6 +114,8 @@ const generateFolderPath = (req, file) => {
       typeFolder += '/tracks';
     } else if (file.fieldname === 'audio') {
       typeFolder += '/samples';
+    } else if (file.fieldname === 'audioFile') {
+      typeFolder += '/studio';
     }
   } else {
     typeFolder = '/documents';
@@ -173,6 +179,10 @@ const storage = new CloudinaryStorage({
         { quality: 'auto:good' },
         { fetch_format: 'auto' }
       );
+    } else if (resource_type === 'video') {
+      transformation.push(
+        { quality: 'auto:good' }
+      );
     }
     
     return {
@@ -180,47 +190,158 @@ const storage = new CloudinaryStorage({
       public_id: publicId,
       resource_type,
       format,
-      allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'mp4', 'mov', 'mp3', 'wav', 'pdf'],
+      allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'mp4', 'mov', 'avi', 'webm', 'mkv', 'mp3', 'wav', 'pdf'],
       transformation,
       overwrite: false, // Prevent overwriting
       invalidate: true, // Invalidate CDN cache
       type: 'upload',
       access_mode: 'public',
-      tags: ['gulf-music', file.fieldname || 'upload'],
+      tags: ['gulf-music', file.fieldname || 'upload', req.baseUrl?.includes('/market') ? 'market' : 'general'],
       context: {
         upload_source: 'gulf-music-website',
         original_filename: file.originalname,
-        upload_timestamp: Date.now().toString()
+        upload_timestamp: Date.now().toString(),
+        upload_route: req.baseUrl || 'unknown'
       }
     };
   },
 });
 
-// === Helper Functions for Cloudinary Operations ===
+// === FIXED: Helper Functions for Cloudinary Operations ===
 
-const deleteFromCloudinary = async (publicId, resourceType = 'image') => {
+const extractPublicIdFromUrl = (url) => {
   try {
+    if (!url || typeof url !== 'string') return null;
+    
+    // Remove query parameters
+    const cleanUrl = url.split('?')[0];
+    
+    // Check if it's a Cloudinary URL
+    if (!cleanUrl.includes('cloudinary.com') || !cleanUrl.includes('/upload/')) {
+      return null;
+    }
+    
+    // Split by '/upload/'
+    const parts = cleanUrl.split('/upload/');
+    if (parts.length < 2) return null;
+    
+    // Get everything after /upload/
+    let pathAfterUpload = parts[1];
+    
+    // Remove version prefix (v1234567890/)
+    pathAfterUpload = pathAfterUpload.replace(/^v\d+\//, '');
+    
+    // Decode URL encoding
+    pathAfterUpload = decodeURIComponent(pathAfterUpload);
+    
+    // Remove file extension
+    const lastDotIndex = pathAfterUpload.lastIndexOf('.');
+    if (lastDotIndex !== -1) {
+      pathAfterUpload = pathAfterUpload.substring(0, lastDotIndex);
+    }
+    
+    return pathAfterUpload;
+    
+  } catch (error) {
+    console.error('❌ Error extracting public ID:', error);
+    return null;
+  }
+};
+
+const deleteFromCloudinary = async (publicIdOrUrl, resourceType = 'auto') => {
+  try {
+    let publicId = publicIdOrUrl;
+    
+    // If it's a URL, extract public ID
+    if (publicIdOrUrl.includes('cloudinary.com')) {
+      publicId = extractPublicIdFromUrl(publicIdOrUrl);
+    }
+    
+    if (!publicId) {
+      console.warn('❌ No valid public ID provided for deletion');
+      return { result: 'not_found', message: 'Invalid public ID or URL' };
+    }
+    
+    // Auto-detect resource type if not provided
+    let finalResourceType = resourceType;
+    if (resourceType === 'auto') {
+      if (typeof publicIdOrUrl === 'string' && publicIdOrUrl.includes('/video/')) {
+        finalResourceType = 'video';
+      } else if (typeof publicIdOrUrl === 'string' && 
+                publicIdOrUrl.match(/\.(mp4|mov|avi|webm|mkv|mp3|wav|aac)$/i)) {
+        finalResourceType = 'video';
+      } else {
+        finalResourceType = 'image';
+      }
+    }
+    
+    console.log(`🗑️ Deleting from Cloudinary: ${publicId} (${finalResourceType})`);
+    
     const result = await cloudinary.uploader.destroy(publicId, {
-      resource_type: resourceType,
+      resource_type: finalResourceType,
       invalidate: true
     });
     
-    if (result.result !== 'ok') {
-      console.warn(`Cloudinary deletion may have failed for ${publicId}:`, result);
+    console.log(`✅ Delete result: ${result.result}`);
+    return result;
+    
+  } catch (error) {
+    console.error('❌ Cloudinary delete error:', error);
+    
+    // Don't throw error in production
+    if (process.env.NODE_ENV === 'production') {
+      return { 
+        result: 'error', 
+        error: error.message,
+        message: 'Delete failed but continuing'
+      };
     }
     
-    return result;
-  } catch (error) {
-    console.error('Cloudinary delete error:', error);
-    // Don't throw error for failed deletions in production
-    if (process.env.NODE_ENV === 'production') {
-      return { result: 'failed', error: error.message };
-    }
     throw error;
   }
 };
 
+// NEW: Bulk delete helper for market
+const bulkDeleteFromMarket = async (urls) => {
+  if (!urls || !Array.isArray(urls) || urls.length === 0) {
+    return { success: true, deleted: 0 };
+  }
+  
+  const results = [];
+  const failed = [];
+  
+  for (const url of urls) {
+    try {
+      const result = await deleteFromCloudinary(url, 'auto');
+      results.push({
+        url: url.substring(0, 50) + '...',
+        success: result.result === 'ok',
+        result: result.result
+      });
+      
+      // Small delay to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+    } catch (error) {
+      failed.push({
+        url: url.substring(0, 50) + '...',
+        error: error.message
+      });
+    }
+  }
+  
+  return {
+    success: failed.length === 0,
+    deleted: results.filter(r => r.success).length,
+    failed: failed.length,
+    details: {
+      results,
+      failed
+    }
+  };
+};
 
+// Rest of the existing functions (unchanged)
 const uploadToCloudinary = async (filePath, options = {}) => {
   try {
     const defaultOptions = {
@@ -289,20 +410,6 @@ const generateUploadSignature = (options = {}) => {
   };
 };
 
-const extractPublicIdFromUrl = (url) => {
-  try {
-    // Match pattern: https://res.cloudinary.com/cloudname/resource_type/upload/v1234567890/folder/public_id.extension
-    const matches = url.match(/\/upload\/(?:v\d+\/)?(.+?)\.(?:jpg|jpeg|png|webp|gif|mp4|mov|mp3|wav)/);
-    if (matches && matches[1]) {
-      return matches[1];
-    }
-    return null;
-  } catch (error) {
-    console.error('Error extracting public ID:', error);
-    return null;
-  }
-};
-
 const optimizeImageUrl = (url, transformations = {}) => {
   try {
     if (!url || !url.includes('cloudinary.com')) {
@@ -363,15 +470,16 @@ const validateCloudinaryConfig = () => {
 // Validate configuration on startup
 validateCloudinaryConfig();
 
-// Export everything
+// Export everything with FIXED functions
 export { 
   cloudinary, 
   storage,
-  deleteFromCloudinary,
+  deleteFromCloudinary, // FIXED version
+  bulkDeleteFromMarket, // NEW helper
   uploadToCloudinary,
   getCloudinaryInfo,
   bulkDeleteFromCloudinary,
   generateUploadSignature,
-  extractPublicIdFromUrl,
+  extractPublicIdFromUrl, // FIXED version
   optimizeImageUrl
 };
