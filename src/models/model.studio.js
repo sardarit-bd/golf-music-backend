@@ -12,6 +12,25 @@ const servicePriceSchema = new mongoose.Schema({
     }
 });
 
+// 🔥 FIXED: Photo schema with better defaults
+const photoSchema = new mongoose.Schema({
+    url: {
+        type: String,
+        required: true
+    },
+    publicId: {
+        type: String,
+        required: true
+    },
+    uploadedAt: {
+        type: Date,
+        default: Date.now
+    }
+}, {
+    _id: true,
+    timestamps: false
+});
+
 const studioSchema = new mongoose.Schema({
     user: {
         type: mongoose.Schema.Types.ObjectId,
@@ -46,17 +65,18 @@ const studioSchema = new mongoose.Schema({
 
     services: [servicePriceSchema],
 
-    photos: [{
-        url: String,
-        publicId: String,
-    }],
+    // 🔥 FIXED: Use photoSchema for consistency
+    photos: [photoSchema],
 
     audioFile: {
         url: String,
         publicId: String,
+        uploadedAt: {
+            type: Date,
+            default: Date.now
+        }
     },
 
-    // Admin control fields
     isActive: {
         type: Boolean,
         default: true,
@@ -84,6 +104,15 @@ const studioSchema = new mongoose.Schema({
     }
 });
 
+// 🔥 FIXED: Virtual for photo count
+studioSchema.virtual('photoCount').get(function() {
+    return this.photos?.length || 0;
+});
+
+// 🔥 FIXED: Virtual for hasAudio
+studioSchema.virtual('hasAudio').get(function() {
+    return !!(this.audioFile && this.audioFile.url);
+});
 
 const Studio = mongoose.model("Studio", studioSchema);
 export default Studio;

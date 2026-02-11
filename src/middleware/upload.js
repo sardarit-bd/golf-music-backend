@@ -300,26 +300,35 @@ export const uploadSingleSponsorLogo = multer({
 
 // 16. STUDIO PHOTOS
 export const uploadStudioPhotos = multer({
-  storage: customStorage,
-  limits: { 
-    fileSize: 10 * 1024 * 1024, // 10MB per file
-  },
-  fileFilter: commonFileFilter(
-    ["image/jpeg", "image/jpg", "image/png", "image/webp"],
-    "Invalid image format. Only JPG, PNG, WebP allowed for studio photos"
-  )
-}).array("photos", 5); // Max 5 photos
-
+    storage: storage,
+    limits: { 
+        fileSize: 10 * 1024 * 1024, // 10MB
+    },
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+        
+        if (allowedTypes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new ErrorResponse("Invalid image format. Only JPG, PNG, WebP allowed", 400), false);
+        }
+    }
+}).array("photos", 5);
 // 17. STUDIO AUDIO
 export const uploadStudioAudio = multer({
-  storage: customStorage,
-  limits: { 
-    fileSize: 50 * 1024 * 1024, // 50MB
-  },
-  fileFilter: commonFileFilter(
-    ["audio/mpeg", "audio/wav", "audio/mp3", "audio/aac", "audio/flac"],
-    "Invalid audio format. Use MP3, WAV, AAC, or FLAC"
-  )
+    storage: storage,
+    limits: { 
+        fileSize: 50 * 1024 * 1024, // 50MB
+    },
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = ["audio/mpeg", "audio/wav", "audio/mp3", "audio/aac", "audio/flac"];
+        
+        if (allowedTypes.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new ErrorResponse("Invalid audio format. Use MP3, WAV, AAC, or FLAC", 400), false);
+        }
+    }
 }).single("audio");
 
 // 18. PHOTOGRAPHER PHOTOS (Memory Storage)

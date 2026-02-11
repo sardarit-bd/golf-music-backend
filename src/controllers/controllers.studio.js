@@ -2,16 +2,43 @@ import Studio from "../models/model.studio.js";
 import User from "../models/model.user.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
-import { cloudinary } from "../config/cloudinary.js";
+import { cloudinary, deleteFromCloudinary } from "../config/cloudinary.js";
+import mongoose from "mongoose";
 
 // ========================================================
-// GET STUDIO PROFILE
+// GET STUDIO PROFILE - FIXED (Photo URL validation)
 // ========================================================
 export const getStudioProfile = asyncHandler(async (req, res, next) => {
     const studio = await Studio.findOne({ user: req.user.id });
 
     if (!studio) {
         return next(new ErrorResponse("Studio profile not found", 404));
+    }
+
+    // 🔥 FIX: Ensure all photos have valid URLs
+    if (studio.photos && studio.photos.length > 0) {
+        studio.photos = studio.photos.map(photo => {
+            // If photo is string (old format), convert to object
+            if (typeof photo === 'string') {
+                return {
+                    url: photo,
+                    publicId: extractPublicIdFromUrl(photo),
+                    _id: new mongoose.Types.ObjectId()
+                };
+            }
+            
+            // If photo has publicId but no url, construct url
+            if (photo.publicId && !photo.url) {
+                photo.url = `https://res.cloudinary.com/${process.env.CLOUDINARY_NAME}/image/upload/${photo.publicId}`;
+            }
+            
+            // Fix duplicate /upload/ issue
+            if (photo.url?.includes('/upload//upload/')) {
+                photo.url = photo.url.replace('/upload//upload/', '/upload/');
+            }
+            
+            return photo;
+        });
     }
 
     res.status(200).json({
@@ -26,7 +53,6 @@ export const getStudioProfile = asyncHandler(async (req, res, next) => {
 export const updateStudioProfile = asyncHandler(async (req, res, next) => {
     const { name, city, state, biography } = req.body;
 
-    // Check if user is a studio
     if (req.user.userType !== "studio") {
         return next(new ErrorResponse("Only studio users can update studio profile", 403));
     }
@@ -37,7 +63,6 @@ export const updateStudioProfile = asyncHandler(async (req, res, next) => {
         return next(new ErrorResponse("Studio profile not found", 404));
     }
 
-    // Update basic info
     if (name) studio.name = name;
     if (city) studio.city = city.toLowerCase();
     if (state) {
@@ -59,7 +84,7 @@ export const updateStudioProfile = asyncHandler(async (req, res, next) => {
 });
 
 // ========================================================
-// ADD/MODIFY SERVICES
+// UPDATE SERVICES
 // ========================================================
 export const updateServices = asyncHandler(async (req, res, next) => {
     const { services } = req.body;
@@ -68,7 +93,6 @@ export const updateServices = asyncHandler(async (req, res, next) => {
         return next(new ErrorResponse("Services must be an array", 400));
     }
 
-    // Validate each service
     for (const service of services) {
         if (!service.service || !service.price) {
             return next(new ErrorResponse("Each service must have 'service' and 'price' fields", 400));
@@ -92,7 +116,7 @@ export const updateServices = asyncHandler(async (req, res, next) => {
 });
 
 // ========================================================
-// UPLOAD PHOTOS (Up to 5) - Direct Cloudinary Upload
+// UPLOAD PHOTOS - 🔥 COMPLETELY FIXED VERSION
 // ========================================================
 export const uploadPhotos = asyncHandler(async (req, res, next) => {
     const studio = await Studio.findOne({ user: req.user.id });
@@ -101,38 +125,70 @@ export const uploadPhotos = asyncHandler(async (req, res, next) => {
         return next(new ErrorResponse("Studio profile not found", 404));
     }
 
-    // Check if already has 5 photos
+    const files = req.files;
+
+    if (!files || files.length === 0) {
+        return next(new ErrorResponse("No photos uploaded", 400));
+    }
+
     if (studio.photos.length >= 5) {
         return next(new ErrorResponse("Maximum 5 photos allowed", 400));
     }
 
-    if (!req.files || req.files.length === 0) {
-        return next(new ErrorResponse("No photos uploaded", 400));
+    if (studio.photos.length + files.length > 5) {
+        return next(
+            new ErrorResponse(
+                `Can only upload ${5 - studio.photos.length} more photos`,
+                400
+            )
+        );
     }
 
-    // Check total photos won't exceed 5
-    if (studio.photos.length + req.files.length > 5) {
-        return next(new ErrorResponse(`Can only upload ${5 - studio.photos.length} more photos`, 400));
-    }
+    // 🔥 FIX: Process each file and ensure proper URL
+    const uploadedPhotos = [];
 
-    for (const file of req.files) {
-        studio.photos.push({
-            url: file.path,
-            publicId: file.filename,
-        });
+    for (const file of files) {
+        // Get the correct URL from Cloudinary
+        let fileUrl = file.path || file.secure_url;
+        
+        // Clean the URL
+        if (fileUrl) {
+            // Ensure HTTPS
+            if (fileUrl.startsWith('http://')) {
+                fileUrl = fileUrl.replace('http://', 'https://');
+            }
+            
+            // Fix duplicate /upload/
+            if (fileUrl.includes('/upload//upload/')) {
+                fileUrl = fileUrl.replace('/upload//upload/', '/upload/');
+            }
+        }
+
+        const photoData = {
+            url: fileUrl,
+            publicId: file.filename || file.public_id,
+            _id: new mongoose.Types.ObjectId()
+        };
+
+        uploadedPhotos.push(photoData);
+        studio.photos.push(photoData);
     }
 
     await studio.save();
 
+    // 🔥 Return the updated photos array
     res.status(200).json({
         success: true,
-        message: "Photos uploaded successfully",
-        data: studio.photos,
+        message: `${files.length} photo(s) uploaded successfully`,
+        data: {
+            photos: studio.photos,
+            count: studio.photos.length
+        },
     });
 });
 
 // ========================================================
-// UPLOAD AUDIO FILE (1 file only) - Direct Cloudinary Upload
+// UPLOAD AUDIO FILE - 🔥 FIXED VERSION
 // ========================================================
 export const uploadAudioFile = asyncHandler(async (req, res, next) => {
     const studio = await Studio.findOne({ user: req.user.id });
@@ -145,19 +201,28 @@ export const uploadAudioFile = asyncHandler(async (req, res, next) => {
         return next(new ErrorResponse("No audio file uploaded", 400));
     }
 
+    // Delete old audio file if exists
     if (studio.audioFile && studio.audioFile.publicId) {
         try {
-            await cloudinary.uploader.destroy(studio.audioFile.publicId, {
-                resource_type: 'video'
-            });
+            await deleteFromCloudinary(studio.audioFile.publicId, 'video');
         } catch (error) {
             console.error("Error deleting old audio file:", error);
         }
     }
 
+    // 🔥 FIX: Get correct URL
+    let audioUrl = req.file.path || req.file.secure_url;
+    
+    // Clean URL
+    if (audioUrl) {
+        if (audioUrl.startsWith('http://')) {
+            audioUrl = audioUrl.replace('http://', 'https://');
+        }
+    }
+
     studio.audioFile = {
-        url: req.file.path,
-        publicId: req.file.filename,
+        url: audioUrl,
+        publicId: req.file.filename || req.file.public_id,
     };
 
     await studio.save();
@@ -170,7 +235,7 @@ export const uploadAudioFile = asyncHandler(async (req, res, next) => {
 });
 
 // ========================================================
-// DELETE PHOTO
+// DELETE PHOTO - 🔥 FIXED VERSION
 // ========================================================
 export const deletePhoto = asyncHandler(async (req, res, next) => {
     const { photoId } = req.params;
@@ -181,7 +246,6 @@ export const deletePhoto = asyncHandler(async (req, res, next) => {
         return next(new ErrorResponse("Studio profile not found", 404));
     }
 
-    // Find photo by _id (Mongoose ObjectId)
     const photoIndex = studio.photos.findIndex(
         photo => photo._id.toString() === photoId
     );
@@ -195,7 +259,7 @@ export const deletePhoto = asyncHandler(async (req, res, next) => {
     // Delete from Cloudinary
     if (photo.publicId) {
         try {
-            await cloudinary.uploader.destroy(photo.publicId);
+            await deleteFromCloudinary(photo.publicId, 'image');
         } catch (error) {
             console.error("Error deleting photo from Cloudinary:", error);
         }
@@ -208,12 +272,15 @@ export const deletePhoto = asyncHandler(async (req, res, next) => {
     res.status(200).json({
         success: true,
         message: "Photo deleted successfully",
+        data: {
+            photos: studio.photos,
+            count: studio.photos.length
+        }
     });
 });
 
-
 // ========================================================
-// DELETE AUDIO FILE
+// DELETE AUDIO FILE - 🔥 FIXED VERSION
 // ========================================================
 export const deleteAudioFile = asyncHandler(async (req, res, next) => {
     const studio = await Studio.findOne({ user: req.user.id });
@@ -229,9 +296,7 @@ export const deleteAudioFile = asyncHandler(async (req, res, next) => {
     // Delete from Cloudinary
     if (studio.audioFile.publicId) {
         try {
-            await cloudinary.uploader.destroy(studio.audioFile.publicId, {
-                resource_type: 'video'
-            });
+            await deleteFromCloudinary(studio.audioFile.publicId, 'video');
         } catch (error) {
             console.error("Error deleting audio from Cloudinary:", error);
         }
@@ -247,7 +312,7 @@ export const deleteAudioFile = asyncHandler(async (req, res, next) => {
 });
 
 // ========================================================
-// GET ALL STUDIOS BY LOCATION (For homepage filtering)
+// GET STUDIOS BY LOCATION
 // ========================================================
 export const getStudiosByLocation = asyncHandler(async (req, res, next) => {
     const { state, city } = req.query;
@@ -277,10 +342,36 @@ export const getStudiosByLocation = asyncHandler(async (req, res, next) => {
 });
 
 // ========================================================
-// ADMIN: GET ALL STUDIOS (For admin dashboard)
+// PUBLIC: GET SINGLE STUDIO
+// ========================================================
+export const getStudioPublic = asyncHandler(async (req, res, next) => {
+    const { id } = req.params;
+
+    const studio = await Studio.findById(id)
+        .populate("user", "username email userType")
+        .select("name state city biography services photos audioFile isVerified isFeatured isActive");
+
+    if (!studio) {
+        return next(new ErrorResponse("Studio not found", 404));
+    }
+
+    if (!studio.isActive) {
+        return next(new ErrorResponse("Studio is not active", 404));
+    }
+
+    res.status(200).json({
+        success: true,
+        data: {
+            studio: studio,
+            user: studio.user
+        },
+    });
+});
+
+// ========================================================
+// ADMIN: GET ALL STUDIOS
 // ========================================================
 export const getAllStudios = asyncHandler(async (req, res, next) => {
-    // Check if user is admin
     if (req.user.userType !== "admin") {
         return next(new ErrorResponse("Only admin can access all studios", 403));
     }
@@ -323,10 +414,9 @@ export const getAllStudios = asyncHandler(async (req, res, next) => {
 });
 
 // ========================================================
-// ADMIN: GET SINGLE STUDIO BY ID
+// ADMIN: GET STUDIO BY ID
 // ========================================================
 export const getStudioById = asyncHandler(async (req, res, next) => {
-    // Check if user is admin
     if (req.user.userType !== "admin") {
         return next(new ErrorResponse("Only admin can access studio by ID", 403));
     }
@@ -347,38 +437,9 @@ export const getStudioById = asyncHandler(async (req, res, next) => {
 });
 
 // ========================================================
-// PUBLIC: GET SINGLE STUDIO BY ID (Public access)
-// ========================================================
-export const getStudioPublic = asyncHandler(async (req, res, next) => {
-    const { id } = req.params;
-
-    const studio = await Studio.findById(id)
-        .populate("user", "username email userType")
-        .select("name state city biography services photos audioFile isVerified isFeatured isActive");
-
-    if (!studio) {
-        return next(new ErrorResponse("Studio not found", 404));
-    }
-
-    // Check if studio is active
-    if (!studio.isActive) {
-        return next(new ErrorResponse("Studio is not active", 404));
-    }
-
-    res.status(200).json({
-        success: true,
-        data: {
-            studio: studio,
-            user: studio.user
-        },
-    });
-});
-
-// ========================================================
-// ADMIN: UPDATE STUDIO STATUS (Active/Inactive)
+// ADMIN: UPDATE STUDIO STATUS
 // ========================================================
 export const updateStudioStatus = asyncHandler(async (req, res, next) => {
-    // Check if user is admin
     if (req.user.userType !== "admin") {
         return next(new ErrorResponse("Only admin can update studio status", 403));
     }
@@ -409,7 +470,6 @@ export const updateStudioStatus = asyncHandler(async (req, res, next) => {
 // ADMIN: DELETE STUDIO
 // ========================================================
 export const deleteStudio = asyncHandler(async (req, res, next) => {
-    // Check if user is admin
     if (req.user.userType !== "admin") {
         return next(new ErrorResponse("Only admin can delete studio", 403));
     }
@@ -426,7 +486,7 @@ export const deleteStudio = asyncHandler(async (req, res, next) => {
     for (const photo of studio.photos) {
         if (photo.publicId) {
             try {
-                await cloudinary.uploader.destroy(photo.publicId);
+                await deleteFromCloudinary(photo.publicId, 'image');
             } catch (error) {
                 console.error("Error deleting photo:", error);
             }
@@ -436,9 +496,7 @@ export const deleteStudio = asyncHandler(async (req, res, next) => {
     // Delete audio file from Cloudinary
     if (studio.audioFile && studio.audioFile.publicId) {
         try {
-            await cloudinary.uploader.destroy(studio.audioFile.publicId, {
-                resource_type: 'video'
-            });
+            await deleteFromCloudinary(studio.audioFile.publicId, 'video');
         } catch (error) {
             console.error("Error deleting audio:", error);
         }
@@ -455,3 +513,16 @@ export const deleteStudio = asyncHandler(async (req, res, next) => {
         message: "Studio deleted successfully",
     });
 });
+
+// ========================================================
+// HELPER: Extract Public ID from URL
+// ========================================================
+const extractPublicIdFromUrl = (url) => {
+    if (!url) return null;
+    try {
+        const matches = url.match(/\/upload\/(?:v\d+\/)?(.+?)(?:\.\w+)?$/);
+        return matches ? matches[1] : null;
+    } catch {
+        return null;
+    }
+};

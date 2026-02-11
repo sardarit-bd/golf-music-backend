@@ -52,7 +52,6 @@ const userSchema = new mongoose.Schema({
     },
   },
 
-  // ===== NEW STATE & CITY FIELDS =====
   state: {
     type: String,
     enum: ["Louisiana", "Mississippi", "Alabama", "Florida", null],
@@ -117,7 +116,6 @@ const userSchema = new mongoose.Schema({
     default: false,
   },
 
-  // ===== Trial control =====
   trialStartedAt: {
     type: Date,
     default: null,
@@ -133,7 +131,7 @@ const userSchema = new mongoose.Schema({
     default: false,
   },
 
-  // ===== Stripe (future ready) =====
+  // ===== Stripe Payment =====
   stripeCustomerId: {
     type: String,
     default: null,
@@ -148,6 +146,13 @@ const userSchema = new mongoose.Schema({
   stripeAccountId: {
     type: String,
     default: null,
+  },
+
+  // Stripe Connect status
+  stripeAccountStatus: {
+    type: String,
+    enum: ['not_connected', 'pending', 'active', 'restricted'],
+    default: 'not_connected',
   },
 
   resetPasswordToken: { type: String },
@@ -193,7 +198,20 @@ userSchema.methods.getResetPasswordToken = function () {
   return resetToken;
 };
 
-// Virtual for backward compatibility (if needed)
+// Check if Stripe is connected
+userSchema.methods.isStripeConnected = function () {
+  return !!this.stripeAccountId && this.stripeAccountStatus === 'active';
+};
+
+// Check if user can sell in market
+userSchema.methods.canSellInMarket = function () {
+  const allowedSellerTypes = ["artist", "venue", "photographer", "studio", "journalist", "fan"];
+  return this.isVerified && 
+         allowedSellerTypes.includes(this.userType) &&
+         this.isStripeConnected();
+};
+
+// Virtual for display location
 userSchema.virtual('displayLocation').get(function () {
   if (this.city && this.state) {
     return `${this.city.charAt(0).toUpperCase() + this.city.slice(1)}, ${this.state}`;
@@ -201,11 +219,29 @@ userSchema.virtual('displayLocation').get(function () {
   return null;
 });
 
+// Virtual for Stripe status message
+userSchema.virtual('stripeStatusMessage').get(function () {
+  if (!this.stripeAccountId) return 'Not Connected';
+  
+  switch (this.stripeAccountStatus) {
+    case 'active':
+      return 'Connected';
+    case 'pending':
+      return 'Onboarding in Progress';
+    case 'restricted':
+      return 'Restricted';
+    default:
+      return 'Not Connected';
+  }
+});
+
 // Indexes for faster queries
 userSchema.index({ state: 1, city: 1 });
 userSchema.index({ userType: 1, state: 1 });
 userSchema.index({ email: 1 });
 userSchema.index({ username: 1 });
+userSchema.index({ stripeAccountId: 1 });
+userSchema.index({ isVerified: 1 });
 
 // Ensure virtuals are included in JSON
 userSchema.set('toJSON', { virtuals: true });
