@@ -115,60 +115,67 @@ export const validateResetPassword = [
 ];
 
 export const validateArtistProfile = [
+
   body("name")
-    .notEmpty()
-    .withMessage("Artist name is required")
+    .optional()
     .isLength({ max: 100 })
     .withMessage("Name cannot exceed 100 characters"),
 
   body("state")
-    .notEmpty()
-    .withMessage("State is required")
+    .optional()
     .custom((value) => {
       const validStates = Object.keys(STATE_CITY_MAPPING);
       if (!validStates.includes(value)) {
-        throw new Error(`Invalid state. Must be one of: ${validStates.join(", ")}`);
+        throw new Error(
+          `Invalid state. Must be one of: ${validStates.join(", ")}`
+        );
       }
       return true;
     }),
 
   body("city")
-    .notEmpty()
-    .withMessage("City is required")
+    .optional()
     .custom((value, { req }) => {
+      if (!value) return true;
+
       const state = req.body.state;
       if (state) {
         const stateCities = STATE_CITY_MAPPING[state] || [];
         if (!stateCities.includes(value.toLowerCase())) {
-          throw new Error(`City "${value}" is not valid for state "${state}"`);
+          throw new Error(
+            `City "${value}" is not valid for state "${state}"`
+          );
         }
       }
       return true;
     }),
 
-  body("genre").custom((value) => {
-    const validGenres = [
-      "rap",
-      "country",
-      "pop",
-      "rock",
-      "jazz",
-      "reggae",
-      "edm",
-      "classical",
-      "other",
-    ];
-    if (!validGenres.includes(value?.toLowerCase())) {
-      throw new Error("Please select a valid genre");
-    }
-    return true;
-  }),
+  body("genre")
+    .optional()
+    .custom((value) => {
+      const validGenres = [
+        "rap",
+        "country",
+        "pop",
+        "rock",
+        "jazz",
+        "reggae",
+        "edm",
+        "classical",
+        "other",
+      ];
+      if (!validGenres.includes(value?.toLowerCase())) {
+        throw new Error("Please select a valid genre");
+      }
+      return true;
+    }),
 
   body("biography")
     .optional()
     .isLength({ max: 2000 })
     .withMessage("Biography cannot exceed 2000 characters"),
 ];
+
 
 export const validateVenueProfile = [
   body("venueName")
@@ -178,19 +185,20 @@ export const validateVenueProfile = [
     .withMessage("Venue name cannot exceed 100 characters"),
 
   body("state")
-    .notEmpty()
-    .withMessage("State is required")
+    .optional()
     .custom((value) => {
       const validStates = Object.keys(STATE_CITY_MAPPING);
       if (!validStates.includes(value)) {
-        throw new Error(`Invalid state. Must be one of: ${validStates.join(", ")}`);
+        throw new Error(
+          `Invalid state. Must be one of: ${validStates.join(", ")}`
+        );
       }
       return true;
     }),
 
+
   body("city")
-    .notEmpty()
-    .withMessage("City is required")
+    .optional()
     .custom((value, { req }) => {
       const state = req.body.state;
       if (state) {
@@ -201,6 +209,7 @@ export const validateVenueProfile = [
       }
       return true;
     }),
+
 
   body("address")
     .optional({ checkFalsy: true })

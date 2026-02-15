@@ -470,7 +470,20 @@ export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
   /* =========================
      FIXED: PHOTOS DELETE LOGIC
   ========================= */
-  const photosToDelete = parsePhotosToDelete(req.body);
+  const photosToDelete = [];
+  
+  // Parse photosToDelete from request body
+  if (req.body.photosToDelete) {
+    try {
+      const parsed = JSON.parse(req.body.photosToDelete);
+      if (Array.isArray(parsed)) {
+        photosToDelete.push(...parsed);
+      }
+    } catch (error) {
+      console.error("Error parsing photosToDelete:", error);
+    }
+  }
+
   console.log("📸 Photos to delete:", photosToDelete.length);
 
   // Delete photos from Cloudinary
@@ -479,20 +492,19 @@ export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
     console.log("✅ Photo deletion result:", deleteResult.deleted, "deleted,", deleteResult.failed, "failed");
     
     // Remove deleted photos from database array
-    item.photos = removePhotosFromArray(item.photos, photosToDelete);
+    item.photos = item.photos.filter(photoUrl => {
+      const shouldKeep = !photosToDelete.includes(photoUrl);
+      if (!shouldKeep) {
+        console.log(`❌ Removing photo: ${photoUrl.substring(0, 80)}...`);
+      }
+      return shouldKeep;
+    });
   }
 
   /* =========================
      FIXED: VIDEO DELETE LOGIC
   ========================= */
-  let shouldDeleteVideo = false;
-  
-  // Check multiple possible ways to send delete video flag
-  if (req.body.deleteVideo === 'true' || 
-      req.body.deleteExistingVideo === 'true' ||
-      (req.body.deleteExistingVideo && typeof req.body.deleteExistingVideo === 'string' && JSON.parse(req.body.deleteExistingVideo).delete === true)) {
-    shouldDeleteVideo = true;
-  }
+  const shouldDeleteVideo = req.body.deleteVideo === 'true' || req.body.deleteExistingVideo === 'true';
 
   console.log("🎥 Delete video flag:", shouldDeleteVideo);
 
@@ -509,20 +521,6 @@ export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
   }
 
   /* =========================
-     FIXED: AUDIO DELETE LOGIC (Studio only)
-  ========================= */
-  if ((req.body.deleteAudio === 'true' || req.body.deleteAudioFile === 'true') && item.audioFile) {
-    console.log('🗑️ Deleting audio:', item.audioFile.substring(0, 100) + '...');
-    
-    // Delete from Cloudinary
-    await deleteCloudinaryFile(item.audioFile);
-    
-    // Remove from database
-    item.audioFile = '';
-    console.log("✅ Audio deleted successfully");
-  }
-
-  /* =========================
      UPDATE BASIC FIELDS
   ========================= */
   if (title !== undefined) item.title = title;
@@ -530,18 +528,6 @@ export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
   if (price !== undefined) item.price = price;
   if (location !== undefined) item.location = location;
   if (status !== undefined) item.status = status;
-
-  // Update services for studios
-  if (req.user.userType === "studio" && services !== undefined) {
-    try {
-      const parsedServices = JSON.parse(services);
-      if (Array.isArray(parsedServices)) {
-        item.services = parsedServices;
-      }
-    } catch (error) {
-      console.error("Error parsing services:", error);
-    }
-  }
 
   /* =========================
      ADD NEW PHOTOS
@@ -562,8 +548,8 @@ export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
      ADD NEW VIDEO
   ========================= */
   if (req.files?.video?.length) {
-    // Delete old video if exists
-    if (item.videos?.length > 0) {
+    // Delete old video if exists (and not already deleted)
+    if (item.videos?.length > 0 && !shouldDeleteVideo) {
       await deleteCloudinaryFile(item.videos[0]);
     }
     
@@ -571,62 +557,17 @@ export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
     console.log("✅ New video added");
   }
 
-  /* =========================
-     ADD NEW AUDIO (Studio only)
-  ========================= */
-  if (req.user.userType === "studio" && req.files?.audio?.length) {
-    // Delete old audio if exists
-    if (item.audioFile) {
-      await deleteCloudinaryFile(item.audioFile);
-    }
-    
-    item.audioFile = req.files.audio[0].path;
-    console.log("✅ New audio added");
-  }
-
-  /* =========================
-     ADD NEW AUDIO FILE (alternative field name)
-  ========================= */
-  if (req.user.userType === "studio" && req.files?.audioFile?.length) {
-    // Delete old audio if exists
-    if (item.audioFile) {
-      await deleteCloudinaryFile(item.audioFile);
-    }
-    
-    item.audioFile = req.files.audioFile[0].path;
-    console.log("✅ New audio file added");
-  }
-
-  // Recalculate fee if price changed
-  if (price !== undefined) {
-    item.stripeFee = calculateMarketFee(price, req.user.subscriptionPlan);
-  }
-
   await item.save();
-
-  // Populate seller info
-  await item.populate('seller', 'name userType subscriptionPlan isVerified');
-
-  // Add fee info to response
-  const feePercentage = req.user.subscriptionPlan === "pro" ? 5 : 10;
-  const feeAmount = item.stripeFee || calculateMarketFee(item.price, req.user.subscriptionPlan);
 
   console.log("✅ Item updated successfully. Final state:", {
     photos: item.photos?.length || 0,
-    videos: item.videos?.length || 0,
-    audio: !!item.audioFile
+    videos: item.videos?.length || 0
   });
 
   res.status(200).json({
     success: true,
     message: "Market item updated successfully",
-    data: item,
-    feeInfo: {
-      percentage: feePercentage,
-      amount: feeAmount,
-      total: item.price + feeAmount,
-      plan: req.user.subscriptionPlan || "free"
-    }
+    data: item
   });
 });
 

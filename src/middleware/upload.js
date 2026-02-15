@@ -15,23 +15,23 @@ const commonFileFilter = (allowedTypes, errorMessage) => {
 
 // === IMAGE VALIDATION ===
 const validateImage = (file) => {
-  const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"];
+  const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
   const maxSize = 5 * 1024 * 1024; // 5MB
-  
+
   if (!allowedTypes.includes(file.mimetype)) {
     throw new ErrorResponse(
-      'Invalid image format. Only JPG, PNG, WebP, GIF allowed', 
+      'Invalid image format. Only JPG, PNG, WebP allowed',
       400
     );
   }
-  
+
   if (file.size > maxSize) {
     throw new ErrorResponse(
-      'Image size too large. Maximum 5MB per image', 
+      'Image size too large. Maximum 5MB per image',
       400
     );
   }
-  
+
   return true;
 };
 
@@ -39,63 +39,52 @@ const validateImage = (file) => {
 const validateVideo = (file) => {
   const allowedTypes = ["video/mp4", "video/mov", "video/avi", "video/webm", "video/mkv"];
   const maxSize = 200 * 1024 * 1024; // 200MB
-  
+
   if (!allowedTypes.includes(file.mimetype)) {
     throw new ErrorResponse(
-      'Invalid video format. Use MP4, MOV, AVI, MKV, or WebM', 
+      'Invalid video format. Use MP4, MOV, AVI, MKV, or WebM',
       400
     );
   }
-  
+
   if (file.size > maxSize) {
     throw new ErrorResponse(
-      'Video size too large. Maximum 200MB per video', 
+      'Video size too large. Maximum 200MB per video',
       400
     );
   }
-  
+
   return true;
 };
 
 // === AUDIO VALIDATION ===
 const validateAudio = (file) => {
-  const allowedTypes = ["audio/mpeg", "audio/wav", "audio/mp3", "audio/aac", "audio/flac"];
-  const maxSize = 50 * 1024 * 1024; // 50MB
-  
+  const allowedTypes = ["audio/mpeg", "audio/wav", "audio/mp3", "audio/m4a"];
+  const maxSize = 10 * 1024 * 1024; // 10MB
+
   if (!allowedTypes.includes(file.mimetype)) {
     throw new ErrorResponse(
-      'Invalid audio format. Use MP3, WAV, AAC, or FLAC', 
+      'Invalid audio format. Use MP3, WAV, or M4A',
       400
     );
   }
-  
+
   if (file.size > maxSize) {
     throw new ErrorResponse(
-      'Audio size too large. Maximum 50MB per audio file', 
+      'Audio size too large. Maximum 10MB per audio file',
       400
     );
   }
-  
+
   return true;
 };
 
-// === CLOUDINARY STORAGE WITH FILENAME CUSTOMIZATION ===
-const customStorage = multer.diskStorage({
-  filename: (req, file, cb) => {
-    const timestamp = Date.now();
-    const random = Math.round(Math.random() * 1E9);
-    const originalName = file.originalname.replace(/\s+/g, '-');
-    const fileName = `${file.fieldname}-${timestamp}-${random}-${originalName}`;
-    cb(null, fileName);
-  }
-});
-
 // === MULTER INSTANCES ===
 
-// 1. CAST (Video + Thumbnail) - Updated with better validation
+// 1. CAST (Video + Thumbnail) - Updated with Cloudinary storage
 export const uploadCastFiles = multer({
-  storage: customStorage,
-  limits: { 
+  storage: storage, // ✅ Cloudinary storage
+  limits: {
     fileSize: 200 * 1024 * 1024, // 200MB max per file
   },
   fileFilter: (req, file, cb) => {
@@ -117,8 +106,8 @@ export const uploadCastFiles = multer({
 
 // 2. CAST VIDEO ONLY
 export const uploadCastVideo = multer({
-  storage: customStorage,
-  limits: { 
+  storage: storage, // ✅ Cloudinary storage
+  limits: {
     fileSize: 200 * 1024 * 1024, // 200MB
   },
   fileFilter: commonFileFilter(
@@ -129,8 +118,8 @@ export const uploadCastVideo = multer({
 
 // 3. ADMIN PROFILE PHOTO
 export const uploadAdminProfilePhoto = multer({
-  storage: customStorage,
-  limits: { 
+  storage: storage, // ✅ Cloudinary storage
+  limits: {
     fileSize: 10 * 1024 * 1024, // 10MB
   },
   fileFilter: commonFileFilter(
@@ -141,8 +130,8 @@ export const uploadAdminProfilePhoto = multer({
 
 // 4. EVENT IMAGE
 export const uploadEventImage = multer({
-  storage: customStorage,
-  limits: { 
+  storage: storage, // ✅ Cloudinary storage
+  limits: {
     fileSize: 10 * 1024 * 1024, // 10MB
   },
   fileFilter: commonFileFilter(
@@ -153,8 +142,8 @@ export const uploadEventImage = multer({
 
 // 5. FOOTER LOGO
 export const uploadFooterLogo = multer({
-  storage: customStorage,
-  limits: { 
+  storage: storage, // ✅ Cloudinary storage
+  limits: {
     fileSize: 5 * 1024 * 1024, // 5MB
   },
   fileFilter: commonFileFilter(
@@ -165,8 +154,8 @@ export const uploadFooterLogo = multer({
 
 // 6. ARTIST FILES (Photos + MP3)
 export const uploadArtistFiles = multer({
-  storage: customStorage,
-  limits: { 
+  storage: storage, // ✅ Cloudinary storage
+  limits: {
     fileSize: 50 * 1024 * 1024, // 50MB per file
   },
   fileFilter: (req, file, cb) => {
@@ -188,8 +177,8 @@ export const uploadArtistFiles = multer({
 
 // 7. HERO VIDEO
 export const uploadHeroVideo = multer({
-  storage: customStorage,
-  limits: { 
+  storage: storage, // ✅ Cloudinary storage
+  limits: {
     fileSize: 200 * 1024 * 1024, // 200MB
   },
   fileFilter: commonFileFilter(
@@ -200,8 +189,8 @@ export const uploadHeroVideo = multer({
 
 // 8. FEATURED IMAGE
 export const uploadFeaturedImage = multer({
-  storage: customStorage,
-  limits: { 
+  storage: storage, // ✅ Cloudinary storage
+  limits: {
     fileSize: 20 * 1024 * 1024, // 20MB
   },
   fileFilter: commonFileFilter(
@@ -212,8 +201,8 @@ export const uploadFeaturedImage = multer({
 
 // 9. MERCH IMAGE
 export const uploadMerchImage = multer({
-  storage: customStorage,
-  limits: { 
+  storage: storage, // ✅ Cloudinary storage
+  limits: {
     fileSize: 10 * 1024 * 1024, // 10MB
   },
   fileFilter: commonFileFilter(
@@ -224,8 +213,8 @@ export const uploadMerchImage = multer({
 
 // 10. WAVE (PODCAST) THUMBNAIL
 export const uploadWaveThumbnail = multer({
-  storage: customStorage,
-  limits: { 
+  storage: storage, // ✅ Cloudinary storage
+  limits: {
     fileSize: 10 * 1024 * 1024, // 10MB
   },
   fileFilter: commonFileFilter(
@@ -236,8 +225,8 @@ export const uploadWaveThumbnail = multer({
 
 // 11. CAST (PODCAST) THUMBNAIL
 export const uploadCastThumbnail = multer({
-  storage: customStorage,
-  limits: { 
+  storage: storage, // ✅ Cloudinary storage
+  limits: {
     fileSize: 10 * 1024 * 1024, // 10MB
   },
   fileFilter: commonFileFilter(
@@ -248,8 +237,8 @@ export const uploadCastThumbnail = multer({
 
 // 12. VENUE PHOTOS
 export const uploadVenuePhotos = multer({
-  storage: customStorage,
-  limits: { 
+  storage: storage, // ✅ Cloudinary storage
+  limits: {
     fileSize: 10 * 1024 * 1024, // 10MB per file
   },
   fileFilter: commonFileFilter(
@@ -258,11 +247,11 @@ export const uploadVenuePhotos = multer({
   )
 }).array("photos", 5); // Max 5 photos
 
-// 13. NEWS PHOTOS - UPDATED WITH BETTER VALIDATION
+// 13. NEWS PHOTOS
 export const uploadNewsPhotos = multer({
-  storage: customStorage,
-  limits: { 
-    fileSize: 5 * 1024 * 1024, // 5MB per file (reduced for news)
+  storage: storage, // ✅ Cloudinary storage
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB per file
   },
   fileFilter: (req, file, cb) => {
     try {
@@ -276,8 +265,8 @@ export const uploadNewsPhotos = multer({
 
 // 14. JOURNALIST PROFILE PHOTO
 export const uploadJournalistPhoto = multer({
-  storage: customStorage,
-  limits: { 
+  storage: storage, // ✅ Cloudinary storage
+  limits: {
     fileSize: 5 * 1024 * 1024, // 5MB
   },
   fileFilter: commonFileFilter(
@@ -288,8 +277,8 @@ export const uploadJournalistPhoto = multer({
 
 // 15. SPONSOR LOGO
 export const uploadSingleSponsorLogo = multer({
-  storage: customStorage,
-  limits: { 
+  storage: storage, // ✅ Cloudinary storage
+  limits: {
     fileSize: 10 * 1024 * 1024, // 10MB
   },
   fileFilter: commonFileFilter(
@@ -300,54 +289,54 @@ export const uploadSingleSponsorLogo = multer({
 
 // 16. STUDIO PHOTOS
 export const uploadStudioPhotos = multer({
-    storage: storage,
-    limits: { 
-        fileSize: 10 * 1024 * 1024, // 10MB
-    },
-    fileFilter: (req, file, cb) => {
-        const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
-        
-        if (allowedTypes.includes(file.mimetype)) {
-            cb(null, true);
-        } else {
-            cb(new ErrorResponse("Invalid image format. Only JPG, PNG, WebP allowed", 400), false);
-        }
+  storage: storage, // ✅ Cloudinary storage
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new ErrorResponse("Invalid image format. Only JPG, PNG, WebP allowed", 400), false);
     }
+  }
 }).array("photos", 5);
+
 // 17. STUDIO AUDIO
 export const uploadStudioAudio = multer({
-    storage: storage,
-    limits: { 
-        fileSize: 50 * 1024 * 1024, // 50MB
-    },
-    fileFilter: (req, file, cb) => {
-        const allowedTypes = ["audio/mpeg", "audio/wav", "audio/mp3", "audio/aac", "audio/flac"];
-        
-        if (allowedTypes.includes(file.mimetype)) {
-            cb(null, true);
-        } else {
-            cb(new ErrorResponse("Invalid audio format. Use MP3, WAV, AAC, or FLAC", 400), false);
-        }
+  storage: storage, // ✅ Cloudinary storage
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ["audio/mpeg", "audio/wav", "audio/mp3", "audio/m4a"];
+
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new ErrorResponse("Invalid audio format. Use MP3, WAV, or M4A", 400), false);
     }
+  }
 }).single("audio");
 
-// 18. PHOTOGRAPHER PHOTOS (Memory Storage)
-// const memoryStorage = multer.memoryStorage();
+// 18. PHOTOGRAPHER PHOTOS
 export const uploadPhotographers = multer({
-  storage,
-  limits: { 
+  storage: storage, // ✅ Cloudinary storage
+  limits: {
     fileSize: 10 * 1024 * 1024, // 10MB per file
   },
   fileFilter: commonFileFilter(
     ["image/jpeg", "image/jpg", "image/png", "image/webp"],
     "Invalid image format. Only JPG, PNG, WebP allowed"
   )
-}).array("photos", 5); // Max 5 photos
+}).array("photos", 5);
 
 // 19. USER PROFILE PHOTO (Generic)
 export const uploadUserProfilePhoto = multer({
-  storage: customStorage,
-  limits: { 
+  storage: storage, // ✅ Cloudinary storage
+  limits: {
     fileSize: 5 * 1024 * 1024, // 5MB
   },
   fileFilter: commonFileFilter(
@@ -358,8 +347,8 @@ export const uploadUserProfilePhoto = multer({
 
 // 20. BULK UPLOAD (CSV/Excel)
 export const uploadBulkFile = multer({
-  storage: customStorage,
-  limits: { 
+  storage: storage, // ✅ Cloudinary storage
+  limits: {
     fileSize: 10 * 1024 * 1024, // 10MB
   },
   fileFilter: commonFileFilter(
@@ -372,7 +361,7 @@ export const uploadBulkFile = multer({
 export const handleUploadErrors = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     let message = "File upload error";
-    
+
     switch (err.code) {
       case "LIMIT_FILE_SIZE":
         message = "File too large. Please check maximum file size limits.";
@@ -383,55 +372,45 @@ export const handleUploadErrors = (err, req, res, next) => {
       case "LIMIT_UNEXPECTED_FILE":
         message = "Unexpected file field. Please check field names.";
         break;
-      case "LIMIT_PART_COUNT":
-        message = "Too many parts in the request.";
-        break;
-      case "LIMIT_FIELD_KEY":
-        message = "Field name too long.";
-        break;
-      case "LIMIT_FIELD_VALUE":
-        message = "Field value too long.";
-        break;
-      case "LIMIT_FIELD_COUNT":
-        message = "Too many fields in the request.";
-        break;
+      default:
+        message = err.message;
     }
-    
+
     return next(new ErrorResponse(message, 400));
   }
-  
+
   if (err instanceof ErrorResponse) {
     return next(err);
   }
-  
+
   if (err) {
     return next(new ErrorResponse(err.message || "Upload error occurred", 400));
   }
-  
+
   next();
 };
 
 // === HELPER FUNCTION TO VALIDATE FILE TYPE ===
 export const validateFileType = (file, allowedTypes) => {
   if (!file) return true;
-  
+
   if (Array.isArray(file)) {
     return file.every(f => allowedTypes.includes(f.mimetype));
   }
-  
+
   return allowedTypes.includes(file.mimetype);
 };
 
 // === HELPER FUNCTION TO VALIDATE FILE SIZE ===
 export const validateFileSize = (file, maxSizeMB) => {
   if (!file) return true;
-  
+
   const maxSizeBytes = maxSizeMB * 1024 * 1024;
-  
+
   if (Array.isArray(file)) {
     return file.every(f => f.size <= maxSizeBytes);
   }
-  
+
   return file.size <= maxSizeBytes;
 };
 
@@ -439,20 +418,20 @@ export const validateFileSize = (file, maxSizeMB) => {
 export const checkFilesUploaded = (fieldNames) => {
   return (req, res, next) => {
     const missingFiles = [];
-    
+
     fieldNames.forEach(field => {
       if (!req.files || !req.files[field] || req.files[field].length === 0) {
         missingFiles.push(field);
       }
     });
-    
+
     if (missingFiles.length > 0) {
       return next(new ErrorResponse(
         `Required file(s) missing: ${missingFiles.join(', ')}`,
         400
       ));
     }
-    
+
     next();
   };
 };
@@ -461,11 +440,11 @@ export const checkFilesUploaded = (fieldNames) => {
 export const validateSpecificFile = (fieldName, allowedTypes, maxSizeMB) => {
   return (req, res, next) => {
     const file = req.file || (req.files && req.files[fieldName]);
-    
+
     if (!file) {
       return next();
     }
-    
+
     // Check file type
     if (!validateFileType(file, allowedTypes)) {
       return next(new ErrorResponse(
@@ -473,7 +452,7 @@ export const validateSpecificFile = (fieldName, allowedTypes, maxSizeMB) => {
         400
       ));
     }
-    
+
     // Check file size
     if (!validateFileSize(file, maxSizeMB)) {
       return next(new ErrorResponse(
@@ -481,7 +460,7 @@ export const validateSpecificFile = (fieldName, allowedTypes, maxSizeMB) => {
         400
       ));
     }
-    
+
     next();
   };
 };

@@ -47,7 +47,7 @@ export const getStripeConnectStatus = asyncHandler(async (req, res, next) => {
       }
       
     } catch (error) {
-      console.error("Error fetching Stripe account:", error.message);
+      console.error("❌ Error fetching Stripe account:", error.message);
       if (error.code === 'resource_missing') {
         user.stripeAccountId = null;
         user.stripeAccountStatus = 'not_connected';
@@ -56,16 +56,23 @@ export const getStripeConnectStatus = asyncHandler(async (req, res, next) => {
     }
   }
 
+  // ✅ FIX: Properly check if user can sell in market
+  const canSellInMarket = () => {
+    const sellerTypes = ["artist", "venue", "photographer", "studio", "journalist", "fan"];
+    return sellerTypes.includes(user.userType) && user.isVerified;
+  };
+
   res.status(200).json({
     success: true,
     data: {
-      isStripeConnected: user.isStripeConnected(),
+      isStripeConnected: user.stripeAccountId ? true : false,
       stripeAccountId: user.stripeAccountId || null,
       stripeAccountStatus: user.stripeAccountStatus || 'not_connected',
-      stripeStatusMessage: user.stripeStatusMessage || 'Not Connected',
+      stripeStatusMessage: user.stripeAccountStatus === 'active' ? 'Active' : 
+                           user.stripeAccountStatus === 'pending' ? 'Pending Approval' : 'Not Connected',
       userType: user.userType,
       isVerified: user.isVerified,
-      canSellInMarket: user.canSellInMarket ? user.canSellInMarket() : false,
+      canSellInMarket: canSellInMarket(),
       canConnectStripe: ["artist", "venue", "photographer", "studio", "journalist", "fan"].includes(user.userType),
       requirements: requirements,
       chargesEnabled: stripeAccount?.charges_enabled || false,
@@ -159,6 +166,34 @@ export const createStripeConnectAccount = asyncHandler(async (req, res, next) =>
     }
   }
 
+  // ✅ FIX: Better business profile based on user type
+  const getBusinessProfile = () => {
+    switch(user.userType) {
+      case 'photographer':
+        return {
+          mcc: '7333', // Commercial Photography
+          product_description: 'Photography services and digital photo sales'
+        };
+      case 'artist':
+        return {
+          mcc: '5735', // Record Stores
+          product_description: 'Music and merchandise sales'
+        };
+      case 'venue':
+        return {
+          mcc: '7922', // Theatrical Producers
+          product_description: 'Event tickets and venue bookings'
+        };
+      default:
+        return {
+          mcc: '5734', // Computer Software Stores
+          product_description: 'Digital goods and services'
+        };
+    }
+  };
+
+  const businessProfile = getBusinessProfile();
+
   // Create new Stripe Connect account
   const account = await stripe.accounts.create({
     type: "express",
@@ -170,8 +205,9 @@ export const createStripeConnectAccount = asyncHandler(async (req, res, next) =>
     },
     business_type: "individual",
     business_profile: {
-      url: user.website || `${process.env.CLIENT_URL}/user/${user.username}`,
-      mcc: "5734", // Computer Software Stores
+      url: user.website || `${process.env.CLIENT_URL}/profile/${user.username}`,
+      mcc: businessProfile.mcc,
+      product_description: businessProfile.product_description,
     },
     metadata: {
       userId: user._id.toString(),
@@ -230,7 +266,7 @@ export const createStripeDashboardLink = asyncHandler(async (req, res, next) => 
     });
     
   } catch (error) {
-    console.error("Error creating Stripe dashboard link:", error.message);
+    console.error("❌ Error creating Stripe dashboard link:", error.message);
     
     // If account is not fully onboarded
     if (error.code === 'account_onboarding_not_completed') {
@@ -371,7 +407,7 @@ export const disconnectStripeAccount = asyncHandler(async (req, res, next) => {
     });
     
   } catch (error) {
-    console.error("Error disconnecting Stripe account:", error.message);
+    console.error("❌ Error disconnecting Stripe account:", error.message);
     
     // Still clear local data even if Stripe API fails
     user.stripeAccountId = null;

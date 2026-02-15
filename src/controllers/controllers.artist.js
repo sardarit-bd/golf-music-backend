@@ -1,12 +1,11 @@
 import { validationResult } from "express-validator";
+import path from "path";
 import Artist from "../models/model.artist.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { SUBSCRIPTION_RULES } from "../config/subscriptionRules.js";
-import User from "../models/model.user.js";
-import { cloudinary } from "../config/cloudinary.js";
+import { deleteFromCloudinary, extractPublicIdFromUrl } from "../config/cloudinary.js";
 import { sanitizeArtistForPlan } from "../utils/sanitizeArtist.js";
-
 
 // Helper function to get state from city
 const getStateFromCity = (city) => {
@@ -49,9 +48,86 @@ const getStateFromCity = (city) => {
   return stateMap[cityLower] || '';
 };
 
-//  CREATE or UPDATE Artist Profile
+/**
+ * Helper: Extract filename from Cloudinary URL
+ */
+const extractFilenameFromUrl = (url) => {
+  if (!url) return null;
+  try {
+    const parts = url.split('/');
+    const filename = parts[parts.length - 1].split('?')[0];
+    return filename;
+  } catch (error) {
+    return null;
+  }
+};
 
+/**
+ * Helper: Extract public ID from Cloudinary URL
+ */
+const extractPublicIdHelper = (url) => {
+  if (!url || !url.includes('cloudinary.com')) return null;
+  
+  try {
+    // Use the existing extractPublicIdFromUrl function from cloudinary config
+    return extractPublicIdFromUrl(url);
+  } catch (error) {
+    console.error('Error extracting public ID:', error);
+    return null;
+  }
+};
+
+/**
+ * Helper: Delete single file from Cloudinary
+ */
+const deleteFile = async (fileUrl) => {
+  if (!fileUrl || !fileUrl.includes('cloudinary.com')) {
+    return { success: false, message: 'Invalid URL' };
+  }
+
+  try {
+    const result = await deleteFromCloudinary(fileUrl, 'auto');
+    return { 
+      success: result.result === 'ok',
+      result 
+    };
+  } catch (error) {
+    console.error('❌ Delete failed:', error.message);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Helper: Delete multiple files from Cloudinary
+ */
+const deleteMultipleFiles = async (urls) => {
+  if (!urls || !Array.isArray(urls) || urls.length === 0) {
+    return { success: true, deleted: 0 };
+  }
+
+  const results = [];
+  for (const url of urls) {
+    const result = await deleteFile(url);
+    results.push(result);
+    // Small delay to avoid rate limiting
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+
+  const successful = results.filter(r => r.success).length;
+  console.log(`✅ Deleted ${successful}/${urls.length} files`);
+
+  return {
+    success: successful === urls.length,
+    deleted: successful,
+    failed: urls.length - successful
+  };
+};
+
+/**
+ * CREATE or UPDATE Artist Profile - FIXED VERSION
+ */
 export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
+  // Validation
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     const formatted = errors.array().map((err) => ({
@@ -73,100 +149,134 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
   const normalizedCity = city?.toLowerCase();
   const state = getStateFromCity(normalizedCity);
 
+  // Get existing artist
   let artist = await Artist.findOne({ user: user.id });
 
-  let removedPhotos = [];
-  let removedAudios = [];
+  /* =========================
+     HANDLE DELETED FILES
+  ========================= */
+  let photosToDelete = [];
+  let audiosToDelete = [];
 
-  // Parse removed files
-  if (req.body.removedPhotos) {
-    removedPhotos = Array.isArray(req.body.removedPhotos)
-      ? req.body.removedPhotos
-      : [req.body.removedPhotos];
-  }
-
-  if (req.body.removedAudios) {
-    removedAudios = Array.isArray(req.body.removedAudios)
-      ? req.body.removedAudios
-      : [req.body.removedAudios];
-  }
-
-  // Delete photos from Cloudinary
-  for (const filename of removedPhotos) {
+  // Parse photos to delete
+  if (req.body.photosToDelete) {
     try {
-      const publicId = filename.replace(/\.[^/.]+$/, "");
-      await cloudinary.uploader.destroy(publicId);
-    } catch (err) {
-      console.log("Failed to delete photo:", filename);
+      photosToDelete = JSON.parse(req.body.photosToDelete);
+    } catch {
+      photosToDelete = Array.isArray(req.body.photosToDelete) 
+        ? req.body.photosToDelete 
+        : [req.body.photosToDelete];
     }
   }
 
-  // Delete audios from Cloudinary
-  for (const filename of removedAudios) {
+  // Parse audios to delete
+  if (req.body.audiosToDelete) {
     try {
-      const publicId = filename.replace(/\.[^/.]+$/, "");
-      await cloudinary.uploader.destroy(publicId);
-    } catch (err) {
-      console.log("Failed to delete audio:", filename);
+      audiosToDelete = JSON.parse(req.body.audiosToDelete);
+    } catch {
+      audiosToDelete = Array.isArray(req.body.audiosToDelete) 
+        ? req.body.audiosToDelete 
+        : [req.body.audiosToDelete];
     }
   }
 
-  // Filter out removed photos and audios
-  const oldPhotos = artist?.photos?.filter((p) => 
-    p && p.filename && !removedPhotos.includes(p.filename)
+  console.log('📸 Photos to delete:', photosToDelete.length);
+  console.log('🎵 Audios to delete:', audiosToDelete.length);
+
+  /* =========================
+     DELETE FILES FROM CLOUDINARY
+  ========================= */
+  if (photosToDelete.length > 0) {
+    await deleteMultipleFiles(photosToDelete);
+  }
+
+  if (audiosToDelete.length > 0) {
+    await deleteMultipleFiles(audiosToDelete);
+  }
+
+  /* =========================
+     FILTER EXISTING FILES
+  ========================= */
+  // Filter out deleted photos
+  const existingPhotos = artist?.photos?.filter(photo => 
+    photo && photo.url && !photosToDelete.includes(photo.url)
   ) || [];
 
-  const oldAudios = artist?.mp3Files?.filter((a) => 
-    a && a.filename && !removedAudios.includes(a.filename)
+  // Filter out deleted audios
+  const existingAudios = artist?.mp3Files?.filter(audio => 
+    audio && audio.url && !audiosToDelete.includes(audio.url)
   ) || [];
 
+  /* =========================
+     PROCESS NEW FILES
+  ========================= */
   let newPhotos = [];
   let newAudios = [];
 
-  // Handle new photo uploads - CLIENT REQUIREMENT: Max 5 photos for all users
+  // Handle new photo uploads
   if (req.files?.photos?.length) {
-    // Check if total photos exceed 5 (client requirement)
-    const totalPhotos = oldPhotos.length + req.files.photos.length;
+    const totalPhotos = existingPhotos.length + req.files.photos.length;
     if (totalPhotos > 5) {
       return next(
-        new ErrorResponse(
-          `You can only upload up to 5 photos.`,
-          400
-        )
+        new ErrorResponse("You can only upload up to 5 photos.", 400)
       );
     }
 
-    newPhotos = req.files.photos.map((file) => ({
-      url: file.path,
-      filename: file.filename,
-    }));
+    newPhotos = req.files.photos.map((file) => {
+      // Prepare photo object
+      const photoObj = {
+        url: file.path, // Cloudinary URL
+        filename: file.originalname || extractFilenameFromUrl(file.path),
+      };
+      
+      // Add publicId if available (from Cloudinary filename or extracted)
+      const publicId = file.filename || extractPublicIdHelper(file.path);
+      if (publicId) {
+        photoObj.publicId = publicId;
+      }
+      
+      return photoObj;
+    });
   }
 
-  // Handle new audio uploads - CLIENT REQUIREMENT: Max 1 audio for all users
+  // Handle new audio uploads
   if (req.files?.mp3Files?.length) {
-    // Check if total audio files exceed 1 (client requirement)
-    const totalAudios = oldAudios.length + req.files.mp3Files.length;
+    const totalAudios = existingAudios.length + req.files.mp3Files.length;
     if (totalAudios > 5) {
       return next(
-        new ErrorResponse(
-          `You can only upload up to 5 audio files.`,
-          400
-        )
+        new ErrorResponse("You can only upload up to 5 audio files.", 400)
       );
     }
 
-    newAudios = req.files.mp3Files.map((file) => ({
-      url: file.path,
-      filename: file.originalname,
-      originalName: file.originalname,
-    }));
+    newAudios = req.files.mp3Files.map((file) => {
+      // Prepare audio object
+      const audioObj = {
+        url: file.path, // Cloudinary URL
+        filename: file.originalname || extractFilenameFromUrl(file.path),
+        originalName: file.originalname,
+      };
+      
+      // Add publicId if available (from Cloudinary filename or extracted)
+      const publicId = file.filename || extractPublicIdHelper(file.path);
+      if (publicId) {
+        audioObj.publicId = publicId;
+      }
+      
+      return audioObj;
+    });
   }
 
-  const mergedPhotos = [...oldPhotos, ...newPhotos].slice(0, 5); // Max 5 photos
-  const mergedAudios = [...oldAudios, ...newAudios].slice(0, 5); // Max 1 audio
+  /* =========================
+     MERGE FILES (WITH LIMITS)
+  ========================= */
+  const mergedPhotos = [...existingPhotos, ...newPhotos].slice(0, 5);
+  const mergedAudios = [...existingAudios, ...newAudios].slice(0, 5);
 
   const finalBiography = biography || artist?.biography || "";
 
+  /* =========================
+     PREPARE ARTIST DATA
+  ========================= */
   const artistData = {
     name,
     city: normalizedCity,
@@ -176,22 +286,37 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
     photos: mergedPhotos,
     mp3Files: mergedAudios,
     subscriptionPlan: user.subscriptionPlan,
-    isActive: true, // All artists are active by default
+    isActive: true,
+    updatedAt: Date.now(),
   };
 
-  const options = {
-    new: true,
-    runValidators: true,
-    upsert: !artist
-  };
+  /* =========================
+     SAVE TO DATABASE
+  ========================= */
+  let updatedArtist;
 
   if (artist) {
-    artist = await Artist.findByIdAndUpdate(artist._id, artistData, options);
+    // Update existing artist
+    updatedArtist = await Artist.findByIdAndUpdate(
+      artist._id, 
+      artistData, 
+      { new: true, runValidators: true }
+    ).populate("user", "username email subscriptionPlan");
   } else {
-    artist = await Artist.create({ user: user.id, ...artistData });
+    // Create new artist
+    updatedArtist = await Artist.create({ 
+      user: user.id, 
+      ...artistData 
+    });
+    updatedArtist = await Artist.populate(updatedArtist, {
+      path: "user",
+      select: "username email subscriptionPlan"
+    });
   }
 
-  const safeArtist = sanitizeArtistForPlan(artist, rules);
+  const safeArtist = sanitizeArtistForPlan(updatedArtist, rules);
+
+  console.log('✅ Profile saved. Photos:', mergedPhotos.length, 'Audios:', mergedAudios.length);
 
   return res.status(200).json({
     success: true,
@@ -207,10 +332,9 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
   });
 });
 
-
-
-//  GET My Artist Profile
-
+/**
+ * GET My Artist Profile
+ */
 export const getMyArtistProfile = asyncHandler(async (req, res, next) => {
   const artist = await Artist.findOne({ user: req.user.id }).populate(
     "user",
@@ -228,9 +352,9 @@ export const getMyArtistProfile = asyncHandler(async (req, res, next) => {
   });
 });
 
-
-//  GET Artists by Genre and Location
-
+/**
+ * GET Artists by Genre and Location
+ */
 export const getArtistsByGenre = asyncHandler(async (req, res, next) => {
   const { genre, state, city } = req.query;
   let query = { isActive: true };
@@ -238,7 +362,7 @@ export const getArtistsByGenre = asyncHandler(async (req, res, next) => {
   // Genre filter
   if (genre && genre !== "all") query.genre = genre.toLowerCase();
   
-  // State filter (for location-based categorization)
+  // State filter
   if (state && state !== "all") query.state = state;
   
   // City filter
@@ -260,10 +384,9 @@ export const getArtistsByGenre = asyncHandler(async (req, res, next) => {
   });
 });
 
-
-
-//  GET Single Artist by ID
-
+/**
+ * GET Single Artist by ID
+ */
 export const getArtist = asyncHandler(async (req, res, next) => {
   const artist = await Artist.findById(req.params.id).populate(
     "user", "username email subscriptionPlan"
@@ -281,10 +404,9 @@ export const getArtist = asyncHandler(async (req, res, next) => {
   });
 });
 
-
-
-//  DELETE Artist Profile
-
+/**
+ * DELETE Artist Profile - FIXED
+ */
 export const deleteArtistProfile = asyncHandler(async (req, res, next) => {
   const artist = await Artist.findOne({ user: req.user.id });
 
@@ -292,32 +414,20 @@ export const deleteArtistProfile = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Artist profile not found", 404));
   }
 
-  // Delete photos from Cloudinary
-  if (artist.photos && artist.photos.length > 0) {
-    for (const photo of artist.photos) {
-      if (photo.publicId) {
-        try {
-          await cloudinary.uploader.destroy(photo.publicId);
-        } catch (err) {
-          console.log("Failed to delete photo:", photo.publicId);
-        }
-      }
-    }
+  // Collect all files to delete
+  const filesToDelete = [
+    ...(artist.photos?.map(p => p.url) || []),
+    ...(artist.mp3Files?.map(a => a.url) || [])
+  ];
+
+  console.log(`🗑️ Deleting ${filesToDelete.length} files...`);
+
+  // Delete all files from Cloudinary
+  if (filesToDelete.length > 0) {
+    await deleteMultipleFiles(filesToDelete);
   }
 
-  // Delete audios from Cloudinary
-  if (artist.mp3Files && artist.mp3Files.length > 0) {
-    for (const audio of artist.mp3Files) {
-      if (audio.publicId) {
-        try {
-          await cloudinary.uploader.destroy(audio.publicId);
-        } catch (err) {
-          console.log("Failed to delete audio:", audio.publicId);
-        }
-      }
-    }
-  }
-
+  // Delete from database
   await artist.deleteOne();
 
   res.status(200).json({
@@ -326,9 +436,9 @@ export const deleteArtistProfile = asyncHandler(async (req, res, next) => {
   });
 });
 
-
-//  UPDATE Artist by Admin
-
+/**
+ * UPDATE Artist by Admin
+ */
 export const updateArtistByAdmin = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
   const { name, city, genre, biography, isActive } = req.body;
@@ -364,9 +474,9 @@ export const updateArtistByAdmin = asyncHandler(async (req, res, next) => {
   });
 });
 
-
-//  DELETE Artist by Admin
-
+/**
+ * DELETE Artist by Admin - FIXED
+ */
 export const deleteArtistByAdmin = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
 
@@ -376,32 +486,20 @@ export const deleteArtistByAdmin = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Artist not found", 404));
   }
 
-  // Delete photos from Cloudinary
-  if (artist.photos && artist.photos.length > 0) {
-    for (const photo of artist.photos) {
-      if (photo.publicId) {
-        try {
-          await cloudinary.uploader.destroy(photo.publicId);
-        } catch (err) {
-          console.log("Failed to delete photo:", photo.publicId);
-        }
-      }
-    }
+  // Collect all files to delete
+  const filesToDelete = [
+    ...(artist.photos?.map(p => p.url) || []),
+    ...(artist.mp3Files?.map(a => a.url) || [])
+  ];
+
+  console.log(`🗑️ Deleting ${filesToDelete.length} files...`);
+
+  // Delete all files from Cloudinary
+  if (filesToDelete.length > 0) {
+    await deleteMultipleFiles(filesToDelete);
   }
 
-  // Delete audios from Cloudinary
-  if (artist.mp3Files && artist.mp3Files.length > 0) {
-    for (const audio of artist.mp3Files) {
-      if (audio.publicId) {
-        try {
-          await cloudinary.uploader.destroy(audio.publicId);
-        } catch (err) {
-          console.log("Failed to delete audio:", audio.publicId);
-        }
-      }
-    }
-  }
-
+  // Delete from database
   await artist.deleteOne();
 
   res.status(200).json({
@@ -410,8 +508,9 @@ export const deleteArtistByAdmin = asyncHandler(async (req, res, next) => {
   });
 });
 
-
-
+/**
+ * Change Artist Plan by Admin
+ */
 export const changeArtistPlanByAdmin = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
   const { subscriptionPlan, notifyUser } = req.body;
@@ -478,8 +577,9 @@ export const changeArtistPlanByAdmin = asyncHandler(async (req, res, next) => {
   });
 });
 
-
-
+/**
+ * Get Artists for Admin
+ */
 export const getArtistsForAdmin = asyncHandler(async (req, res, next) => {
   const {
     page = 1,
@@ -515,12 +615,12 @@ export const getArtistsForAdmin = asyncHandler(async (req, res, next) => {
     query.city = city.toLowerCase();
   }
 
-  // State filter (location-based categorization)
+  // State filter
   if (state !== "all") {
     query.state = state;
   }
 
-  // Plan filter - via user subscription plan or artist subscriptionPlan
+  // Plan filter
   if (plan !== "all") {
     query.subscriptionPlan = plan;
   }
@@ -543,7 +643,7 @@ export const getArtistsForAdmin = asyncHandler(async (req, res, next) => {
   const activeCount = await Artist.countDocuments({ isActive: true });
   const inactiveCount = await Artist.countDocuments({ isActive: false });
 
-  // Get state-wise counts for location categorization
+  // Get state-wise counts
   const stateCounts = {
     Louisiana: await Artist.countDocuments({ state: 'Louisiana' }),
     Mississippi: await Artist.countDocuments({ state: 'Mississippi' }),
@@ -572,7 +672,9 @@ export const getArtistsForAdmin = asyncHandler(async (req, res, next) => {
   });
 });
 
-// Get artists by location (for homepage dropdown)
+/**
+ * Get artists by location (for homepage dropdown)
+ */
 export const getArtistsByLocation = asyncHandler(async (req, res, next) => {
   const { state, city } = req.query;
   
@@ -592,7 +694,7 @@ export const getArtistsByLocation = asyncHandler(async (req, res, next) => {
   const artists = await Artist.find(query)
     .populate("user", "username email subscriptionPlan")
     .sort({ name: 1 })
-    .limit(50); // Limit for performance
+    .limit(50);
 
   const safeArtists = artists.map((a) => {
     const ownerPlan = a.user?.subscriptionPlan || "free";
