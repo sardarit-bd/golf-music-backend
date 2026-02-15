@@ -101,30 +101,47 @@ export const updateNews = asyncHandler(async (req, res, next) => {
     );
   }
 
-  const { title, description, location, credit, deletedPhotos } = req.body;
+  const { title, description, location, credit } = req.body;
   const normalizedLocation = location?.toLowerCase();
   const state = location ? getStateFromCity(normalizedLocation) : undefined;
 
   let news = await News.findById(req.params.id);
   if (!news) return next(new ErrorResponse("News not found", 404));
 
-  // Authorization check - only journalist who created or admin can update
+  // Authorization check
   if (news.journalist.toString() !== req.user.id && req.user.role !== 'admin') {
     return next(new ErrorResponse("Not authorized to update this news", 403));
   }
 
-  // Handle photo deletions
-  if (deletedPhotos && Array.isArray(deletedPhotos)) {
-    for (const filename of deletedPhotos) {
-      try {
-        await cloudinary.uploader.destroy(filename);
-      } catch (err) {
-        console.warn(`Failed to delete image: ${filename}`);
+  // ===== FIXED: Handle removed photos =====
+  // Frontend pathacche "removedPhotoUrls" (JSON string)
+  let deletedPhotoUrls = [];
+  if (req.body.removedPhotoUrls) {
+    try {
+      deletedPhotoUrls = JSON.parse(req.body.removedPhotoUrls);
+    } catch (err) {
+      console.log('Error parsing removedPhotoUrls:', err);
+    }
+  }
+
+  // Delete photos from Cloudinary
+  if (deletedPhotoUrls.length > 0) {
+    for (const photoUrl of deletedPhotoUrls) {
+      // Find the photo object by URL
+      const photoToDelete = news.photos.find(p => p.url === photoUrl);
+      if (photoToDelete?.publicId) {
+        try {
+          await cloudinary.uploader.destroy(photoToDelete.publicId);
+          console.log(`✅ Deleted: ${photoToDelete.publicId}`);
+        } catch (err) {
+          console.warn(`Failed to delete image: ${photoToDelete.publicId}`, err);
+        }
       }
     }
+    
     // Remove deleted photos from array
-    news.photos = news.photos.filter(photo =>
-      !deletedPhotos.includes(photo.filename)
+    news.photos = news.photos.filter(photo => 
+      !deletedPhotoUrls.includes(photo.url)
     );
   }
 
@@ -154,23 +171,16 @@ export const updateNews = asyncHandler(async (req, res, next) => {
     news.photos = [...news.photos, ...newPhotos];
   }
 
-  // Dynamically build update object
-  const updateData = {};
-
-  if (title !== undefined) updateData.title = title;
-  if (description !== undefined) updateData.description = description;
+  // Update fields
+  if (title !== undefined) news.title = title;
+  if (description !== undefined) news.description = description;
   if (location !== undefined) {
-    updateData.location = normalizedLocation;
-    updateData.state = state;
+    news.location = normalizedLocation;
+    news.state = state;
   }
-  if (credit !== undefined) updateData.credit = credit;
-  if (newPhotos.length > 0 || deletedPhotos) updateData.photos = news.photos;
+  if (credit !== undefined) news.credit = credit;
 
-  // Update record
-  news = await News.findByIdAndUpdate(req.params.id, updateData, {
-    new: true,
-    runValidators: true,
-  });
+  await news.save();
 
   res.status(200).json({
     success: true,
