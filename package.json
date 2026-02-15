@@ -8,7 +8,8 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "test": "jest",
-    "seed:admin": "node src/utils/seedAdmin.js"
+    "seed:admin": "node src/utils/seedAdmin.js",
+     "seed:statecities": "node src/scripts/seedStateCities.js"
   },
   "keywords": [],
   "author": "",

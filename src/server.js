@@ -30,6 +30,8 @@ import marketRoutes from './routes/route.market.js';
 import subscriptionRoutes from './routes/route.subscription.js';
 import marketCheckoutRoutes from './routes/marketCheckout.routes.js';
 import stripeConnectRoutes from './routes/stripe.routes.js';
+import sponsorSectionRoutes from './routes/routes.sponsorSection.js';
+import studioRoutes from './routes/studio.routes.js';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -143,6 +145,7 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/casts", castRoutes);
 app.use("/api/waves", waveRoutes);
 app.use("/api/sponsors", sponsorRoutes);
+app.use("/api/sponsors/section", sponsorSectionRoutes);
 app.use("/api/contact", contactRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/footer", footerRoutes);
@@ -151,6 +154,7 @@ app.use("/api/market", marketRoutes);
 app.use("/api/subscription", subscriptionRoutes);
 app.use("/api/market-checkout", marketCheckoutRoutes);
 app.use("/api/stripe", stripeConnectRoutes);
+app.use("/api/studios", studioRoutes);
 
 
 // ===============================

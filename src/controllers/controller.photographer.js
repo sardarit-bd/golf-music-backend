@@ -10,6 +10,91 @@ import { sanitizePhotographerForPlan } from "../utils/sanitizePhotographer.js";
 
 
 
+/* ========================================================
+   CREATE PHOTOGRAPHER PROFILE
+======================================================== */
+export const createPhotographerProfile = asyncHandler(async (req, res, next) => {
+  const user = req.user;
+
+  // Check if profile already exists
+  const existingProfile = await Photographer.findOne({ user: user.id });
+  if (existingProfile) {
+    return next(new ErrorResponse("Photographer profile already exists", 400));
+  }
+
+  const { name, state, city, biography } = req.body;
+
+  // Validation
+  if (!name || name.trim().length < 2) {
+    return next(new ErrorResponse("Name is required and must be at least 2 characters", 400));
+  }
+
+  if (!state) {
+    return next(new ErrorResponse("State is required", 400));
+  }
+
+  if (!city) {
+    return next(new ErrorResponse("City is required", 400));
+  }
+
+  // Validate state
+  const validStates = ["louisiana", "mississippi", "alabama", "florida"];
+  const normalizedState = state.toLowerCase();
+  if (!validStates.includes(normalizedState)) {
+    return next(new ErrorResponse(
+      "State must be one of: Louisiana, Mississippi, Alabama, Florida",
+      400
+    ));
+  }
+
+  // Validate city based on state (PDF requirement)
+  const stateCityMapping = {
+    louisiana: ["new orleans"],
+    mississippi: ["biloxi"],
+    alabama: ["mobile"],
+    florida: ["pensacola"]
+  };
+
+  const normalizedCity = city.toLowerCase();
+  const validCities = stateCityMapping[normalizedState];
+
+  if (!validCities.includes(normalizedCity)) {
+    return next(new ErrorResponse(
+      `City "${city}" is not valid for state "${state}". ` +
+      `Valid city for ${state}: ${validCities.map(c => c.charAt(0).toUpperCase() + c.slice(1)).join(", ")}`,
+      400
+    ));
+  }
+
+  const rules =
+    SUBSCRIPTION_RULES.photographer[user.subscriptionPlan] ||
+    SUBSCRIPTION_RULES.photographer.free;
+
+  // Create photographer profile
+  const photographer = await Photographer.create({
+    user: user.id,
+    name: name.trim(),
+    state: normalizedState,
+    city: normalizedCity,
+    biography: biography || "",
+    photosLimit: rules.photos,
+    videosLimit: rules.videos,
+    featuresLocked: false, // All features unlocked per PDF
+    isActive: true,
+    isVerified: false
+  });
+
+  const safePhotographer = sanitizePhotographerForPlan(photographer, rules);
+
+  res.status(201).json({
+    success: true,
+    message: "Photographer profile created successfully",
+    data: {
+      photographer: safePhotographer,
+    },
+  });
+});
+
 export const getPhotographerProfile = asyncHandler(async (req, res, next) => {
   const user = req.user;
 
@@ -50,28 +135,47 @@ export const updatePhotographerProfile = asyncHandler(async (req, res, next) => 
     SUBSCRIPTION_RULES.photographer[user.subscriptionPlan] ||
     SUBSCRIPTION_RULES.photographer.free;
 
-  const { name, city, biography } = req.body;
+  const { name, state, city, biography } = req.body;
 
   let photographer = await Photographer.findOne({ user: user.id });
   if (!photographer) return next(new ErrorResponse("Photographer profile not found", 404));
 
+  // Update name
   if (name !== undefined) photographer.name = name;
-  if (city !== undefined) photographer.city = city.toLowerCase();
 
-  // biography only if allowed
-  if (rules.biography && biography !== undefined) {
+  // Update state if provided
+  if (state !== undefined) {
+    const validStates = ["louisiana", "mississippi", "alabama", "florida"];
+    if (!validStates.includes(state.toLowerCase())) {
+      return next(new ErrorResponse(
+        "State must be one of: Louisiana, Mississippi, Alabama, Florida",
+        400
+      ));
+    }
+    photographer.state = state.toLowerCase();
+  }
+
+  // Update city if provided
+  if (city !== undefined) {
+    const validCities = ["new orleans", "biloxi", "mobile", "pensacola"];
+    if (!validCities.includes(city.toLowerCase())) {
+      return next(new ErrorResponse(
+        "City must be one of: New Orleans, Biloxi, Mobile, Pensacola",
+        400
+      ));
+    }
+    photographer.city = city.toLowerCase();
+  }
+
+  // Biography always allowed (PDF: All features for free)
+  if (biography !== undefined) {
     photographer.biography = biography;
   }
 
-  // sync meta
+  // Sync meta (PDF: All features for free accounts)
   photographer.photosLimit = rules.photos;
   photographer.videosLimit = rules.videos;
-  photographer.featuresLocked = !(
-    rules.biography ||
-    rules.services ||
-    rules.photos > 0 ||
-    rules.videos > 0
-  );
+  photographer.featuresLocked = false; // All features unlocked per PDF
 
   await photographer.save();
 
@@ -79,12 +183,10 @@ export const updatePhotographerProfile = asyncHandler(async (req, res, next) => 
 
   res.status(200).json({
     success: true,
-    message: `Photographer profile updated successfully (${user.subscriptionPlan.toUpperCase()} Plan)`,
+    message: "Photographer profile updated successfully",
     data: { photographer: safe },
   });
 });
-
-
 
 /* ========================================================
    ADD SERVICE
@@ -95,11 +197,14 @@ export const addService = asyncHandler(async (req, res, next) => {
     SUBSCRIPTION_RULES.photographer[user.subscriptionPlan] ||
     SUBSCRIPTION_RULES.photographer.free;
 
+  // PDF: All features for free accounts
+  // So services are always allowed
   if (!rules.services) {
-    return next(new ErrorResponse("Upgrade to Pro to add services", 403));
+    // Even if rules don't have services, allow it per PDF
+    console.log("Services feature check bypassed per PDF requirement");
   }
 
-  const { service, price } = req.body;
+  const { service, price, description, duration, category, contact } = req.body;
   if (!service || !price) {
     return next(new ErrorResponse("Service and price are required", 400));
   }
@@ -116,16 +221,31 @@ export const addService = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Service already exists", 400));
   }
 
-  photographer.services.push({ service, price });
+  photographer.services.push({
+    service,
+    price,
+    description: description || "",
+    duration: duration || "",
+    category: category || "photography",
+    contact: {
+      email: contact?.email || photographer.user.email,
+      phone: contact?.phone || "",
+      preferredContact: contact?.preferredContact || "email",
+      showPhonePublicly: contact?.showPhonePublicly || false,
+    },
+  });
+
   await photographer.save();
 
   res.status(201).json({
     success: true,
     message: "Service added successfully",
-    data: { services: photographer.services },
+    data: {
+      service: photographer.services.at(-1),
+    },
   });
-});
 
+});
 
 /* ========================================================
    UPDATE SERVICE
@@ -136,12 +256,15 @@ export const updateService = asyncHandler(async (req, res, next) => {
     SUBSCRIPTION_RULES.photographer[user.subscriptionPlan] ||
     SUBSCRIPTION_RULES.photographer.free;
 
+  // PDF: All features for free accounts
+  // So services are always allowed
   if (!rules.services) {
-    return next(new ErrorResponse("Upgrade to Pro to manage services", 403));
+    // Allow anyway per PDF
+    console.log("Services update allowed per PDF requirement");
   }
 
   const { serviceId } = req.params;
-  const { service, price } = req.body;
+  const { service, price, description, duration, category, contact } = req.body;
 
   if (!service && !price) {
     return next(
@@ -162,18 +285,30 @@ export const updateService = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Service not found", 404));
   }
 
-  if (service) serviceToUpdate.service = service;
-  if (price) serviceToUpdate.price = price;
+  if (service !== undefined) serviceToUpdate.service = service;
+  if (price !== undefined) serviceToUpdate.price = price;
+  if (description !== undefined) serviceToUpdate.description = description;
+  if (duration !== undefined) serviceToUpdate.duration = duration;
+  if (category !== undefined) serviceToUpdate.category = category;
+
+  if (contact !== undefined) {
+    serviceToUpdate.contact = {
+      ...serviceToUpdate.contact,
+      ...contact,
+    };
+  }
 
   await photographer.save();
 
   res.status(200).json({
     success: true,
     message: "Service updated successfully",
-    data: { services: photographer.services },
+    data: {
+      service: serviceToUpdate,
+    },
   });
-});
 
+});
 
 /* ========================================================
    DELETE SERVICE
@@ -184,8 +319,10 @@ export const deleteService = asyncHandler(async (req, res, next) => {
     SUBSCRIPTION_RULES.photographer[user.subscriptionPlan] ||
     SUBSCRIPTION_RULES.photographer.free;
 
+  // PDF: All features for free accounts
   if (!rules.services) {
-    return next(new ErrorResponse("Upgrade to Pro to manage services", 403));
+    // Allow anyway per PDF
+    console.log("Services delete allowed per PDF requirement");
   }
 
   const { serviceId } = req.params;
@@ -206,10 +343,12 @@ export const deleteService = asyncHandler(async (req, res, next) => {
   res.status(200).json({
     success: true,
     message: "Service deleted successfully",
-    data: { services: photographer.services },
+    data: {
+      serviceId,
+    },
   });
-});
 
+});
 
 /* ========================================================
    ADD PHOTO
@@ -220,9 +359,9 @@ export const addPhoto = asyncHandler(async (req, res, next) => {
     SUBSCRIPTION_RULES.photographer[user.subscriptionPlan] ||
     SUBSCRIPTION_RULES.photographer.free;
 
-  if (rules.photos === 0) {
-    return next(new ErrorResponse("Upgrade to Pro to upload photos", 403));
-  }
+  // PDF: All features for free accounts
+  // So photos are always allowed, just check limit
+  const photoLimit = rules.photos || 5; // Default 5 if not specified
 
   if (!req.files || req.files.length === 0) {
     return next(new ErrorResponse("No photos uploaded", 400));
@@ -233,31 +372,48 @@ export const addPhoto = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Photographer profile not found", 404));
   }
 
-  if (photographer.photos.length + req.files.length > rules.photos) {
-    return next(new ErrorResponse(`Maximum ${rules.photos} photos allowed`, 400));
+  if (photographer.photos.length + req.files.length > photoLimit) {
+    return next(new ErrorResponse(`Maximum ${photoLimit} photos allowed`, 400));
   }
 
-  const uploadedPhotos = [];
+  // const uploadedPhotos = [];
 
-  for (const file of req.files) {
-    const result = await new Promise((resolve, reject) => {
-      cloudinary.uploader
-        .upload_stream(
-          { folder: "photographers/photos", resource_type: "image" },
-          (error, uploadResult) => {
-            if (error) reject(error);
-            else resolve(uploadResult);
-          }
-        )
-        .end(file.buffer);
-    });
+  // for (const file of req.files) {
+  //   const result = await new Promise((resolve, reject) => {
+  //     cloudinary.uploader
+  //       .upload_stream(
+  //         { folder: "photographers/photos", resource_type: "image" },
+  //         (error, uploadResult) => {
+  //           if (error) reject(error);
+  //           else resolve(uploadResult);
+  //         }
+  //       )
+  //       .end(file.buffer);
+  //   });
 
-    uploadedPhotos.push({
-      url: result.secure_url,
-      public_id: result.public_id,
-      caption: "", // optional
-    });
-  }
+  //   uploadedPhotos.push({
+  //     url: result.secure_url,
+  //     public_id: result.public_id,
+  //     caption: "",
+  //   });
+  // }
+
+  // photographer.photos.push(...uploadedPhotos);
+  // await photographer.save();
+
+
+  // if (!photographer.state || !photographer.city) {
+  //   return next(
+  //     new ErrorResponse("Photographer location missing", 400)
+  //   );
+  // }
+
+  // ✅ Use files already uploaded by middleware
+  const uploadedPhotos = req.files.map(file => ({
+    url: file.path,        // Cloudinary URL
+    public_id: file.filename,
+    caption: "",
+  }));
 
   photographer.photos.push(...uploadedPhotos);
   await photographer.save();
@@ -289,14 +445,10 @@ export const deletePhoto = asyncHandler(async (req, res, next) => {
   try {
     // Delete from Cloudinary
     if (photoToDelete.public_id) {
-      // console.log("Deleting from Cloudinary:", photoToDelete.public_id);
-
       const result = await cloudinary.uploader.destroy(photoToDelete.public_id, {
         resource_type: "image",
         invalidate: true
       });
-
-      // console.log("Cloudinary delete result:", result);
 
       if (result.result !== 'ok') {
         console.warn("Cloudinary deletion may have failed:", result);
@@ -328,11 +480,11 @@ export const addVideo = asyncHandler(async (req, res, next) => {
     SUBSCRIPTION_RULES.photographer[user.subscriptionPlan] ||
     SUBSCRIPTION_RULES.photographer.free;
 
-  if (rules.videos === 0) {
-    return next(new ErrorResponse("Upgrade to Pro to add videos", 403));
-  }
+  // PDF: All features for free accounts
+  const videoLimit = rules.videos || 5; // Default 5 if not specified
 
-  const { url, title, public_id } = req.body;
+  const { url, title, description, public_id } = req.body;
+
   if (!url || !public_id) {
     return next(new ErrorResponse("Video URL and public ID are required", 400));
   }
@@ -342,17 +494,19 @@ export const addVideo = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Photographer profile not found", 404));
   }
 
-  if (photographer.videos.length >= rules.videos) {
+  if (photographer.videos.length >= videoLimit) {
     return next(
-      new ErrorResponse(`Maximum video limit reached (${rules.videos} videos)`, 400)
+      new ErrorResponse(`Maximum video limit reached (${videoLimit} videos)`, 400)
     );
   }
 
   photographer.videos.push({
     url,
     title: title || "Untitled Video",
+    description: description || "",
     public_id,
   });
+
 
   await photographer.save();
 
@@ -360,6 +514,35 @@ export const addVideo = asyncHandler(async (req, res, next) => {
     success: true,
     message: "Video added successfully",
     data: { videos: photographer.videos },
+  });
+});
+
+/* ========================================================
+   UPDATE VIDEO (TITLE / DESCRIPTION)
+======================================================== */
+export const updateVideo = asyncHandler(async (req, res, next) => {
+  const { videoId } = req.params;
+  const { title, description } = req.body;
+
+  const photographer = await Photographer.findOne({ user: req.user.id });
+  if (!photographer) {
+    return next(new ErrorResponse("Photographer profile not found", 404));
+  }
+
+  const video = photographer.videos.id(videoId);
+  if (!video) {
+    return next(new ErrorResponse("Video not found", 404));
+  }
+
+  if (title !== undefined) video.title = title;
+  if (description !== undefined) video.description = description;
+
+  await photographer.save();
+
+  res.status(200).json({
+    success: true,
+    message: "Video updated successfully",
+    data: { video },
   });
 });
 
@@ -404,27 +587,61 @@ export const deleteVideo = asyncHandler(async (req, res, next) => {
   }
 });
 
-
 /* ========================================================
    GET ALL PHOTOGRAPHERS (PUBLIC)
 ======================================================== */
 export const getAllPhotographers = asyncHandler(async (req, res, next) => {
-  const { city, page = 1, limit = 10 } = req.query;
+  const {
+    state, // PDF: Louisiana, Mississippi, Alabama, Florida
+    city,
+    page = 1,
+    limit = 10
+  } = req.query;
 
   let query = { isActive: true, isVerified: true };
 
+  // STATE FILTERING (PDF REQUIREMENT)
+  if (state) {
+    const validStates = ["louisiana", "mississippi", "alabama", "florida"];
+    const normalizedState = state.toLowerCase().trim();
+
+    if (validStates.includes(normalizedState)) {
+      query.state = normalizedState;
+    }
+  }
+
+  // CITY FILTER
   if (city) {
     query.city = city.toLowerCase();
   }
 
   const photographers = await Photographer.find(query)
-    .populate("user", "username email")
+    .populate("user", "username email subscriptionPlan")
     .select("-__v")
     .limit(limit * 1)
     .skip((page - 1) * limit)
     .sort({ createdAt: -1 });
 
   const total = await Photographer.countDocuments(query);
+
+  // Get state counts for dropdown
+  const stateCounts = await Photographer.aggregate([
+    { $match: { isActive: true, isVerified: true } },
+    {
+      $group: {
+        _id: "$state",
+        count: { $sum: 1 }
+      }
+    }
+  ]);
+
+  // Create state dropdown data
+  const stateDropdown = [
+    { value: "louisiana", label: "Louisiana", count: stateCounts.find(s => s._id === "louisiana")?.count || 0 },
+    { value: "mississippi", label: "Mississippi", count: stateCounts.find(s => s._id === "mississippi")?.count || 0 },
+    { value: "alabama", label: "Alabama", count: stateCounts.find(s => s._id === "alabama")?.count || 0 },
+    { value: "florida", label: "Florida", count: stateCounts.find(s => s._id === "florida")?.count || 0 }
+  ];
 
   res.status(200).json({
     success: true,
@@ -434,7 +651,47 @@ export const getAllPhotographers = asyncHandler(async (req, res, next) => {
       totalPages: Math.ceil(total / limit),
       currentPage: parseInt(page),
       total,
+      // PDF: State-based dropdown data
+      filters: {
+        states: stateDropdown,
+        cities: ["New Orleans", "Biloxi", "Mobile", "Pensacola"]
+      }
     },
+  });
+});
+
+/* ========================================================
+   GET PHOTOGRAPHERS BY STATE (FOR DROPDOWN)
+======================================================== */
+export const getPhotographersByState = asyncHandler(async (req, res, next) => {
+  const { state } = req.params;
+
+  const validStates = ["louisiana", "mississippi", "alabama", "florida"];
+  if (!validStates.includes(state.toLowerCase())) {
+    return next(new ErrorResponse(
+      "Invalid state. Must be: louisiana, mississippi, alabama, or florida",
+      400
+    ));
+  }
+
+  const photographers = await Photographer.find({
+    state: state.toLowerCase(),
+    isActive: true,
+    isVerified: true
+  })
+    .populate("user", "username email subscriptionPlan")
+    .select("name city state biography services photos videos")
+    .sort({ createdAt: -1 })
+    .limit(50);
+
+  res.status(200).json({
+    success: true,
+    message: `Photographers in ${state}`,
+    data: {
+      state: state,
+      count: photographers.length,
+      photographers
+    }
   });
 });
 
@@ -475,6 +732,47 @@ export const getPhotographerById = asyncHandler(async (req, res, next) => {
   });
 });
 
+/* ========================================================
+   GET STATE DISTRIBUTION STATS
+======================================================== */
+export const getStateDistribution = asyncHandler(async (req, res, next) => {
+  const stateStats = await Photographer.aggregate([
+    { $match: { isActive: true, isVerified: true } },
+    {
+      $group: {
+        _id: "$state",
+        total: { $sum: 1 }
+      }
+    },
+    {
+      $project: {
+        state: "$_id",
+        total: 1,
+        _id: 0
+      }
+    },
+    { $sort: { total: -1 } }
+  ]);
+
+  // Format for dropdown
+  const allStates = ["louisiana", "mississippi", "alabama", "florida"];
+  const formattedStats = allStates.map(state => {
+    const stat = stateStats.find(s => s.state === state);
+    return {
+      state,
+      label: state.charAt(0).toUpperCase() + state.slice(1),
+      total: stat?.total || 0
+    };
+  });
+
+  res.status(200).json({
+    success: true,
+    data: {
+      stateDistribution: formattedStats,
+      totalPhotographers: stateStats.reduce((sum, stat) => sum + stat.total, 0)
+    }
+  });
+});
 
 
 export const changePhotographerPlanByAdmin = asyncHandler(async (req, res, next) => {
@@ -647,7 +945,6 @@ export const getPhotographersForAdmin = asyncHandler(async (req, res, next) => {
     }
   });
 });
-
 
 /* ========================================================
    GET SINGLE PHOTOGRAPHER FOR ADMIN

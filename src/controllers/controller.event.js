@@ -2,16 +2,123 @@ import { validationResult } from "express-validator";
 import Venue from "../models/model.venue.js";
 import Event from "../models/models.event.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
+import StateCity from "../models/stateCity.model.js";
+import { DEFAULT_CITY, DEFAULT_STATE, STATE_CITY_MAPPING } from "../utils/constants.js";
 
 
 const validCities = ["new orleans", "biloxi", "mobile", "pensacola"];
 
-const buildUtcDateOnly = (dateInput) => {
-  const d = new Date(dateInput);
-  return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+export const parseEventDate = (dateString, timeString) => {
+  try {
+    console.log("Parsing date:", dateString, "time:", timeString);
+
+    // Validate date format (MM/DD/YYYY)
+    const dateRegex = /^(0?[1-9]|1[0-2])\/(0?[1-9]|[12][0-9]|3[01])\/\d{4}$/;
+    if (!dateRegex.test(dateString)) {
+      throw new Error('Date must be in MM/DD/YYYY format (e.g., 01/21/2024)');
+    }
+
+    // Validate time format (HH:MM AM/PM)
+    const timeRegex = /^(0?[1-9]|1[0-2]):([0-5][0-9])\s*(am|pm|AM|PM)$/;
+    if (!timeRegex.test(timeString)) {
+      throw new Error('Time must be in HH:MM AM/PM format (e.g., 08:30 PM)');
+    }
+
+    // Parse date components
+    const [month, day, year] = dateString.split('/').map(Number);
+
+    // Parse time components
+    const timeMatch = timeString.match(timeRegex);
+    let hours = parseInt(timeMatch[1]);
+    const minutes = parseInt(timeMatch[2]);
+    const period = timeMatch[3].toLowerCase();
+
+    // Convert to 24-hour format
+    if (period === 'pm' && hours < 12) {
+      hours += 12;
+    }
+    if (period === 'am' && hours === 12) {
+      hours = 0;
+    }
+
+    // Validate date
+    const dateObj = new Date(year, month - 1, day, hours, minutes);
+    if (
+      dateObj.getFullYear() !== year ||
+      dateObj.getMonth() + 1 !== month ||
+      dateObj.getDate() !== day
+    ) {
+      throw new Error('Invalid date (e.g., February 30th)');
+    }
+
+    // Check if date is in the past
+    const now = new Date();
+    if (dateObj < now) {
+      throw new Error('Event date cannot be in the past');
+    }
+
+    // Create UTC date
+    const utcDate = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
+
+    // Create dateOnly (UTC date without time)
+    const dateOnly = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+
+    console.log("Parsed results:", {
+      fullDate: utcDate,
+      dateOnly: dateOnly,
+      timeString: timeString
+    });
+
+    return {
+      fullDate: utcDate,
+      dateOnly: dateOnly,
+      timeString: timeString,
+      original: {
+        date: dateString,
+        time: timeString
+      }
+    };
+
+  } catch (error) {
+    console.error("Date parsing error:", error.message);
+    throw new Error(`Invalid date/time: ${error.message}`);
+  }
+};
+/**
+ * Format date for display
+ */
+const formatDateForDisplay = (utcDate) => {
+  const date = new Date(utcDate);
+  // Convert to local time
+  const localDate = new Date(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+    date.getUTCHours(),
+    date.getUTCMinutes()
+  );
+
+  return {
+    localDate,
+    formatted: localDate.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    }),
+    time: localDate.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    })
+  };
 };
 
-// CREATE EVENT
+// ==================== MAIN CONTROLLER FUNCTIONS ====================
+
+
+// CREATE EVENT - UPDATED WITH STATE SUPPORT
+// CREATE EVENT - FIXED VERSION
 export const createEvent = async (req, res, next) => {
   try {
     const errors = validationResult(req);
@@ -22,6 +129,7 @@ export const createEvent = async (req, res, next) => {
     }
 
     const { artistBandName, time, date, description } = req.body;
+    console.log("Creating event with data:", { artistBandName, time, date, description });
 
     const venue = await Venue.findOne({ user: req.user.id });
     if (!venue) {
@@ -29,6 +137,24 @@ export const createEvent = async (req, res, next) => {
         new ErrorResponse(
           "Venue profile not found. Please create your venue profile first.",
           404
+        )
+      );
+    }
+
+    console.log("Found venue:", {
+      name: venue.venueName,
+      state: venue.state,
+      city: venue.city,
+      colorCode: venue.colorCode
+    });
+
+    // Validate venue's state and city
+    const stateCities = STATE_CITY_MAPPING[venue.state] || [];
+    if (!stateCities.includes(venue.city.toLowerCase())) {
+      return next(
+        new ErrorResponse(
+          `Your venue city "${venue.city}" is not valid for state "${venue.state}".`,
+          400
         )
       );
     }
@@ -45,7 +171,7 @@ export const createEvent = async (req, res, next) => {
 
       const eventsThisMonth = await Event.countDocuments({
         venue: venue._id,
-        date: { $gte: startOfMonth, $lte: endOfMonth },
+        dateOnly: { $gte: startOfMonth, $lte: endOfMonth },
         isActive: true,
       });
 
@@ -58,28 +184,106 @@ export const createEvent = async (req, res, next) => {
         );
       }
     }
+
+    // Parse date with correct timezone handling
+    const parsedDate = parseEventDate(date, time);
+    console.log("Parsed date:", parsedDate);
+
     const imageData = req.file
       ? { url: req.file.path, filename: req.file.filename }
       : null;
 
-    const utcDate = buildUtcDateOnly(date);
-
-    const event = await Event.create({
+    // Create event object with all required fields
+    const eventData = {
       artistBandName,
-      time,
-      date: utcDate,
-      description,
+      eventTime: time, // Store the original time string
+      date: parsedDate.fullDate,
+      dateOnly: parsedDate.dateOnly, // Set dateOnly explicitly
+      description: description || "",
       image: imageData,
       venue: venue._id,
-      city: venue.city,
-    });
+      state: venue.state, // Get state from venue
+      city: venue.city, // Get city from venue
+      color: venue.colorCode || "#000000",
+    };
 
-    await event.populate("venue", "venueName city address colorCode");
+    console.log("Creating event with data:", eventData);
+
+    // Create event
+    const event = await Event.create(eventData);
+
+    // Populate venue details
+    await event.populate("venue", "venueName state city address colorCode");
 
     res.status(201).json({
       success: true,
       message: "Event created successfully",
       data: { event },
+    });
+  } catch (error) {
+    console.error("Create event error:", error);
+
+    // Handle specific Mongoose validation errors
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => ({
+        field: err.path,
+        message: err.message
+      }));
+
+      return next(
+        new ErrorResponse("Event validation failed", 400, { details: errors })
+      );
+    }
+
+    next(new ErrorResponse(error.message || "Failed to create event", 500));
+  }
+};
+
+// GET EVENTS BY STATE AND CITY - NEW
+export const getEventsByStateCity = async (req, res, next) => {
+  try {
+    const { state = DEFAULT_STATE, city = DEFAULT_CITY } = req.query;
+
+    let query = { isActive: true };
+
+    // Validate state
+    if (state && STATE_CITY_MAPPING[state]) {
+      query.state = state;
+
+      // Validate city for the state
+      const stateCities = STATE_CITY_MAPPING[state];
+      if (city && city !== 'all') {
+        if (stateCities.includes(city.toLowerCase())) {
+          query.city = city.toLowerCase();
+        } else {
+          // Fallback to first city in state
+          query.city = stateCities[0];
+        }
+      } else {
+        // Get all cities in the state
+        query.city = { $in: stateCities };
+      }
+    } else {
+      // Default to Alabama, Mobile
+      query.state = DEFAULT_STATE;
+      query.city = DEFAULT_CITY;
+    }
+
+    const events = await Event.find(query)
+      .populate("venue", "venueName state city address seatingCapacity colorCode verifiedOrder")
+      .sort({ date: 1, eventTime: 1 });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        events,
+        filters: {
+          currentState: query.state,
+          currentCity: query.city,
+          availableStates: Object.keys(STATE_CITY_MAPPING),
+          availableCities: STATE_CITY_MAPPING[query.state] || [],
+        },
+      },
     });
   } catch (error) {
     next(error);
@@ -117,44 +321,81 @@ export const getEventsByCity = async (req, res, next) => {
   }
 };
 
-// GET CALENDAR EVENTS BY CITY (SPECIFIC FOR CALENDAR)
+// GET CALENDAR EVENTS - UPDATED WITH STATE SUPPORT
 export const getCalendarEvents = async (req, res, next) => {
   try {
-    const { city = "mobile" } = req.query;
+    const { state = DEFAULT_STATE, city = DEFAULT_CITY } = req.query;
 
-    const selectedCity = validCities.includes(city.toLowerCase())
-      ? city.toLowerCase()
-      : "mobile";
-    const events = await Event.find({
-      city: selectedCity,
+    const query = {
       isActive: true,
-      date: { $gte: new Date().setHours(0, 0, 0, 0) },
-    })
-      .populate("venue", "venueName colorCode verifiedOrder")
-      .sort({ date: 1, time: 1 })
-      .select("artistBandName date time venue city image");
+      dateOnly: { $gte: new Date().setHours(0, 0, 0, 0) }
+    };
 
-    const calendarEvents = events.map((event) => ({
-      id: event._id,
-      title: event.artistBandName,
-      date: event.date,
-      time: event.time,
-      venue: event.venue?.venueName || "Unknown Venue",
-      // COLOR CORRECTLY ASSIGNED
-      color: event.venue?.colorCode || "#000000",
-      city: event.city,
-      image: event.image,
-      // Venue info for filtering
-      venueId: event.venue?._id,
-      verified: event.venue?.verifiedOrder > 0,
-    }));
+    // Validate state and city
+    if (state && STATE_CITY_MAPPING[state]) {
+      query.state = state;
+
+      const stateCities = STATE_CITY_MAPPING[state];
+      if (city && city !== 'all') {
+        if (stateCities.includes(city.toLowerCase())) {
+          query.city = city.toLowerCase();
+        } else {
+          // Fallback to first city in state
+          query.city = stateCities[0];
+        }
+      } else {
+        // Get all cities in the state
+        query.city = { $in: stateCities };
+      }
+    } else {
+      // Default to Alabama, Mobile
+      query.state = DEFAULT_STATE;
+      query.city = DEFAULT_CITY;
+    }
+
+    const events = await Event.find(query)
+      .populate("venue", "venueName colorCode verifiedOrder state city")
+      .sort({ dateOnly: 1, eventTime: 1 })
+      .select("artistBandName date dateOnly eventTime venue state city image color");
+
+    // Format events for calendar
+    const calendarEvents = events.map((event) => {
+      const eventDate = new Date(event.date);
+      // Convert to local time for display
+      const localDate = new Date(
+        eventDate.getUTCFullYear(),
+        eventDate.getUTCMonth(),
+        eventDate.getUTCDate(),
+        eventDate.getUTCHours(),
+        eventDate.getUTCMinutes()
+      );
+
+      return {
+        id: event._id,
+        title: event.artistBandName,
+        date: localDate, // Corrected date
+        time: event.eventTime,
+        venue: event.venue?.venueName || "Unknown Venue",
+        color: event.venue?.colorCode || event.color || "#000000",
+        state: event.state,
+        city: event.city,
+        image: event.image,
+        venueId: event.venue?._id,
+        verified: event.venue?.verifiedOrder > 0,
+        // For debugging
+        rawDate: event.date,
+        dateOnly: event.dateOnly,
+      };
+    });
 
     res.status(200).json({
       success: true,
       data: {
         events: calendarEvents,
-        currentCity: selectedCity,
-        availableCities: validCities,
+        currentState: query.state,
+        currentCity: query.city,
+        availableStates: Object.keys(STATE_CITY_MAPPING),
+        availableCities: STATE_CITY_MAPPING[query.state] || [],
       },
     });
   } catch (error) {
@@ -293,9 +534,7 @@ export const getUpcomingEvents = async (req, res, next) => {
   }
 };
 
-/* =====================================
-   GET EVENTS FOR ADMIN
-===================================== */
+// GET EVENTS FOR ADMIN - UPDATED WITH STATE FILTER
 export const getEventsForAdmin = async (req, res, next) => {
   try {
     const {
@@ -303,6 +542,7 @@ export const getEventsForAdmin = async (req, res, next) => {
       limit = 10,
       search = "",
       status = "all",
+      state = "",
       city = "",
     } = req.query;
 
@@ -322,9 +562,18 @@ export const getEventsForAdmin = async (req, res, next) => {
       query.isActive = status === "active";
     }
 
+    // State filter
+    if (state && state !== "all") {
+      query.state = state;
+    }
+
     // City filter
     if (city && city !== "all") {
       query.city = city.toLowerCase();
+    } else if (state && state !== "all") {
+      // If state selected but city not, show all cities in that state
+      const stateCities = STATE_CITY_MAPPING[state] || [];
+      query.city = { $in: stateCities };
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -332,13 +581,13 @@ export const getEventsForAdmin = async (req, res, next) => {
     const events = await Event.find(query)
       .populate({
         path: "venue",
-        select: "venueName city address seatingCapacity colorCode",
-        options: { 
+        select: "venueName state city address seatingCapacity colorCode",
+        options: {
           lean: true,
-          allowNull: true 
+          allowNull: true
         }
       })
-      .sort({ date: -1, time: -1 })
+      .sort({ date: -1, eventTime: -1 })
       .limit(parseInt(limit))
       .skip(skip);
 
@@ -348,6 +597,7 @@ export const getEventsForAdmin = async (req, res, next) => {
       ...event.toObject(),
       venue: event.venue || {
         venueName: "N/A",
+        state: "Unknown",
         city: "Unknown",
         address: "",
         seatingCapacity: 0,
@@ -364,6 +614,11 @@ export const getEventsForAdmin = async (req, res, next) => {
           pages: Math.ceil(total / limit),
           total,
         },
+        filters: {
+          availableStates: Object.keys(STATE_CITY_MAPPING),
+          selectedState: state,
+          selectedCity: city
+        }
       },
     });
   } catch (error) {
@@ -372,23 +627,32 @@ export const getEventsForAdmin = async (req, res, next) => {
   }
 };
 
-// UPDATE EVENT BY ADMIN
+// UPDATE EVENT BY ADMIN - UPDATED WITH STATE SUPPORT
 export const updateEventByAdmin = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { artistBandName, time, date, description, city, isActive } =
-      req.body;
+    const { artistBandName, time, date, description, state, city, isActive } = req.body;
 
     let event = await Event.findById(id);
     if (!event) {
       return next(new ErrorResponse("Event not found", 404));
     }
 
+    // Parse date if provided
+    let parsedDate = null;
+    if (date && time) {
+      parsedDate = parseEventDate(date, time);
+    }
+
     const updateData = {
       ...(artistBandName && { artistBandName }),
-      ...(time && { time }),
-      ...(date && { date }),
+      ...(time && { eventTime: time }),
+      ...(parsedDate && {
+        date: parsedDate.fullDate,
+        dateOnly: parsedDate.dateOnly
+      }),
       ...(description && { description }),
+      ...(state && { state }),
       ...(city && { city: city.toLowerCase() }),
       ...(isActive !== undefined && { isActive }),
     };
@@ -397,7 +661,7 @@ export const updateEventByAdmin = async (req, res, next) => {
       new: true,
       runValidators: true,
     })
-      .populate("venue", "venueName city address seatingCapacity colorCode");
+      .populate("venue", "venueName state city address seatingCapacity colorCode");
 
     res.status(200).json({
       success: true,
@@ -511,7 +775,7 @@ export const bulkUpdateEventColors = async (req, res, next) => {
       return next(new ErrorResponse("Venue not found", 404));
     }
 
-    // ✅ ONLY update venue color
+    // ONLY update venue color
     venue.colorCode = colorCode;
     await venue.save();
 

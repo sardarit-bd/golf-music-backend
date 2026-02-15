@@ -1,3 +1,4 @@
+// routes/router.sponsor.js
 import express from "express";
 import {
   createSponsor,
@@ -10,12 +11,12 @@ import { authorize, protect } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// Admin only
+// ========== PUBLIC ROUTES ==========
+router.get("/", getSponsors);
+
+// ========== ADMIN ROUTES ==========
 router.post("/", protect, authorize("admin"), uploadSingleSponsorLogo, createSponsor);
 router.put("/:id", protect, authorize("admin"), uploadSingleSponsorLogo, updateSponsor);
 router.delete("/:id", protect, authorize("admin"), deleteSponsor);
-
-// Public Route
-router.get("/", getSponsors);
 
 export default router;

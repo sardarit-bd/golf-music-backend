@@ -1,4 +1,5 @@
 import { cloudinary } from "../config/cloudinary.js";
+import { SUBSCRIPTION_CONFIG } from "../config/SUBSCRIPTION_CONFIG.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import Admin from "../models/model.admin.js";
 import Artist from "../models/model.artist.js";
@@ -1228,4 +1229,46 @@ export const reassignCityColors = async (req, res, next) => {
   } catch (error) {
     next(new ErrorResponse("Failed to reassign city colors", 500));
   }
+};
+
+
+export const updateSubscriptionConfig = async (req, res, next) => {
+  try {
+    const { config } = req.body;
+    
+    // Validate admin permissions
+    if (req.user.userType !== 'admin') {
+      return next(new ErrorResponse("Admin access required", 403));
+    }
+    
+    // Update config (in real implementation, save to database)
+    // For now, we'll update the in-memory config
+    Object.assign(SUBSCRIPTION_CONFIG, config);
+    
+    // Log the change
+    console.log(`Subscription config updated by admin: ${req.user.username}`);
+    console.log('New config:', SUBSCRIPTION_CONFIG.SYSTEM_WIDE);
+    
+    res.status(200).json({
+      success: true,
+      message: "Subscription configuration updated successfully",
+      data: { config: SUBSCRIPTION_CONFIG }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getSubscriptionConfig = (req, res) => {
+  if (req.user.userType !== 'admin') {
+    return res.status(403).json({
+      success: false,
+      message: "Admin access required"
+    });
+  }
+  
+  res.status(200).json({
+    success: true,
+    data: { config: SUBSCRIPTION_CONFIG }
+  });
 };

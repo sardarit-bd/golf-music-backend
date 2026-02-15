@@ -1,83 +1,116 @@
-
 import { ErrorResponse } from "../middleware/errorHandler.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 import Sponsor from "../models/model.sponsor.js";
 
-// CREATE
-export const createSponsor = async (req, res, next) => {
-  try {
-    if (!req.file) {
-      return next(new ErrorResponse("Logo image is required", 400));
-    }
-
-    const sponsor = await Sponsor.create({
-      name: req.body.name,
-      logo: req.file.path,
-    });
-
-    res.status(201).json({
-      success: true,
-      message: "Sponsor created successfully",
-      data: sponsor,
-    });
-  } catch (error) {
-    next(error);
+// CREATE Sponsor
+export const createSponsor = asyncHandler(async (req, res, next) => {
+  if (!req.file) {
+    return next(new ErrorResponse("Logo image is required", 400));
   }
-};
 
-// GET ALL
-export const getSponsors = async (req, res, next) => {
-  try {
-    const sponsors = await Sponsor.find().sort({ createdAt: -1 });
-    res.status(200).json({
-      success: true,
-      data: sponsors,
-    });
-  } catch (error) {
-    next(error);
+  // Create sponsor with explicit isPageText: false
+  const sponsor = await Sponsor.create({
+    name: req.body.name,
+    logo: req.file.path,
+    isPageText: false  // Explicitly set to false to avoid unique constraint issues
+  });
+
+  res.status(201).json({
+    success: true,
+    message: "Sponsor created successfully",
+    data: sponsor,
+  });
+});
+
+// GET ALL Sponsors
+export const getSponsors = asyncHandler(async (req, res) => {
+  // Get only sponsors where isPageText is not true
+  const sponsors = await Sponsor.find({ 
+    $or: [
+      { isPageText: false },
+      { isPageText: { $exists: false } }
+    ]
+  }).sort({ createdAt: -1 });
+  
+  res.status(200).json({
+    success: true,
+    data: sponsors,
+  });
+});
+
+// UPDATE Sponsor
+export const updateSponsor = asyncHandler(async (req, res, next) => {
+  let sponsor = await Sponsor.findOne({ 
+    _id: req.params.id,
+    $or: [
+      { isPageText: false },
+      { isPageText: { $exists: false } }
+    ]
+  });
+
+  if (!sponsor) {
+    return next(new ErrorResponse("Sponsor not found", 404));
   }
-};
 
-// UPDATE
-export const updateSponsor = async (req, res, next) => {
-  try {
-    let sponsor = await Sponsor.findById(req.params.id);
+  sponsor.name = req.body.name || sponsor.name;
 
-    if (!sponsor) {
-      return next(new ErrorResponse("Sponsor not found", 404));
-    }
-
-    sponsor.name = req.body.name || sponsor.name;
-
-    if (req.file) {
-      sponsor.logo = req.file.path;
-    }
-
-    await sponsor.save();
-
-    res.status(200).json({
-      success: true,
-      message: "Sponsor updated successfully",
-      data: sponsor,
-    });
-  } catch (error) {
-    next(error);
+  if (req.file) {
+    sponsor.logo = req.file.path;
   }
-};
 
-// DELETE
-export const deleteSponsor = async (req, res, next) => {
-  try {
-    const sponsor = await Sponsor.findByIdAndDelete(req.params.id);
+  await sponsor.save();
 
-    if (!sponsor) {
-      return next(new ErrorResponse("Sponsor not found", 404));
-    }
+  res.status(200).json({
+    success: true,
+    message: "Sponsor updated successfully",
+    data: sponsor,
+  });
+});
 
-    res.status(200).json({
-      success: true,
-      message: "Sponsor deleted successfully",
-    });
-  } catch (error) {
-    next(error);
+// DELETE Sponsor
+export const deleteSponsor = asyncHandler(async (req, res, next) => {
+  const sponsor = await Sponsor.findOneAndDelete({ 
+    _id: req.params.id,
+    $or: [
+      { isPageText: false },
+      { isPageText: { $exists: false } }
+    ]
+  });
+
+  if (!sponsor) {
+    return next(new ErrorResponse("Sponsor not found", 404));
   }
-};
+
+  res.status(200).json({
+    success: true,
+    message: "Sponsor deleted successfully",
+  });
+});
+
+// GET SECTION TEXT (public)
+export const getSponsorSectionText = asyncHandler(async (req, res) => {
+  const pageText = await Sponsor.findOneAndUpdate(
+    { isPageText: true },
+    {
+      $setOnInsert: {
+        isPageText: true,
+        sectionTitle: "Our Sponsors",
+        sectionSubtitle:
+          "We're proud to partner with amazing local businesses and community supporters.",
+      },
+    },
+    {
+      new: true,
+      upsert: true,
+    }
+  );
+
+  res.status(200).json({
+    success: true,
+    data: {
+      sectionTitle: pageText.sectionTitle,
+      sectionSubtitle: pageText.sectionSubtitle,
+    },
+  });
+});
+

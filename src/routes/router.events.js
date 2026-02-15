@@ -9,6 +9,7 @@ import {
   getCalendarEvents, 
   getEvent, 
   getEventsByCity, 
+  getEventsByStateCity, 
   getEventsByVenueId, 
   getEventsForAdmin, 
   getMyEvents, 
@@ -25,6 +26,9 @@ router.post('/', protect, authorize('venue'), validateEvent, createEvent);
 
 // Get all events by city (Public)
 router.get('/', getEventsByCity);
+
+router.get('/calendar', getCalendarEvents);
+router.get('/state-city', getEventsByStateCity);
 
 // Get calendar events by city (Public) - NEW ROUTE
 router.get('/calendar', getCalendarEvents);

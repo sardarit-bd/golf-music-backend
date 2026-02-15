@@ -33,7 +33,11 @@ const marketItemSchema = new mongoose.Schema(
 
     price: { type: Number, required: true, min: 0 },
 
-    location: { type: String, default: "" },
+    location: { 
+      type: String, 
+      default: "",
+      enum: ["Louisiana", "Mississippi", "Alabama", "Florida", ""]
+    },
 
     status: {
       type: String,

@@ -10,11 +10,14 @@ import { SUBSCRIPTION_RULES } from "../config/subscriptionRules.js";
 import { sanitizeVenueForPlan } from "../utils/sanitize.js";
 import { ColorAssigner } from "../utils/colorAssigner.js";
 import { formatCityName } from "../utils/formatCityName.js";
+import StateCity from "../models/stateCity.model.js";
+import { parseEventDate } from "./controller.event.js";
+import { STATE_CITY_MAPPING } from "../utils/constants.js";
+import { getPlanRules, isSubscriptionEnabled, SUBSCRIPTION_CONFIG } from "../config/SUBSCRIPTION_CONFIG.js";
 
 // Helper function for extracting uploaded photos
 const extractUploadedPhotos = (req) => {
   if (!req.files) return [];
-
 
   if (Array.isArray(req.files)) {
     return req.files.map((file) => ({
@@ -33,101 +36,79 @@ const extractUploadedPhotos = (req) => {
   return [];
 };
 
-
-// Color palette for venue verification
-const venueColors = [
-  "#FF6B6B",
-  "#4ECDC4",
-  "#FFD166",
-  "#06D6A0",
-  "#118AB2",
-  "#073B4C",
-  "#EF476F",
-  "#7209B7",
-  "#FF9E00",
-  "#8338EC",
-];
-
 // CREATE or UPDATE Venue Profile
 export const createOrUpdateProfile = async (req, res, next) => {
   try {
     const user = req.user;
 
-    const rules =
-      SUBSCRIPTION_RULES.venue[user.subscriptionPlan] ||
-      SUBSCRIPTION_RULES.venue.free;
+    // Centralized plan management
+    let userPlan = user.subscriptionPlan || SUBSCRIPTION_CONFIG.SYSTEM_WIDE.DEFAULT_PLAN;
+
+    if (SUBSCRIPTION_CONFIG.SYSTEM_WIDE.FORCE_FREE_FOR_ALL) {
+      userPlan = "free";
+      // Optionally update user in database
+      user.subscriptionPlan = "free";
+      await user.save();
+    }
+
+    // Get rules based on config
+    const rules = getPlanRules("venue", userPlan);
 
     let venue = await Venue.findOne({ user: user._id });
 
-    const oldPhotos = venue?.photos || [];
+    const { state, city } = req.body;
 
-    let mergedPhotos = oldPhotos;
+    if (state && city) {
+      const stateCities = STATE_CITY_MAPPING[state];
 
-    if (rules.photos > 0) {
-      const newPhotos = req.files
-        ? req.files.map((file) => ({
-            url: file.path,
-            filename: file.filename,
-          }))
-        : [];
+      if (!stateCities) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid state: "${state}"`
+        });
+      }
 
-      mergedPhotos = [...oldPhotos, ...newPhotos].slice(0, rules.photos);
-    } else {
-      if (req.files?.length > 0) {
-        return next(
-          new ErrorResponse(
-            "Free plan users cannot upload photos. Upgrade to Pro.",
-            403
-          )
-        );
+      const normalizedCity = city.toLowerCase().trim();
+
+      if (!stateCities.includes(normalizedCity)) {
+        return res.status(400).json({
+          success: false,
+          message: `City "${city}" is not valid for state "${state}"`
+        });
       }
     }
 
-    const biography = rules.biography
-      ? (req.body.biography ?? venue?.biography ?? "")
-      : (venue?.biography ?? "");
+    // Photo handling
+    const oldPhotos = venue?.photos || [];
+    let mergedPhotos = oldPhotos;
 
-    const openHours = rules.openHours
-      ? (req.body.openHours ?? venue?.openHours ?? "")
-      : (venue?.openHours ?? "");
+    if (rules.photos > 0 && req.files?.length > 0) {
+      const newPhotos = req.files.map((file) => ({
+        url: file.path,
+        filename: file.filename,
+      }));
 
-    const openDays = rules.openHours
-      ? (req.body.openDays ?? venue?.openDays ?? "")
-      : (venue?.openDays ?? "");
+      mergedPhotos = [...oldPhotos, ...newPhotos].slice(0, rules.photos);
+    }
 
-    const seatingCapacity = rules.seatingCapacity
-      ? (req.body.seatingCapacity
-          ? parseInt(req.body.seatingCapacity)
-          : (venue?.seatingCapacity || 0))
-      : (venue?.seatingCapacity || 0);
-
-    const address = rules.address
-      ? (req.body.address ?? venue?.address ?? "")
-      : (venue?.address ?? "");
-
+    // All fields (always enabled based on config)
     const venueData = {
       venueName: req.body.venueName,
-      city: req.body.city.toLowerCase(),
-
-      address,
-      seatingCapacity,
-
-      biography,
-      openHours,
-      openDays,
-
+      state: state || venue?.state || "Alabama",
+      city: (city || venue?.city || "mobile").toLowerCase(),
+      address: req.body.address ?? venue?.address ?? "",
+      seatingCapacity: req.body.seatingCapacity
+        ? parseInt(req.body.seatingCapacity)
+        : (venue?.seatingCapacity || 0),
+      biography: req.body.biography ?? venue?.biography ?? "",
+      openHours: req.body.openHours ?? venue?.openHours ?? "",
+      openDays: req.body.openDays ?? venue?.openDays ?? "",
+      phone: req.body.phone || venue?.phone || "",
+      website: req.body.website || venue?.website || "",
       photos: mergedPhotos,
-
       photosLimit: rules.photos,
-      showLimit: Number.isFinite(rules.shows) ? rules.shows : 1,
-      featuresLocked: !(
-        rules.biography ||
-        rules.openHours ||
-        rules.photos > 0 ||
-        rules.address ||
-        rules.seatingCapacity
-      ),
-
+      showLimit: rules.shows,
+      featuresLocked: false,
       updatedAt: Date.now(),
     };
 
@@ -140,15 +121,14 @@ export const createOrUpdateProfile = async (req, res, next) => {
         ...venueData,
         isActive: false,
         verifiedOrder: 0,
+        colorCode: null,
       });
     }
 
-    const safeVenue = sanitizeVenueForPlan(venue, rules);
-
     res.status(200).json({
       success: true,
-      message: `Venue profile saved successfully (${user.subscriptionPlan.toUpperCase()} Plan)`,
-      data: { venue: safeVenue },
+      message: `Venue profile saved successfully`,
+      data: { venue },
     });
   } catch (error) {
     console.error("VENUE PROFILE ERROR:", error);
@@ -159,85 +139,100 @@ export const createOrUpdateProfile = async (req, res, next) => {
   }
 };
 
-
-
-
 export const getCalendarByCity = asyncHandler(async (req, res, next) => {
-  const { city } = req.query;
+  const { state, city } = req.query;
 
-  if (!city) {
-    return next(new ErrorResponse("City is required", 400));
+  if (!state || !city) {
+    return next(new ErrorResponse("State and City are required", 400));
   }
 
-  const venues = await Venue.find({ city: city.toLowerCase() })
-    .select("venueName colorCode shows");
+  // Validate state-city combination
+  const validCity = await StateCity.findOne({
+    state: state,
+    city: city.toLowerCase(),
+    isActive: true
+  });
+
+  if (!validCity) {
+    return next(new ErrorResponse("Invalid city for the selected state", 400));
+  }
+
+  const venues = await Venue.find({
+    state: state,
+    city: city.toLowerCase(),
+    isActive: true
+  })
+    .select("venueName state city colorCode shows");
 
   res.status(200).json({
     success: true,
-    data: { venues },
+    data: {
+      venues,
+      state,
+      city,
+      cityDisplayName: validCity.displayName
+    },
   });
 });
-
-
-const buildUtcDateOnly = (dateInput) => {
-  const d = new Date(dateInput);
-  return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-};
 
 export const addShow = asyncHandler(async (req, res, next) => {
   const user = req.user;
 
-  // Unified subscription rules
-  const rules = SUBSCRIPTION_RULES.venue[user.subscriptionPlan];
+  // Get rules based on config
+  const rules = getPlanRules("venue", user.subscriptionPlan);
 
   const venue = await Venue.findOne({ user: user.id });
 
   if (!venue) {
-    throw new ErrorResponse("Venue not found", 404);
+    throw new ErrorResponse("Venue profile not found", 404);
   }
 
-  // MONTHLY SHOW LIMIT CHECK
+  // MONTHLY SHOW LIMIT CHECK (based on config)
   const now = new Date();
   const startOfMonth = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
   const endOfMonth = new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59));
 
   const showsThisMonth = await Event.countDocuments({
     venue: venue._id,
-    date: { $gte: startOfMonth, $lte: endOfMonth },
+    dateOnly: { $gte: startOfMonth, $lte: endOfMonth },
     isActive: true,
   });
 
-  if (showsThisMonth >= rules.shows) {
-    return next(
-      new ErrorResponse(
-        "Your plan's monthly show limit has been reached. Upgrade to Pro for unlimited shows.",
-        403
-      )
-    );
+  // Dynamic limit from config
+  const showLimit = rules.shows;
+
+  if (showsThisMonth >= showLimit) {
+    const message = showLimit === 999
+      ? "Unexpected error occurred"
+      : `Monthly show limit reached (max ${showLimit} shows).`;
+
+    return next(new ErrorResponse(message, 403));
   }
 
+  // Rest of the function remains same...
   // Upload show image
   const imageData = req.file
     ? { url: req.file.path, filename: req.file.filename }
     : null;
 
-  const utcDate = buildUtcDateOnly(req.body.date);
+  const parsedDate = parseEventDate(req.body.date, req.body.time);
 
-  // Create event
   const event = await Event.create({
     artistBandName: req.body.artist,
-    time: req.body.time,
-    date: utcDate,
+    eventTime: req.body.time,
+    date: parsedDate.fullDate,
+    dateOnly: parsedDate.dateOnly,
+    description: req.body.description || "",
     image: imageData,
     venue: venue._id,
+    state: venue.state,
     city: venue.city,
     color: venue.colorCode || "#000000",
   });
 
-  // Push to venue show list
   venue.shows.push({
     artist: req.body.artist,
-    date: utcDate,
+    date: parsedDate.fullDate,
     time: req.body.time,
   });
 
@@ -249,7 +244,6 @@ export const addShow = asyncHandler(async (req, res, next) => {
     data: { venue, event },
   });
 });
-
 
 export const deleteVenueProfile = asyncHandler(async (req, res, next) => {
   const venue = await Venue.findOne({ user: req.user.id });
@@ -272,29 +266,41 @@ export const deleteVenueProfile = asyncHandler(async (req, res, next) => {
   });
 });
 
-
 export const getVenuesByCity = asyncHandler(async (req, res, next) => {
-  const { city } = req.query;
+  const { state, city } = req.query;
   const query = { isActive: true };
+
+  if (state) {
+    query.state = state;
+  }
 
   if (city && city !== "all") {
     query.city = city.toLowerCase();
+  } 
+  else if (state) {
+    const stateCities = STATE_CITY_MAPPING[state] || [];
+    query.city = { $in: stateCities };
   }
 
   const venues = await Venue.find(query)
     .populate("user", "username email subscriptionPlan")
     .sort({ venueName: 1 });
 
-  const safeVenues = venues.map((v) => {
-    const ownerPlan = v.user?.subscriptionPlan || "free";
-    const rules =
-    SUBSCRIPTION_RULES.venue[ownerPlan] || SUBSCRIPTION_RULES.venue.free;
-    return sanitizeVenueForPlan(v, rules);
-  });
+  const rules = SUBSCRIPTION_RULES.venue.free;
+  const safeVenues = venues.map((v) =>
+    sanitizeVenueForPlan(v, rules)
+  );
 
   res.status(200).json({
     success: true,
-    data: { venues: safeVenues },
+    data: {
+      venues: safeVenues,
+      filters: {
+        currentState: state || "all",
+        currentCity: city || "all",
+        availableStates: Object.keys(STATE_CITY_MAPPING),
+      },
+    },
   });
 });
 
@@ -305,10 +311,7 @@ export const getVenue = asyncHandler(async (req, res, next) => {
 
   if (!venue) throw new ErrorResponse("Venue not found", 404);
 
-  const ownerPlan = venue.user?.subscriptionPlan || "free";
-  const rules =
-    SUBSCRIPTION_RULES.venue[ownerPlan] || SUBSCRIPTION_RULES.venue.free;
-
+  const rules = SUBSCRIPTION_RULES.venue.free;
   const safeVenue = sanitizeVenueForPlan(venue, rules);
 
   res.status(200).json({
@@ -317,8 +320,6 @@ export const getVenue = asyncHandler(async (req, res, next) => {
   });
 });
 
-
-
 // GET My Venue Profile
 export const getMyVenueProfile = asyncHandler(async (req, res) => {
   const venue = await Venue.findOne({ user: req.user.id })
@@ -326,7 +327,8 @@ export const getMyVenueProfile = asyncHandler(async (req, res) => {
 
   if (!venue) throw new ErrorResponse("Venue profile not found", 404);
 
-  const safeVenue = sanitizeVenueForPlan(venue, req.rules);
+  const rules = SUBSCRIPTION_RULES.venue.free;
+  const safeVenue = sanitizeVenueForPlan(venue, rules);
 
   res.status(200).json({ success: true, data: { venue: safeVenue } });
 });
@@ -344,17 +346,35 @@ export const updateVenueProfile = asyncHandler(async (req, res, next) => {
 
   const user = req.user;
 
-  const rules =
-    SUBSCRIPTION_RULES.venue[user.subscriptionPlan] ||
-    SUBSCRIPTION_RULES.venue.free;
+  const rules = SUBSCRIPTION_RULES.venue.free;
 
   let venue = await Venue.findOne({ user: user.id });
   if (!venue) return next(new ErrorResponse("Venue profile not found", 404));
 
-  const existingPhotos = venue.photos || [];
+  // NEW: State-City validation
+  const { state, city } = req.body;
 
-  // normalize removedPhotos
+  if (state || city) {
+    const checkState = state || venue.state;
+    const checkCity = city ? city.toLowerCase() : venue.city;
+
+    const validCity = await StateCity.findOne({
+      state: checkState,
+      city: checkCity,
+      isActive: true
+    });
+
+    if (!validCity) {
+      return next(new ErrorResponse(
+        `City "${checkCity}" is not valid for state "${checkState}"`,
+        400
+      ));
+    }
+  }
+
+  const existingPhotos = venue.photos || [];
   let removedPhotos = [];
+
   if (req.body.removedPhotos) {
     removedPhotos = Array.isArray(req.body.removedPhotos)
       ? req.body.removedPhotos
@@ -379,51 +399,36 @@ export const updateVenueProfile = asyncHandler(async (req, res, next) => {
         console.log("Cloudinary delete failed:", filename);
       }
     }
-  } else {
-    const attemptedNewPhotos = extractUploadedPhotos(req);
-    if (attemptedNewPhotos.length > 0) {
-      return next(
-        new ErrorResponse("Free plan users cannot upload photos. Upgrade to Pro.", 403)
-      );
-    }
   }
 
   const {
     venueName,
-    city,
     address,
     seatingCapacity,
     biography,
     openHours,
     openDays,
+    phone,
+    website,
   } = req.body;
 
   const updateData = {
-    venueName,
-    city: (city || venue.city).toLowerCase(),
-
-    address: rules.address ? address : venue.address,
-
-    seatingCapacity: rules.seatingCapacity
-      ? Number.parseInt(seatingCapacity || "0")
-      : venue.seatingCapacity,
-
-    biography: rules.biography ? biography : venue.biography,
-    openHours: rules.openHours ? openHours : venue.openHours,
-    openDays: rules.openHours ? openDays : venue.openDays,
-
+    venueName: venueName || venue.venueName,
+    // NEW: Update state and city
+    state: state || venue.state,
+    city: city ? city.toLowerCase() : venue.city,
+    address: address || venue.address,
+    seatingCapacity: seatingCapacity ? Number.parseInt(seatingCapacity || "0") : venue.seatingCapacity,
+    biography: biography || venue.biography,
+    openHours: openHours || venue.openHours,
+    openDays: openDays || venue.openDays,
+    // NEW: Phone and website
+    phone: phone !== undefined ? phone : venue.phone,
+    website: website !== undefined ? website : venue.website,
     photos: mergedPhotos,
-
     photosLimit: rules.photos,
-    showLimit: Number.isFinite(rules.shows) ? rules.shows : venue.showLimit,
-    featuresLocked: !(
-      rules.biography ||
-      rules.openHours ||
-      rules.photos > 0 ||
-      rules.address ||
-      rules.seatingCapacity
-    ),
-
+    showLimit: rules.shows,
+    featuresLocked: false,
     updatedAt: Date.now(),
   };
 
@@ -436,17 +441,14 @@ export const updateVenueProfile = asyncHandler(async (req, res, next) => {
 
   return res.status(200).json({
     success: true,
-    message: `Venue profile updated successfully (${user.subscriptionPlan.toUpperCase()} Plan)`,
+    message: `Venue profile updated successfully`,
     data: { venue: safeVenue },
   });
 });
 
-
-
-
 // GET Venues for Admin (with pagination and filters)
 export const getVenuesForAdmin = asyncHandler(async (req, res, next) => {
-  const { page = 1, limit = 10, search = "", status = "all", city = "", plan = "all" } = req.query;
+  const { page = 1, limit = 10, search = "", status = "all", city = "" } = req.query;
 
   // Build query
   let query = {};
@@ -471,13 +473,6 @@ export const getVenuesForAdmin = asyncHandler(async (req, res, next) => {
   // City filter
   if (city) {
     query.city = city.toLowerCase();
-  }
-
-  // Plan filter - via user subscription plan
-  if (plan !== "all") {
-    const users = await User.find({ subscriptionPlan: plan }).select("_id");
-    const userIds = users.map(u => u._id);
-    query.user = { $in: userIds };
   }
 
   const skip = (Number(page) - 1) * Number(limit);
@@ -553,7 +548,7 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
   if (city && city.toLowerCase() !== venue.city) {
     const newCity = city.toLowerCase();
     changes.push(`City changed from ${formatCityName(venue.city)} to ${formatCityName(newCity)}`);
-    
+
     try {
       // Get next available color for the new city
       const newColor = await ColorAssigner.getNextAvailableColor(newCity);
@@ -564,7 +559,7 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
       // If color assignment fails, use default color
       venue.colorCode = "#000000";
     }
-    
+
     venue.city = newCity;
   }
 
@@ -572,7 +567,7 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
   if (isActive === true && venue.verifiedOrder === 0) {
     try {
       const assignedColor = await ColorAssigner.getNextAvailableColor(venue.city);
-      
+
       // Get verified count for this city
       const verifiedCount = await Venue.countDocuments({
         city: venue.city,
@@ -581,7 +576,7 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
 
       venue.verifiedOrder = verifiedCount + 1;
       venue.colorCode = assignedColor;
-      
+
       changes.push(`Venue verified (order: ${venue.verifiedOrder}) with color: ${assignedColor}`);
     } catch (error) {
       console.error("Error in verification color assignment:", error);
@@ -591,7 +586,7 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
         verifiedOrder: { $gt: 0 },
       });
       venue.verifiedOrder = verifiedCount + 1;
-      
+
       // Use ColorAssigner's city colors array
       const cityColors = ColorAssigner.CITY_COLORS[venue.city] || ColorAssigner.CITY_COLORS.mobile;
       const colorIndex = (venue.verifiedOrder - 1) % cityColors.length;
@@ -604,7 +599,7 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
     try {
       // Validate color for this city
       const isValidColor = await ColorAssigner.validateColorForCity(colorCode, venue.city);
-      
+
       if (!isValidColor) {
         return next(
           new ErrorResponse(
@@ -617,14 +612,14 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
 
       // Check if color is already taken by another venue in same city
       const isAvailable = await ColorAssigner.isColorAvailable(colorCode, venue.city, id);
-      
+
       if (!isAvailable) {
         const existingVenue = await Venue.findOne({
           city: venue.city,
           colorCode: colorCode,
           _id: { $ne: id }
         });
-        
+
         return next(
           new ErrorResponse(
             `Color ${colorCode} is already assigned to "${existingVenue.venueName}" ` +
@@ -653,11 +648,11 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
     if (verifiedOrder < 0) {
       return next(new ErrorResponse("Verification order must be 0 or positive", 400));
     }
-    
+
     // If setting verifiedOrder > 0, ensure venue is active
     if (verifiedOrder > 0) {
       venue.isActive = true;
-      
+
       // If no color assigned yet, get one
       if (!venue.colorCode) {
         try {
@@ -669,7 +664,7 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
         }
       }
     }
-    
+
     venue.verifiedOrder = parseInt(verifiedOrder);
     changes.push(`Verification order set to ${venue.verifiedOrder}`);
   }
@@ -677,11 +672,11 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
   // DEACTIVATION HANDLING - Reset verification if deactivating
   if (isActive !== undefined) {
     venue.isActive = isActive;
-    
+
     if (!isActive && venue.verifiedOrder > 0) {
       changes.push("Venue deactivated (verification data preserved)");
     }
-    
+
     if (isActive) {
       changes.push("Venue activated");
     }
@@ -709,10 +704,8 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
         { venue: venue._id },
         { $set: { color: venue.colorCode } }
       );
-      
+
       changes.push(`Updated ${updateResult.modifiedCount} events with new color`);
-      
-      // console.log(`Color sync: Updated ${updateResult.modifiedCount} events for ${venue.venueName}`);
     } catch (error) {
       console.error("Error updating event colors:", error);
       changes.push("Warning: Failed to update event colors");
@@ -750,11 +743,11 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
       summary: {
         totalChanges: changes.length,
         upcomingEvents: upcomingEventsCount,
-        verificationStatus: venue.verifiedOrder > 0 ? 
-          `Verified (#${venue.verifiedOrder} in ${formatCityName(venue.city)})` : 
+        verificationStatus: venue.verifiedOrder > 0 ?
+          `Verified (#${venue.verifiedOrder} in ${formatCityName(venue.city)})` :
           "Not verified",
-        colorStatus: venue.colorCode ? 
-          `Assigned: ${venue.colorCode}` : 
+        colorStatus: venue.colorCode ?
+          `Assigned: ${venue.colorCode}` :
           "No color assigned",
       }
     },
@@ -776,7 +769,7 @@ export const verifyVenueByAdmin = asyncHandler(async (req, res, next) => {
 
   try {
     const assignedColor = await ColorAssigner.getNextAvailableColor(venue.city);
-    
+
     // Update venue
     const verifiedCount = await Venue.countDocuments({
       city: venue.city,
@@ -786,15 +779,15 @@ export const verifyVenueByAdmin = asyncHandler(async (req, res, next) => {
     venue.verifiedOrder = verifiedCount + 1;
     venue.isActive = true;
     venue.colorCode = assignedColor;
-    
+
     await venue.save();
-    
+
     res.status(200).json({
       success: true,
       message: "Venue verified successfully",
       data: { venue },
     });
-    
+
   } catch (error) {
     next(new ErrorResponse("Failed to assign color: " + error.message, 500));
   }
@@ -832,6 +825,203 @@ export const deleteVenueByAdmin = asyncHandler(async (req, res, next) => {
   });
 });
 
+
+// Check subscription status (helper function)
+export const checkSubscriptionStatus = (req, res, next) => {
+  try {
+    const user = req.user;
+    
+    const status = {
+      systemWide: {
+        subscriptionsEnabled: isSubscriptionEnabled(),
+        forceFree: SUBSCRIPTION_CONFIG.SYSTEM_WIDE.FORCE_FREE_FOR_ALL,
+        defaultPlan: SUBSCRIPTION_CONFIG.SYSTEM_WIDE.DEFAULT_PLAN,
+      },
+      user: {
+        currentPlan: user?.subscriptionPlan || "free",
+        effectivePlan: SUBSCRIPTION_CONFIG.SYSTEM_WIDE.FORCE_FREE_FOR_ALL ? "free" : (user?.subscriptionPlan || "free"),
+        rules: getPlanRules(user?.userType || "venue", user?.subscriptionPlan || "free"),
+      },
+      features: {
+        marketplace: SUBSCRIPTION_CONFIG.FEATURES.ENABLE_MARKETPLACE,
+        payments: SUBSCRIPTION_CONFIG.FEATURES.ENABLE_PAYMENTS,
+        analytics: SUBSCRIPTION_CONFIG.FEATURES.ENABLE_ANALYTICS,
+        maxPhotos: SUBSCRIPTION_CONFIG.FEATURES.MAX_PHOTOS,
+        maxShows: SUBSCRIPTION_CONFIG.FEATURES.MAX_SHOWS_PER_MONTH,
+      },
+      ui: SUBSCRIPTION_CONFIG.UI,
+    };
+    
+    // Attach to request for use in other middleware
+    req.subscriptionStatus = status;
+    
+    if (next) {
+      next();
+    } else {
+      return status;
+    }
+  } catch (error) {
+    console.error("Subscription status check error:", error);
+    if (next) {
+      next();
+    }
+  }
+};
+
+
+export const getVenuesByState = asyncHandler(async (req, res, next) => {
+  const { state } = req.query;
+
+  if (!state) {
+    return next(new ErrorResponse("State parameter is required", 400));
+  }
+
+  // Validate state
+  if (!STATE_CITY_MAPPING[state]) {
+    return next(new ErrorResponse(`Invalid state: "${state}"`, 400));
+  }
+
+  // Get venues in this state
+  const venues = await Venue.find({
+    state: state,
+    isActive: true
+  })
+    .select("venueName state city address seatingCapacity photos biography openHours openDays phone website isActive verifiedOrder colorCode")
+    .populate("user", "username email subscriptionPlan")
+    .sort({ verifiedOrder: 1, venueName: 1 });
+
+  // Group by city
+  const venuesByCity = {};
+  venues.forEach(venue => {
+    const city = venue.city;
+    if (!venuesByCity[city]) {
+      venuesByCity[city] = [];
+    }
+    venuesByCity[city].push(venue);
+  });
+
+  // Get cities for this state from mapping
+  const cities = STATE_CITY_MAPPING[state] || [];
+
+  res.status(200).json({
+    success: true,
+    data: {
+      state,
+      totalVenues: venues.length,
+      cities: cities.map(city => ({
+        name: city,
+        displayName: formatCityName(city),
+        venueCount: venuesByCity[city]?.length || 0,
+        venues: venuesByCity[city] || []
+      }))
+    }
+  });
+});
+
+
+export const getVenuesStatesSummary = asyncHandler(async (req, res, next) => {
+  try {
+    // Aggregate venue counts by state
+    const stateSummary = await Venue.aggregate([
+      {
+        $match: {
+          isActive: true
+        }
+      },
+      {
+        $group: {
+          _id: "$state",
+          totalVenues: { $sum: 1 },
+          cities: { $addToSet: "$city" },
+          verifiedVenues: {
+            $sum: { $cond: [{ $gt: ["$verifiedOrder", 0] }, 1, 0] }
+          }
+        }
+      },
+      {
+        $sort: { totalVenues: -1 }
+      }
+    ]);
+
+    // Format the response
+    const formattedSummary = stateSummary.map(state => {
+      const stateName = state._id;
+      const availableCities = STATE_CITY_MAPPING[stateName] || [];
+      
+      return {
+        state: stateName,
+        totalVenues: state.totalVenues,
+        verifiedVenues: state.verifiedVenues,
+        availableCities: availableCities.map(city => ({
+          name: city,
+          displayName: formatCityName(city),
+          venueCount: state.cities.filter(c => c === city).length
+        })),
+        hasVenues: state.totalVenues > 0
+      };
+    });
+
+    // Filter only states that exist in STATE_CITY_MAPPING
+    const validStates = formattedSummary.filter(state => 
+      STATE_CITY_MAPPING[state.state]
+    );
+
+    // Add states with no venues but in mapping
+    const allStates = Object.keys(STATE_CITY_MAPPING);
+    const existingStates = validStates.map(state => state.state);
+    
+    const statesWithNoVenues = allStates
+      .filter(state => !existingStates.includes(state))
+      .map(state => ({
+        state: state,
+        totalVenues: 0,
+        verifiedVenues: 0,
+        availableCities: STATE_CITY_MAPPING[state].map(city => ({
+          name: city,
+          displayName: formatCityName(city),
+          venueCount: 0
+        })),
+        hasVenues: false
+      }));
+
+    const completeSummary = [...validStates, ...statesWithNoVenues]
+      .sort((a, b) => {
+        // Sort by total venues (descending), then by state name
+        if (b.totalVenues !== a.totalVenues) {
+          return b.totalVenues - a.totalVenues;
+        }
+        return a.state.localeCompare(b.state);
+      });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        summary: completeSummary,
+        totalStates: completeSummary.length,
+        totalVenues: completeSummary.reduce((sum, state) => sum + state.totalVenues, 0),
+        totalVerifiedVenues: completeSummary.reduce((sum, state) => sum + state.verifiedVenues, 0)
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+
+// ✅ Subscription status endpoint
+export const getSubscriptionStatus = asyncHandler(async (req, res, next) => {
+  const status = checkSubscriptionStatus(req, res);
+  
+  res.status(200).json({
+    success: true,
+    data: status
+  });
+});
+
+
+//
+// Now Just FREE plan 
+/*
 export const changeVenuePlanByAdmin = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
   const { subscriptionPlan, notifyUser } = req.body;
@@ -852,9 +1042,6 @@ export const changeVenuePlanByAdmin = asyncHandler(async (req, res, next) => {
     );
   }
 
-  /* =========================
-     PRO PLAN + ONE-TIME TRIAL
-  ========================= */
   if (subscriptionPlan === "pro") {
     const trialDays = SUBSCRIPTION_RULES.venue.pro.trialDays || 0;
 
@@ -913,3 +1100,4 @@ export const changeVenuePlanByAdmin = asyncHandler(async (req, res, next) => {
     data: { venue: updatedVenue },
   });
 });
+*/

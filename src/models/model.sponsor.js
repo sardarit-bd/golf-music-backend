@@ -16,5 +16,11 @@ const sponsorSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Use partialFilterExpression for better uniqueness control
+sponsorSchema.index({ isPageText: 1 }, { 
+  unique: true, 
+  partialFilterExpression: { isPageText: true }
+});
+
 const Sponsor = mongoose.model("Sponsor", sponsorSchema);
 export default Sponsor;
