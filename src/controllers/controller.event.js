@@ -10,7 +10,7 @@ const validCities = ["new orleans", "biloxi", "mobile", "pensacola"];
 
 export const parseEventDate = (dateString, timeString) => {
   try {
-    console.log("Parsing date:", dateString, "time:", timeString);
+    // console.log("Parsing date:", dateString, "time:", timeString);
 
     // Validate date format (MM/DD/YYYY)
     const dateRegex = /^(0?[1-9]|1[0-2])\/(0?[1-9]|[12][0-9]|3[01])\/\d{4}$/;
@@ -63,11 +63,11 @@ export const parseEventDate = (dateString, timeString) => {
     // Create dateOnly (UTC date without time)
     const dateOnly = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
 
-    console.log("Parsed results:", {
-      fullDate: utcDate,
-      dateOnly: dateOnly,
-      timeString: timeString
-    });
+    // console.log("Parsed results:", {
+    //   fullDate: utcDate,
+    //   dateOnly: dateOnly,
+    //   timeString: timeString
+    // });
 
     return {
       fullDate: utcDate,
@@ -118,7 +118,6 @@ const formatDateForDisplay = (utcDate) => {
 
 
 // CREATE EVENT - UPDATED WITH STATE SUPPORT
-// CREATE EVENT - FIXED VERSION
 export const createEvent = async (req, res, next) => {
   try {
     const errors = validationResult(req);
@@ -129,7 +128,7 @@ export const createEvent = async (req, res, next) => {
     }
 
     const { artistBandName, time, date, description } = req.body;
-    console.log("Creating event with data:", { artistBandName, time, date, description });
+    // console.log("Creating event with data:", { artistBandName, time, date, description });
 
     const venue = await Venue.findOne({ user: req.user.id });
     if (!venue) {
@@ -141,12 +140,12 @@ export const createEvent = async (req, res, next) => {
       );
     }
 
-    console.log("Found venue:", {
-      name: venue.venueName,
-      state: venue.state,
-      city: venue.city,
-      colorCode: venue.colorCode
-    });
+    // console.log("Found venue:", {
+    //   name: venue.venueName,
+    //   state: venue.state,
+    //   city: venue.city,
+    //   colorCode: venue.colorCode
+    // });
 
     // Validate venue's state and city
     const stateCities = STATE_CITY_MAPPING[venue.state] || [];
@@ -187,7 +186,7 @@ export const createEvent = async (req, res, next) => {
 
     // Parse date with correct timezone handling
     const parsedDate = parseEventDate(date, time);
-    console.log("Parsed date:", parsedDate);
+    // console.log("Parsed date:", parsedDate);
 
     const imageData = req.file
       ? { url: req.file.path, filename: req.file.filename }
@@ -196,24 +195,32 @@ export const createEvent = async (req, res, next) => {
     // Create event object with all required fields
     const eventData = {
       artistBandName,
-      eventTime: time, // Store the original time string
+      eventTime: time,
       date: parsedDate.fullDate,
-      dateOnly: parsedDate.dateOnly, // Set dateOnly explicitly
+      dateOnly: parsedDate.dateOnly,
       description: description || "",
       image: imageData,
       venue: venue._id,
-      state: venue.state, // Get state from venue
-      city: venue.city, // Get city from venue
+      state: venue.state,
+      city: venue.city,
       color: venue.colorCode || "#000000",
     };
 
-    console.log("Creating event with data:", eventData);
+    // console.log("Creating event with data:", eventData);
 
     // Create event
     const event = await Event.create(eventData);
 
     // Populate venue details
     await event.populate("venue", "venueName state city address colorCode");
+
+    // Also update venue's shows array
+    venue.shows.push({
+      artist: artistBandName,
+      date: parsedDate.fullDate,
+      time: time,
+    });
+    await venue.save();
 
     res.status(201).json({
       success: true,
@@ -223,7 +230,6 @@ export const createEvent = async (req, res, next) => {
   } catch (error) {
     console.error("Create event error:", error);
 
-    // Handle specific Mongoose validation errors
     if (error.name === 'ValidationError') {
       const errors = Object.values(error.errors).map(err => ({
         field: err.path,
@@ -775,23 +781,26 @@ export const bulkUpdateEventColors = async (req, res, next) => {
       return next(new ErrorResponse("Venue not found", 404));
     }
 
-    // ONLY update venue color
+    // Update venue color
     venue.colorCode = colorCode;
     await venue.save();
 
-    // Count events for info only
-    const totalEvents = await Event.countDocuments({ venue: venueId });
+    // Update all events for this venue with new color
+    const updateResult = await Event.updateMany(
+      { venue: venueId },
+      { $set: { color: colorCode } }
+    );
 
     res.status(200).json({
       success: true,
-      message: `Venue color updated successfully`,
+      message: `Venue color updated successfully. ${updateResult.modifiedCount} events updated.`,
       data: {
         venue: {
           id: venue._id,
           name: venue.venueName,
           colorCode: venue.colorCode,
         },
-        affectedEvents: totalEvents
+        affectedEvents: updateResult.modifiedCount
       }
     });
   } catch (error) {

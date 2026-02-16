@@ -114,7 +114,6 @@ const deleteMultipleFiles = async (urls) => {
   }
 
   const successful = results.filter(r => r.success).length;
-  console.log(`✅ Deleted ${successful}/${urls.length} files`);
 
   return {
     success: successful === urls.length,
@@ -180,8 +179,6 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
     }
   }
 
-  console.log('📸 Photos to delete:', photosToDelete.length);
-  console.log('🎵 Audios to delete:', audiosToDelete.length);
 
   /* =========================
      DELETE FILES FROM CLOUDINARY
@@ -316,7 +313,6 @@ export const createOrUpdateProfile = asyncHandler(async (req, res, next) => {
 
   const safeArtist = sanitizeArtistForPlan(updatedArtist, rules);
 
-  console.log('✅ Profile saved. Photos:', mergedPhotos.length, 'Audios:', mergedAudios.length);
 
   return res.status(200).json({
     success: true,
@@ -420,7 +416,6 @@ export const deleteArtistProfile = asyncHandler(async (req, res, next) => {
     ...(artist.mp3Files?.map(a => a.url) || [])
   ];
 
-  console.log(`🗑️ Deleting ${filesToDelete.length} files...`);
 
   // Delete all files from Cloudinary
   if (filesToDelete.length > 0) {
@@ -492,7 +487,6 @@ export const deleteArtistByAdmin = asyncHandler(async (req, res, next) => {
     ...(artist.mp3Files?.map(a => a.url) || [])
   ];
 
-  console.log(`🗑️ Deleting ${filesToDelete.length} files...`);
 
   // Delete all files from Cloudinary
   if (filesToDelete.length > 0) {

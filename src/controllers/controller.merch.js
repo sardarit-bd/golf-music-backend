@@ -506,8 +506,6 @@ export const handleStripeWebhook = asyncHandler(async (req, res, next) => {
       order.paymentStatus = "paid";
       await order.save();
 
-      console.log("Order updated successfully");
-
       // Send email to buyer
       await sendOrderConfirmationEmail(order.buyer.email, order);
 

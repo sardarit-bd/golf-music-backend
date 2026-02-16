@@ -1,10 +1,10 @@
+// utils/colorAssigner.js
 import mongoose from "mongoose";
 import { STATE_CITY_MAPPING } from "./constants.js";
 
-
 // Extended color palettes for ALL cities
 const CITY_COLORS = {
-  // Existing cities (keep your original colors)
+  // Existing cities
   'new orleans': [
     "#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7",
     "#DDA0DD", "#98D8C8", "#F7DC6F", "#BB8FCE", "#85C1E9",
@@ -30,7 +30,7 @@ const CITY_COLORS = {
     "#5254A3", "#8CA252", "#BD9E39", "#AD494A", "#A55194"
   ],
   
-  // NEW: Colors for additional Louisiana cities
+  // Louisiana cities
   'baton rouge': [
     "#FF5733", "#33FF57", "#3357FF", "#F3FF33", "#FF33F3",
     "#33FFF3", "#FF8333", "#8F33FF", "#33FF8F", "#FF3383",
@@ -62,7 +62,7 @@ const CITY_COLORS = {
     "#D4A5A5", "#9C89B8", "#F0A6CA", "#B8BEDD", "#EFC3E6"
   ],
   
-  // NEW: Colors for additional Mississippi cities
+  // Mississippi cities
   'jackson': [
     "#012A4A", "#013A63", "#01497C", "#014F86", "#2A6F97",
     "#2C7DA0", "#468FAF", "#61A5C2", "#89C2D9", "#A9D6E5",
@@ -88,7 +88,7 @@ const CITY_COLORS = {
     "#D8BFAA", "#BC8DA0", "#A06B9A", "#845A94", "#68498E"
   ],
   
-  // NEW: Colors for additional Alabama cities
+  // Alabama cities
   'birmingham': [
     "#9B2226", "#AE2012", "#BB3E03", "#CA6702", "#EE9B00",
     "#E9D8A6", "#94D2BD", "#0A9396", "#005F73", "#001219",
@@ -108,7 +108,7 @@ const CITY_COLORS = {
     "#936639", "#A68A64", "#B6AD90", "#C2C5AA", "#A4AC86"
   ],
   
-  // NEW: Colors for additional Florida cities
+  // Florida cities
   'tampa': [
     "#03045E", "#023E8A", "#0077B6", "#0096C7", "#00B4D8",
     "#48CAE4", "#90E0EF", "#ADE8F4", "#CAF0F8", "#F8F9FA",
@@ -171,6 +171,89 @@ export class ColorAssigner {
   static isValidCityForState(state, city) {
     const stateCities = STATE_CITY_MAPPING[state] || [];
     return stateCities.includes(city.toLowerCase());
+  }
+  
+  static isValidColorForCity(color, city) {
+    const cityColors = this.getCityColors(city);
+    return cityColors.includes(color);
+  }
+  
+  static async isColorAvailable(color, city, excludeVenueId = null, state = null) {
+    try {
+      const Venue = mongoose.model('Venue');
+      
+      const query = {
+        city: city.toLowerCase(),
+        colorCode: color,
+        _id: { $ne: excludeVenueId }
+      };
+      
+      if (state) {
+        query.state = state;
+      }
+      
+      const existingVenue = await Venue.findOne(query);
+      return !existingVenue;
+      
+    } catch (error) {
+      console.error('Error checking color availability:', error);
+      return false;
+    }
+  }
+  
+  static async getAvailableColorsForCity(city, excludeVenueId = null, state = null) {
+    try {
+      const Venue = mongoose.model('Venue');
+      
+      const query = {
+        city: city.toLowerCase(),
+        colorCode: { $exists: true, $ne: null }
+      };
+      
+      if (state) {
+        query.state = state;
+      }
+      
+      const usedColors = await Venue.find(query).distinct('colorCode');
+      
+      const colorUsage = await Venue.find({
+        city: city.toLowerCase(),
+        colorCode: { $in: usedColors }
+      }).select('venueName colorCode');
+      
+      const colorUsageMap = {};
+      colorUsage.forEach(venue => {
+        colorUsageMap[venue.colorCode] = venue.venueName;
+      });
+      
+      const cityColors = this.getCityColors(city);
+      const availableColors = cityColors.filter(
+        color => !usedColors.includes(color)
+      );
+      
+      return {
+        allColors: cityColors,
+        usedColors: usedColors,
+        availableColors: availableColors,
+        totalColors: cityColors.length,
+        usedCount: usedColors.length,
+        availableCount: availableColors.length,
+        colorUsage: colorUsageMap
+      };
+      
+    } catch (error) {
+      console.error('Error getting available colors:', error);
+      return {
+        allColors: this.getCityColors(city),
+        usedColors: [],
+        availableColors: this.getCityColors(city),
+        totalColors: this.getCityColors(city).length,
+        usedCount: 0,
+        availableCount: this.getCityColors(city).length,
+        colorUsage: {},
+        error: error.message
+      };
+    }
   }
   
   // Get next available color for a venue in a city
