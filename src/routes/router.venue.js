@@ -1,4 +1,3 @@
-// routes/venue.routes.js
 import express from "express";
 import { protect, authorize } from "../middleware/auth.js";
 import { validateVenueProfile } from "../middleware/validation.js";
@@ -15,35 +14,31 @@ import {
   getVenuesForAdmin,
   updateVenueByAdmin,
   updateVenueProfile,
-  getVenuesByState, // ✅ নতুন API
-  getVenuesStatesSummary, // ✅ নতুন API
-  checkSubscriptionStatus, // ✅ Subscription status check
-  getSubscriptionStatus, // ✅ Subscription status endpoint
+  getVenuesByState,
+  getVenuesStatesSummary,
+  checkSubscriptionStatus,
+  getSubscriptionStatus,
+  getAvailableColorsForCity,
 } from "../controllers/controllers.venue.js";
 import { withEntitlements } from "../middleware/withEntitlements.js";
-import { subscriptionCheck, featureCheck } from "../middleware/subscriptionMiddleware.js";
 
 const router = express.Router();
 
-// ✅ Public routes
+// Public routes
 router.get("/calendar", getCalendarByCity);
 
+// Location-based categorization routes
+router.get("/by-state", getVenuesByState);
+router.get("/states-summary", getVenuesStatesSummary);
 
-// ✅ Location-based categorization routes
-router.get("/by-state", getVenuesByState); // GET /api/venues/by-state?state=Louisiana
-router.get("/states-summary", getVenuesStatesSummary); // GET /api/venues/states-summary
-
-// ✅ Subscription middleware (optional for all protected routes)
-// router.use(subscriptionCheck);
-
-// ✅ Subscription status endpoint
+// Subscription status endpoint
 router.get("/subscription/status", 
   protect, 
   authorize("venue", "artist", "photographer", "fan", "journalist"), 
   getSubscriptionStatus
 );
 
-// ✅ Venue Self Routes
+// Venue Self Routes
 router.get("/profile", 
   protect, 
   authorize("venue"), 
@@ -51,24 +46,20 @@ router.get("/profile",
   getMyVenueProfile
 );
 
-
 router.get("/", getVenuesByCity);
 router.get("/:id", getVenue);
 
-
-// ✅ Add Show with subscription check
+// Add Show with subscription check
 router.post(
   "/add-show",
   protect,
   authorize("venue"),
   uploadEventImage,
   handleUploadErrors,
-  // subscriptionCheck, // Uncomment if needed
-  // featureCheck('shows'), // Uncomment if needed
   addShow
 );
 
-// ✅ Create or Update Venue Profile
+// Create or Update Venue Profile
 router.post(
   "/profile",
   protect,
@@ -77,11 +68,10 @@ router.post(
   uploadVenuePhotos,
   handleUploadErrors,
   validateVenueProfile,
-  // subscriptionCheck, // Uncomment if needed
   createOrUpdateProfile
 );
 
-// ✅ Explicit Update
+// Explicit Update
 router.put(
   "/profile",
   protect,
@@ -90,11 +80,10 @@ router.put(
   uploadVenuePhotos,
   handleUploadErrors,
   validateVenueProfile,
-  // subscriptionCheck, // Uncomment if needed
   updateVenueProfile
 );
 
-// ✅ Delete My Venue
+// Delete My Venue
 router.delete("/profile", 
   protect, 
   authorize("venue"), 
@@ -105,22 +94,27 @@ router.delete("/profile",
 // ================================
 // ADMIN ROUTES
 // ================================
+
+// Color management routes (Admin only)
+router.get(
+  "/admin/colors/available",
+  protect,
+  authorize("admin"),
+  getAvailableColorsForCity
+);
+
 router.get("/admin/venues", 
   protect, 
   authorize("admin"), 
   getVenuesForAdmin
 );
 
+//  Venue update with manual color support
 router.put("/admin/:id", 
   protect, 
   authorize("admin"), 
   updateVenueByAdmin
 );
-
-// ✅ Admin subscription control endpoints (if needed later)
-// router.get("/admin/subscription/config", protect, authorize("admin"), getSubscriptionConfig);
-// router.put("/admin/subscription/config", protect, authorize("admin"), updateSubscriptionConfig);
-// router.put("/admin/:id/plan", protect, authorize("admin"), changeVenuePlanByAdmin);
 
 router.delete("/admin/:id", 
   protect, 

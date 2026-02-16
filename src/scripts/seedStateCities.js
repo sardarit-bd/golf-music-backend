@@ -46,8 +46,6 @@ const seedStateCities = async () => {
         // Insert all
         await StateCity.insertMany(stateCities);
 
-        console.log(`✅ Seeded ${stateCities.length} state-city entries`);
-
         // Verify Florida cities
         const floridaCities = await StateCity.find({ state: 'Florida' });
         console.log('\nFlorida cities in database:');

@@ -517,6 +517,7 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
   const {
     venueName,
     city,
+    state,
     address,
     seatingCapacity,
     biography,
@@ -528,6 +529,7 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
     colorCode,
     verifiedOrder,
   } = req.body;
+
 
   let venue = await Venue.findById(id).populate("user");
 
@@ -544,33 +546,83 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
     colorCode: venue.colorCode,
   };
 
+  if (colorCode !== undefined) {
+    
+    const isValidColor = /^#[0-9A-F]{6}$/i.test(colorCode);
+    if (!isValidColor) {
+      return next(new ErrorResponse(`Invalid color format: ${colorCode}. Must be hex color like #FF0000`, 400));
+    }
+    
+    venue.colorCode = colorCode;
+    changes.push(`Color updated from ${oldValues.colorCode || 'none'} to ${colorCode}`);
+  }
+
   // CITY CHANGE HANDLING - If city changes, assign new color from that city's palette
   if (city && city.toLowerCase() !== venue.city) {
     const newCity = city.toLowerCase();
     changes.push(`City changed from ${formatCityName(venue.city)} to ${formatCityName(newCity)}`);
 
     try {
-      // Get next available color for the new city
-      const newColor = await ColorAssigner.getNextAvailableColor(newCity);
-      venue.colorCode = newColor;
-      changes.push(`Color reassigned to ${newColor} for new city`);
+      if (colorCode) {
+        const isValidColor = ColorAssigner.isValidColorForCity(colorCode, newCity);
+        
+        if (!isValidColor) {
+          return next(
+            new ErrorResponse(
+              `Color ${colorCode} is not valid for ${formatCityName(newCity)}. ` +
+              `Please choose from the city's color palette.`,
+              400
+            )
+          );
+        }
+        
+        const isAvailable = await ColorAssigner.isColorAvailable(colorCode, newCity, id, venue.state);
+        
+        if (!isAvailable) {
+          const existingVenue = await Venue.findOne({
+            city: newCity,
+            colorCode: colorCode,
+            _id: { $ne: id }
+          });
+          
+          return next(
+            new ErrorResponse(
+              `Color ${colorCode} is already taken by "${existingVenue?.venueName || 'another venue'}" ` +
+              `in ${formatCityName(newCity)}. Choose a different color.`,
+              400
+            )
+          );
+        }
+        
+        venue.colorCode = colorCode;
+        changes.push(`Color manually set to ${colorCode} for new city`);
+      } else {
+        const newColor = await ColorAssigner.getNextAvailableColor(newCity, venue.state);
+        venue.colorCode = newColor;
+        changes.push(`Auto-assigned color ${newColor} for new city`);
+      }
     } catch (error) {
       console.error("Error assigning new city color:", error);
-      // If color assignment fails, use default color
-      venue.colorCode = "#000000";
+      return next(new ErrorResponse("Failed to assign color: " + error.message, 500));
     }
 
     venue.city = newCity;
   }
 
+  if (state && state !== venue.state) {
+    venue.state = state;
+    changes.push(`State changed from ${oldValues.state || 'none'} to ${state}`);
+  }
+
   // VERIFICATION HANDLING - Auto color assign when verifying FIRST time
-  if (isActive === true && venue.verifiedOrder === 0) {
+  if (isActive === true && venue.verifiedOrder === 0 && !venue.colorCode) {
     try {
-      const assignedColor = await ColorAssigner.getNextAvailableColor(venue.city);
+      const assignedColor = await ColorAssigner.getNextAvailableColor(venue.city, venue.state);
 
       // Get verified count for this city
       const verifiedCount = await Venue.countDocuments({
         city: venue.city,
+        state: venue.state,
         verifiedOrder: { $gt: 0 },
       });
 
@@ -583,63 +635,16 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
       // Fallback to sequential color
       const verifiedCount = await Venue.countDocuments({
         city: venue.city,
+        state: venue.state,
         verifiedOrder: { $gt: 0 },
       });
       venue.verifiedOrder = verifiedCount + 1;
-
-      // Use ColorAssigner's city colors array
-      const cityColors = ColorAssigner.CITY_COLORS[venue.city] || ColorAssigner.CITY_COLORS.mobile;
+      
+      // Use fallback color
+      const cityColors = ColorAssigner.getCityColors(venue.city);
       const colorIndex = (venue.verifiedOrder - 1) % cityColors.length;
       venue.colorCode = cityColors[colorIndex];
-    }
-  }
-
-  // MANUAL COLOR ASSIGNMENT - Admin wants to set specific color
-  if (colorCode && colorCode !== venue.colorCode) {
-    try {
-      // Validate color for this city
-      const isValidColor = await ColorAssigner.validateColorForCity(colorCode, venue.city);
-
-      if (!isValidColor) {
-        return next(
-          new ErrorResponse(
-            `Color ${colorCode} is not valid for ${formatCityName(venue.city)}. ` +
-            `Must be one of the 20 city-specific colors.`,
-            400
-          )
-        );
-      }
-
-      // Check if color is already taken by another venue in same city
-      const isAvailable = await ColorAssigner.isColorAvailable(colorCode, venue.city, id);
-
-      if (!isAvailable) {
-        const existingVenue = await Venue.findOne({
-          city: venue.city,
-          colorCode: colorCode,
-          _id: { $ne: id }
-        });
-
-        return next(
-          new ErrorResponse(
-            `Color ${colorCode} is already assigned to "${existingVenue.venueName}" ` +
-            `in ${formatCityName(venue.city)}. Choose a different color.`,
-            400
-          )
-        );
-      }
-
-      const oldColor = venue.colorCode;
-      venue.colorCode = colorCode;
-      changes.push(`Color manually changed from ${oldColor || 'none'} to ${colorCode}`);
-    } catch (error) {
-      console.error("Error in manual color assignment:", error);
-      return next(
-        new ErrorResponse(
-          `Failed to assign color ${colorCode}: ${error.message}`,
-          500
-        )
-      );
+      changes.push(`Fallback color assigned: ${venue.colorCode}`);
     }
   }
 
@@ -656,7 +661,7 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
       // If no color assigned yet, get one
       if (!venue.colorCode) {
         try {
-          const assignedColor = await ColorAssigner.getNextAvailableColor(venue.city);
+          const assignedColor = await ColorAssigner.getNextAvailableColor(venue.city, venue.state);
           venue.colorCode = assignedColor;
           changes.push(`Auto-assigned color ${assignedColor} for verification`);
         } catch (error) {
@@ -669,22 +674,15 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
     changes.push(`Verification order set to ${venue.verifiedOrder}`);
   }
 
-  // DEACTIVATION HANDLING - Reset verification if deactivating
+  // DEACTIVATION HANDLING
   if (isActive !== undefined) {
     venue.isActive = isActive;
-
-    if (!isActive && venue.verifiedOrder > 0) {
-      changes.push("Venue deactivated (verification data preserved)");
-    }
-
-    if (isActive) {
-      changes.push("Venue activated");
-    }
+    changes.push(`Venue ${isActive ? 'activated' : 'deactivated'}`);
   }
 
   // BASIC FIELD UPDATES
   if (venueName) venue.venueName = venueName;
-  if (address) venue.address = address;
+  if (address !== undefined) venue.address = address;
   if (seatingCapacity !== undefined) venue.seatingCapacity = parseInt(seatingCapacity) || 0;
   if (biography !== undefined) venue.biography = biography;
   if (openHours !== undefined) venue.openHours = openHours;
@@ -693,6 +691,7 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
   if (website !== undefined) venue.website = website;
 
   venue.updatedAt = Date.now();
+
 
   // SAVE VENUE
   await venue.save();
@@ -704,7 +703,6 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
         { venue: venue._id },
         { $set: { color: venue.colorCode } }
       );
-
       changes.push(`Updated ${updateResult.modifiedCount} events with new color`);
     } catch (error) {
       console.error("Error updating event colors:", error);
@@ -726,13 +724,6 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
     isColorChanged: oldValues.colorCode !== venue.colorCode,
   };
 
-  // Get upcoming events count
-  const upcomingEventsCount = await Event.countDocuments({
-    venue: venue._id,
-    isActive: true,
-    date: { $gte: new Date() }
-  });
-
   res.status(200).json({
     success: true,
     message: "Venue updated successfully",
@@ -740,16 +731,6 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
       venue: updatedVenue,
       colorInfo,
       changes,
-      summary: {
-        totalChanges: changes.length,
-        upcomingEvents: upcomingEventsCount,
-        verificationStatus: venue.verifiedOrder > 0 ?
-          `Verified (#${venue.verifiedOrder} in ${formatCityName(venue.city)})` :
-          "Not verified",
-        colorStatus: venue.colorCode ?
-          `Assigned: ${venue.colorCode}` :
-          "No color assigned",
-      }
     },
   });
 });
@@ -1008,7 +989,7 @@ export const getVenuesStatesSummary = asyncHandler(async (req, res, next) => {
 });
 
 
-// ✅ Subscription status endpoint
+// Subscription status endpoint
 export const getSubscriptionStatus = asyncHandler(async (req, res, next) => {
   const status = checkSubscriptionStatus(req, res);
   
@@ -1017,6 +998,97 @@ export const getSubscriptionStatus = asyncHandler(async (req, res, next) => {
     data: status
   });
 });
+
+
+export const getAvailableColorsForCity = asyncHandler(async (req, res, next) => {
+  try {
+    const { city, state, excludeVenueId } = req.query;
+    
+    if (!city) {
+      return next(new ErrorResponse("City parameter is required", 400));
+    }
+    
+    // ভ্যালিডেট সিটি
+    const normalizedCity = city.toLowerCase();
+    let isValidCity = false;
+    let cityState = state;
+    
+    // যদি state দেওয়া থাকে, তাহলে সেই state-এ city আছে কিনা চেক করুন
+    if (state) {
+      isValidCity = ColorAssigner.isValidCityForState(state, normalizedCity);
+    } else {
+      // state না থাকলে সব state-এ খুঁজুন
+      const states = ColorAssigner.getStates();
+      for (const s of states) {
+        if (ColorAssigner.isValidCityForState(s, normalizedCity)) {
+          isValidCity = true;
+          cityState = s;
+          break;
+        }
+      }
+    }
+    
+    if (!isValidCity) {
+      return next(new ErrorResponse(`Invalid city: ${city}`, 400));
+    }
+    
+    // কালার ইনফরমেশন পাওয়া
+    const colorInfo = await ColorAssigner.getAvailableColorsForCity(
+      normalizedCity, 
+      excludeVenueId || null,
+      cityState
+    );
+    
+    // কনট্রাস্ট কালার বের করার ফাংশন
+    const getContrastColor = (hexColor) => {
+      if (!hexColor || hexColor.length < 7) return "#000000";
+      
+      const r = parseInt(hexColor.substring(1, 3), 16);
+      const g = parseInt(hexColor.substring(3, 5), 16);
+      const b = parseInt(hexColor.substring(5, 7), 16);
+      
+      const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+      return luminance > 0.5 ? "#000000" : "#FFFFFF";
+    };
+    
+    // প্রতিটি কালারের জন্য অতিরিক্ত তথ্য
+    const colorsWithDetails = colorInfo.allColors.map(color => {
+      const isUsed = colorInfo.usedColors.includes(color);
+      const isAvailable = colorInfo.availableColors.includes(color);
+      const usedByVenue = colorInfo.colorUsage[color] || null;
+      
+      return {
+        color,
+        isUsed,
+        isAvailable,
+        usedByVenue,
+        textColor: getContrastColor(color)
+      };
+    });
+    
+    res.status(200).json({
+      success: true,
+      data: {
+        city: normalizedCity,
+        state: cityState,
+        totalColors: colorInfo.totalColors,
+        usedColors: colorInfo.usedCount,
+        availableColors: colorInfo.availableCount,
+        colors: colorsWithDetails,
+        // গ্রুপ ভিত্তিক কালার
+        grouped: {
+          available: colorsWithDetails.filter(c => c.isAvailable),
+          used: colorsWithDetails.filter(c => c.isUsed)
+        }
+      }
+    });
+    
+  } catch (error) {
+    console.error("Error in getAvailableColorsForCity:", error);
+    next(new ErrorResponse("Failed to fetch colors: " + error.message, 500));
+  }
+});
+
 
 
 //

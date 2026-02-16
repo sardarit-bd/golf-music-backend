@@ -132,7 +132,6 @@ export const updateNews = asyncHandler(async (req, res, next) => {
       if (photoToDelete?.publicId) {
         try {
           await cloudinary.uploader.destroy(photoToDelete.publicId);
-          console.log(`✅ Deleted: ${photoToDelete.publicId}`);
         } catch (err) {
           console.warn(`Failed to delete image: ${photoToDelete.publicId}`, err);
         }

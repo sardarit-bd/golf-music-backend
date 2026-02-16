@@ -23,7 +23,6 @@ const calculateMarketFee = (price, subscriptionPlan = "free") => {
  */
 const deleteCloudinaryFile = async (fileUrl) => {
   if (!fileUrl || !String(fileUrl).includes("res.cloudinary.com")) {
-    console.log('❌ Invalid or non-Cloudinary URL:', fileUrl);
     return { success: false, message: 'Invalid URL' };
   }
 
@@ -32,7 +31,6 @@ const deleteCloudinaryFile = async (fileUrl) => {
     const result = await deleteFromCloudinary(fileUrl, 'auto');
     
     if (result.result === 'ok') {
-      console.log('✅ Cloudinary delete successful:', fileUrl.substring(0, 100) + '...');
       return { success: true, result };
     } else {
       console.warn('⚠️ Cloudinary delete may have failed:', result);
@@ -78,7 +76,6 @@ const deleteMultipleFiles = async (urls) => {
   const successful = results.filter(r => r.success).length;
   const failed = results.filter(r => !r.success).length;
   
-  console.log(`🗑️ Deletion summary: ${successful} successful, ${failed} failed`);
   
   return {
     success: failed === 0,
@@ -171,14 +168,13 @@ const removePhotosFromArray = (originalArray, urlsToRemove) => {
     const photoPublicId = extractPublicIdFromUrl(photoUrl);
     const shouldKeep = !publicIdsToRemove.has(photoPublicId);
     
-    if (!shouldKeep) {
-      console.log(`❌ Removing photo: ${photoUrl.substring(0, 80)}...`);
-    }
+    // if (!shouldKeep) {
+    //   console.log(`❌ Removing photo: ${photoUrl.substring(0, 80)}...`);
+    // }
     
     return shouldKeep;
   });
   
-  console.log(`📸 Photos filtered: ${originalArray.length} -> ${filteredArray.length}`);
   return filteredArray;
 };
 
@@ -484,19 +480,17 @@ export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
     }
   }
 
-  console.log("📸 Photos to delete:", photosToDelete.length);
 
   // Delete photos from Cloudinary
   if (photosToDelete.length > 0) {
     const deleteResult = await deleteMultipleFiles(photosToDelete);
-    console.log("✅ Photo deletion result:", deleteResult.deleted, "deleted,", deleteResult.failed, "failed");
     
     // Remove deleted photos from database array
     item.photos = item.photos.filter(photoUrl => {
       const shouldKeep = !photosToDelete.includes(photoUrl);
-      if (!shouldKeep) {
-        console.log(`❌ Removing photo: ${photoUrl.substring(0, 80)}...`);
-      }
+      // if (!shouldKeep) {
+      //   console.log(`❌ Removing photo: ${photoUrl.substring(0, 80)}...`);
+      // }
       return shouldKeep;
     });
   }
@@ -506,18 +500,15 @@ export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
   ========================= */
   const shouldDeleteVideo = req.body.deleteVideo === 'true' || req.body.deleteExistingVideo === 'true';
 
-  console.log("🎥 Delete video flag:", shouldDeleteVideo);
 
   if (shouldDeleteVideo && item.videos?.length > 0) {
     const videoUrl = item.videos[0];
-    console.log('🗑️ Deleting video:', videoUrl.substring(0, 100) + '...');
     
     // Delete from Cloudinary
     await deleteCloudinaryFile(videoUrl);
     
     // Remove from database
     item.videos = [];
-    console.log("✅ Video deleted successfully");
   }
 
   /* =========================
@@ -541,7 +532,6 @@ export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
     }
 
     item.photos = [...(item.photos || []), ...newPhotos];
-    console.log("✅ New photos added:", newPhotos.length);
   }
 
   /* =========================
@@ -554,15 +544,14 @@ export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
     }
     
     item.videos = [req.files.video[0].path];
-    console.log("✅ New video added");
   }
 
   await item.save();
 
-  console.log("✅ Item updated successfully. Final state:", {
-    photos: item.photos?.length || 0,
-    videos: item.videos?.length || 0
-  });
+  // console.log("✅ Item updated successfully. Final state:", {
+  //   photos: item.photos?.length || 0,
+  //   videos: item.videos?.length || 0
+  // });
 
   res.status(200).json({
     success: true,
@@ -608,12 +597,10 @@ export const deleteMyMarketItem = asyncHandler(async (req, res, next) => {
     ...(item.audioFile ? [item.audioFile] : [])
   ];
 
-  console.log(`🗑️ Deleting ${urlsToDelete.length} files from Cloudinary...`);
   
   // Delete all media files
   if (urlsToDelete.length > 0) {
     const deleteResult = await deleteMultipleFiles(urlsToDelete);
-    console.log("✅ Media deletion result:", deleteResult.deleted, "deleted,", deleteResult.failed, "failed");
   }
 
   await item.deleteOne();
@@ -743,12 +730,10 @@ export const adminDeleteMarketItem = asyncHandler(async (req, res, next) => {
     ...(item.audioFile ? [item.audioFile] : [])
   ];
 
-  console.log(`🗑️ Deleting ${urlsToDelete.length} files from Cloudinary...`);
   
   // Delete all media files
   if (urlsToDelete.length > 0) {
     const deleteResult = await deleteMultipleFiles(urlsToDelete);
-    console.log("✅ Media deletion result:", deleteResult.deleted, "deleted,", deleteResult.failed, "failed");
   }
 
   await item.deleteOne();
@@ -770,12 +755,10 @@ export const adminDeleteBySeller = asyncHandler(async (req, res, next) => {
     ...(item.audioFile ? [item.audioFile] : [])
   ];
 
-  console.log(`🗑️ Deleting ${urlsToDelete.length} files from Cloudinary...`);
   
   // Delete all media files
   if (urlsToDelete.length > 0) {
     const deleteResult = await deleteMultipleFiles(urlsToDelete);
-    console.log("✅ Media deletion result:", deleteResult.deleted, "deleted,", deleteResult.failed, "failed");
   }
 
   await item.deleteOne();
