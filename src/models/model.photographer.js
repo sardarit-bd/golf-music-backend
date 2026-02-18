@@ -1,11 +1,10 @@
 import mongoose from "mongoose";
-// import { STATE_CITY_MAPPING } from './../utils/constants.js';
 
 const STATE_CITY_MAPPING = {
-  louisiana: ["new orleans"],
-  mississippi: ["biloxi"],
-  alabama: ["mobile"],
-  florida: ["pensacola"]
+  LA: ["mobile"],
+  MS: ["biloxi"],
+  AL: ["mobile"],
+  FL: ["pensacola"]
 };
 
 const photographerSchema = new mongoose.Schema({
@@ -24,24 +23,28 @@ const photographerSchema = new mongoose.Schema({
     minlength: [2, "Name must be at least 2 characters"]
   },
 
-  // PDF REQUIREMENT: STATE-BASED CATEGORIZATION
+  // STATE - Now using acronyms (LA, MS, AL, FL)
   state: {
     type: String,
     enum: {
-      values: ["louisiana", "mississippi", "alabama", "florida"],
-      message: "State must be one of: Louisiana, Mississippi, Alabama, Florida"
+      values: ["LA", "MS", "AL", "FL"],
+      message: "State must be one of: LA, MS, AL, FL"
     },
     required: [true, "State is required"],
-    lowercase: true,
-    trim: true
+    trim: true,
+    uppercase: true
   },
 
-  // CITY - Based on PDF requirement (only 4 specific cities)
+  // CITY - Mobile only for AL, otherwise based on mapping
   city: {
     type: String,
     required: [true, "City is required"],
     lowercase: true,
-    trim: true
+    trim: true,
+    // City becomes immutable after creation
+    immutable: function() {
+      return !this.isNew;
+    }
   },
 
   biography: {
@@ -50,7 +53,7 @@ const photographerSchema = new mongoose.Schema({
     default: "",
   },
 
-  // SERVICES (All users - PDF requirement)
+  // SERVICES - Removed duration field
   services: [
     {
       service: {
@@ -72,22 +75,7 @@ const photographerSchema = new mongoose.Schema({
         maxlength: 1000,
       },
 
-      duration: {
-        type: String,
-        enum: [
-          "30min",
-          "1hour",
-          "2hours",
-          "3hours",
-          "4hours",
-          "6hours",
-          "8hours",
-          "fullday",
-          "custom",
-          "",
-        ],
-        default: "",
-      },
+      // duration field removed as requested
 
       category: {
         type: String,
@@ -97,6 +85,7 @@ const photographerSchema = new mongoose.Schema({
           "editing",
           "consultation",
           "workshop",
+          "equipment",
           "other",
         ],
         default: "photography",
@@ -135,9 +124,7 @@ const photographerSchema = new mongoose.Schema({
     },
   ],
 
-
-
-  // PHOTOS (5 photos for all users - PDF requirement)
+  // PHOTOS
   photos: [
     {
       url: {
@@ -159,7 +146,7 @@ const photographerSchema = new mongoose.Schema({
     },
   ],
 
-  // VIDEOS (1 video for all users - PDF requirement)
+  // VIDEOS
   videos: [
     {
       url: {
@@ -195,32 +182,31 @@ const photographerSchema = new mongoose.Schema({
     },
   ],
 
-
   // SUBSCRIPTION-RELATED
   photosLimit: {
     type: Number,
-    default: 5, // PDF: All users get 5 photos
+    default: 5,
   },
 
   videosLimit: {
     type: Number,
-    default: 1, // PDF: All users get 1 video
+    default: 1,
   },
 
   featuresLocked: {
     type: Boolean,
-    default: false, // PDF: All features unlocked for free users
+    default: false,
   },
 
-  // PDF REQUIREMENT: Location-based categorization
+  // Location-based categorization
   locationTags: [{
     type: String,
-    enum: ["louisiana", "mississippi", "alabama", "florida"]
+    enum: ["LA", "MS", "AL", "FL"]
   }],
 
   isActive: {
     type: Boolean,
-    default: true, // Auto-active per PDF
+    default: true,
   },
 
   isVerified: {
@@ -239,16 +225,12 @@ const photographerSchema = new mongoose.Schema({
   },
 });
 
-// Pre-save middleware for validation and auto-population
+// Pre-save middleware
 photographerSchema.pre("save", function (next) {
   this.updatedAt = Date.now();
 
-  // Validate state-city combination based on PDF requirement
-  if (
-    this.isNew ||
-    this.isModified('city') ||
-    this.isModified('state')
-  ) {
+  // Validate state-city combination
+  if (this.isNew || this.isModified('city') || this.isModified('state')) {
     if (!this.state) {
       return next(new Error("State is required"));
     }
@@ -258,7 +240,7 @@ photographerSchema.pre("save", function (next) {
     }
 
     // Get valid cities for this state
-    const validCities = STATE_CITY_MAPPING[this.state.toLowerCase()];
+    const validCities = STATE_CITY_MAPPING[this.state];
 
     if (!validCities) {
       return next(new Error(`Invalid state: ${this.state}`));
@@ -272,17 +254,21 @@ photographerSchema.pre("save", function (next) {
     }
   }
 
-  // Auto-populate locationTags based on state
-  if (this.state) {
-    this.locationTags = [this.state.toLowerCase()];
+  // For existing documents, prevent city modification
+  if (!this.isNew && this.isModified('city')) {
+    return next(new Error("City cannot be modified after profile creation"));
   }
 
-  // Enforce photo limit (PDF: 5 photos max)
+  // Auto-populate locationTags based on state
+  if (this.state) {
+    this.locationTags = [this.state];
+  }
+
+  // Enforce limits
   if (this.photos && this.photos.length > this.photosLimit) {
     return next(new Error(`Maximum ${this.photosLimit} photos allowed`));
   }
 
-  // Enforce video limit (PDF: 1 video max)
   if (this.videos && this.videos.length > this.videosLimit) {
     return next(new Error(`Maximum ${this.videosLimit} video allowed`));
   }
@@ -290,7 +276,7 @@ photographerSchema.pre("save", function (next) {
   next();
 });
 
-// Indexes for performance
+// Indexes
 photographerSchema.index({ state: 1, isActive: 1 });
 photographerSchema.index({ state: 1, city: 1 });
 photographerSchema.index({ user: 1 }, { unique: true });
@@ -305,12 +291,16 @@ photographerSchema.virtual('formattedLocation').get(function () {
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
 
-  const formatState = this.state.charAt(0).toUpperCase() + this.state.slice(1);
+  const stateFullNames = {
+    'LA': 'Louisiana',
+    'MS': 'Mississippi',
+    'AL': 'Alabama',
+    'FL': 'Florida'
+  };
 
-  return `${formatCity}, ${formatState}`;
+  return `${formatCity}, ${stateFullNames[this.state] || this.state}`;
 });
 
-// Ensure virtuals are included in JSON
 photographerSchema.set('toJSON', { virtuals: true });
 photographerSchema.set('toObject', { virtuals: true });
 
