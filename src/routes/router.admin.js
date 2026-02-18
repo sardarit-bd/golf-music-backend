@@ -13,11 +13,15 @@ import {
     toggleContentStatus, 
     updateAdminProfile, 
     updateUser, 
-    verifyUser 
+    verifyUser,
+    getNewsForAdmin,
+    updateNewsByAdmin,
+    toggleNewsStatus,
+    deleteNewsByAdmin
 } from '../controllers/controller.admin.js';
 import { validateAdminActions } from '../middleware/validation.js';
 import { authorize, protect } from '../middleware/auth.js';
-import { uploadAdminProfilePhoto } from '../middleware/upload.js';
+import { uploadAdminProfilePhoto, uploadNewsPhotos, handleUploadErrors } from '../middleware/upload.js';
 
 const router = express.Router();
 
@@ -25,7 +29,7 @@ const router = express.Router();
 router.use(protect, authorize('admin'));
 
 // ============================
-// Admin Profile Routes (NEW)
+// Admin Profile Routes
 // ============================
 router.get("/profile", getAdminProfile);
 router.put("/profile", uploadAdminProfilePhoto, updateAdminProfile);
@@ -45,6 +49,18 @@ router.delete('/users/:id', deleteUser);
 // Content moderation
 router.get('/content', getContentForModeration);
 router.put('/content/:type/:id/toggle', validateAdminActions, toggleContentStatus);
+
+router.get('/news', getNewsForAdmin);
+
+router.put(
+  '/news/:id', 
+  uploadNewsPhotos,
+  handleUploadErrors,
+  updateNewsByAdmin
+);
+
+router.put('/news/:id/toggle', toggleNewsStatus);
+router.delete('/news/:id', deleteNewsByAdmin);
 
 // Contact management
 router.get('/contacts', getContactMessages);

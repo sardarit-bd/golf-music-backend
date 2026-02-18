@@ -798,40 +798,98 @@ export const getNewsForAdmin = async (req, res, next) => {
 
 //  UPDATE NEWS BY ADMIN
 
+//  UPDATE NEWS BY ADMIN - ফিক্সড ভার্সন
 export const updateNewsByAdmin = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { title, description, location, credit, isActive } = req.body;
 
+    const { title, description, location, credit, isActive } = req.body;
     let news = await News.findById(id);
     if (!news) {
       return next(new ErrorResponse("News not found", 404));
     }
 
-    // Upload new photos (if provided)
-    let updatedPhotos = news.photos;
-    if (req.files?.length) {
-      updatedPhotos = await Promise.all(
+    // Prepare update data
+    const updateData = {};
+
+    if (title !== undefined && title !== '') updateData.title = title;
+    if (description !== undefined && description !== '') updateData.description = description;
+    if (location !== undefined && location !== '') updateData.location = location.toLowerCase();
+    if (credit !== undefined && credit !== '') updateData.credit = credit;
+    if (isActive !== undefined) updateData.isActive = isActive === 'true' || isActive === true;
+
+    // Handle removed photos
+    if (req.body.removedPhotoUrls) {
+      try {
+        const removedUrls = JSON.parse(req.body.removedPhotoUrls);
+        console.log("🗑️ Removed photos:", removedUrls);
+
+        if (removedUrls.length > 0) {
+          // Delete from Cloudinary
+          for (const url of removedUrls) {
+            const photoToDelete = news.photos.find(p => p.url === url);
+            if (photoToDelete?.publicId) {
+              try {
+                await cloudinary.uploader.destroy(photoToDelete.publicId);
+                console.log(`✅ Deleted: ${photoToDelete.publicId}`);
+              } catch (err) {
+                console.error(`❌ Failed to delete: ${photoToDelete.publicId}`, err);
+              }
+            }
+          }
+
+          // Keep only photos not removed
+          updateData.photos = news.photos.filter(p => !removedUrls.includes(p.url));
+        }
+      } catch (err) {
+        console.error("Error parsing removedPhotoUrls:", err);
+      }
+    }
+
+    // Handle new photos upload
+    let uploadedPhotos = [];
+    if (req.files && req.files.length > 0) {
+      console.log(`📸 Uploading ${req.files.length} new photos...`);
+
+      uploadedPhotos = await Promise.all(
         req.files.map(async (file) => {
-          const uploadRes = await cloudinary.uploader.upload(file.path, {
-            folder: "gulf-music/news",
-          });
+          // Check if file.path exists (for local upload) or file has Cloudinary info
+          let url = file.path;
+          let publicId = file.filename;
+
+          // If using Cloudinary storage, file might already have Cloudinary info
+          if (file.cloudinary) {
+            url = file.cloudinary.secure_url || file.cloudinary.url;
+            publicId = file.cloudinary.public_id;
+          }
+
           return {
-            url: uploadRes.secure_url,
-            filename: uploadRes.public_id,
+            url: url,
+            filename: publicId,
+            publicId: publicId
           };
         })
       );
+
+      console.log(`✅ Uploaded ${uploadedPhotos.length} photos`);
+
+      // Merge with existing photos
+      if (updateData.photos) {
+        updateData.photos = [...updateData.photos, ...uploadedPhotos];
+      } else {
+        updateData.photos = [...(news.photos || []), ...uploadedPhotos];
+      }
     }
 
-    const updateData = {
-      ...(title && { title }),
-      ...(description && { description }),
-      ...(location && { location: location.toLowerCase() }),
-      ...(credit && { credit }),
-      ...(isActive !== undefined && { isActive }),
-      ...(req.files?.length && { photos: updatedPhotos })
-    };
+    // If no photos update, keep existing photos
+    if (!updateData.photos) {
+      updateData.photos = news.photos;
+    }
+
+    // Limit to max 5 photos
+    if (updateData.photos && updateData.photos.length > 5) {
+      updateData.photos = updateData.photos.slice(0, 5);
+    }
 
     news = await News.findByIdAndUpdate(
       id,
@@ -845,10 +903,10 @@ export const updateNewsByAdmin = async (req, res, next) => {
       data: { news },
     });
   } catch (error) {
+    console.error("❌ Update news error:", error);
     next(error);
   }
 };
-
 
 //  TOGGLE NEWS STATUS (ACTIVE/INACTIVE)
 
@@ -1235,20 +1293,20 @@ export const reassignCityColors = async (req, res, next) => {
 export const updateSubscriptionConfig = async (req, res, next) => {
   try {
     const { config } = req.body;
-    
+
     // Validate admin permissions
     if (req.user.userType !== 'admin') {
       return next(new ErrorResponse("Admin access required", 403));
     }
-    
+
     // Update config (in real implementation, save to database)
     // For now, we'll update the in-memory config
     Object.assign(SUBSCRIPTION_CONFIG, config);
-    
+
     // Log the change
     console.log(`Subscription config updated by admin: ${req.user.username}`);
     console.log('New config:', SUBSCRIPTION_CONFIG.SYSTEM_WIDE);
-    
+
     res.status(200).json({
       success: true,
       message: "Subscription configuration updated successfully",
@@ -1266,7 +1324,7 @@ export const getSubscriptionConfig = (req, res) => {
       message: "Admin access required"
     });
   }
-  
+
   res.status(200).json({
     success: true,
     data: { config: SUBSCRIPTION_CONFIG }
