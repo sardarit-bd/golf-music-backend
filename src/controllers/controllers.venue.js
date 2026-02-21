@@ -408,8 +408,8 @@ export const updateVenueProfile = asyncHandler(async (req, res, next) => {
     biography,
     openHours,
     openDays,
-    phone,
-    website,
+    // phone,
+    // website,
   } = req.body;
 
   const updateData = {
@@ -423,8 +423,8 @@ export const updateVenueProfile = asyncHandler(async (req, res, next) => {
     openHours: openHours || venue.openHours,
     openDays: openDays || venue.openDays,
     // NEW: Phone and website
-    phone: phone !== undefined ? phone : venue.phone,
-    website: website !== undefined ? website : venue.website,
+    // phone: phone !== undefined ? phone : venue.phone,
+    // website: website !== undefined ? website : venue.website,
     photos: mergedPhotos,
     photosLimit: rules.photos,
     showLimit: rules.shows,
@@ -523,8 +523,8 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
     biography,
     openHours,
     openDays,
-    phone,
-    website,
+    // phone,
+    // website,
     isActive,
     colorCode,
     verifiedOrder,
@@ -687,8 +687,8 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
   if (biography !== undefined) venue.biography = biography;
   if (openHours !== undefined) venue.openHours = openHours;
   if (openDays !== undefined) venue.openDays = openDays;
-  if (phone !== undefined) venue.phone = phone;
-  if (website !== undefined) venue.website = website;
+  // if (phone !== undefined) venue.phone = phone;
+  // if (website !== undefined) venue.website = website;
 
   venue.updatedAt = Date.now();
 
@@ -867,7 +867,7 @@ export const getVenuesByState = asyncHandler(async (req, res, next) => {
     state: state,
     isActive: true
   })
-    .select("venueName state city address seatingCapacity photos biography openHours openDays phone website isActive verifiedOrder colorCode")
+    .select("venueName state city address seatingCapacity photos biography openHours openDays isActive verifiedOrder colorCode")
     .populate("user", "username email subscriptionPlan")
     .sort({ verifiedOrder: 1, venueName: 1 });
 

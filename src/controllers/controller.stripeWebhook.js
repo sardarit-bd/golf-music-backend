@@ -1,6 +1,4 @@
 import { stripe } from "../config/stripe.js";
-import { handleMerchWebhook } from "./controller.merchWebhook.js";
-import { handleSubscriptionWebhook } from "./controller.subscriptionWebhook.js";
 
 export const handleStripeWebhook = async (req, res) => {
   const sig = req.headers["stripe-signature"];
@@ -13,18 +11,46 @@ export const handleStripeWebhook = async (req, res) => {
       process.env.STRIPE_WEBHOOK_SECRET
     );
   } catch (err) {
-    console.error("❌ Webhook signature failed:", err.message);
+    console.error("❌ Signature verification failed:", err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
   try {
-    await handleMerchWebhook(event);
+    console.log("🔔 Stripe Event:", event.type);
 
-    await handleSubscriptionWebhook(event);
+    // =============================
+    // MARKET + MERCH EVENTS
+    // =============================
+    if (
+      event.type === "checkout.session.completed"
+    ) {
+      await handleMerchWebhook(event);
+      await handleSubscriptionWebhook(event);
+    }
 
-    res.json({ received: true });
+    if (
+      event.type === "customer.subscription.updated" ||
+      event.type === "customer.subscription.deleted"
+    ) {
+      await handleSubscriptionWebhook(event);
+    }
+
+    // =============================
+    // CONNECT EVENTS (IMPORTANT)
+    // =============================
+    if (
+      event.type.startsWith("account.") ||
+      event.type.startsWith("capability.") ||
+      event.type.startsWith("person.")
+    ) {
+      console.log("🔵 Connect event received:", event.type);
+    }
+
+    res.status(200).json({ received: true });
+
   } catch (err) {
     console.error("❌ Webhook handler error:", err);
-    res.status(500).send("Webhook handler failed");
+    // NEVER RETURN 400 HERE
+    res.status(200).json({ received: true });
   }
 };

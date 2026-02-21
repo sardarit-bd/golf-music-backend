@@ -11,7 +11,7 @@ const marketItemSchema = new mongoose.Schema(
 
     sellerType: {
       type: String,
-      enum: ["artist", "venue", "photographer"],
+      enum: ["artist", "venue", "photographer", "studio", "journalist", "fan"],
       required: true,
     },
 
@@ -33,17 +33,21 @@ const marketItemSchema = new mongoose.Schema(
 
     price: { type: Number, required: true, min: 0 },
 
-    location: { 
-      type: String, 
+    location: {
+      type: String,
       default: "",
       enum: ["Louisiana", "Mississippi", "Alabama", "Florida", ""]
     },
 
     status: {
       type: String,
-      enum: ["active", "sold", "hidden"],
-      default: "active",
+      enum: ["pending", "active", "sold", "hidden"],
+      default: "pending",
     },
+    stripeConnectRequired: {
+      type: Boolean,
+      default: true
+    }
   },
   { timestamps: true }
 );

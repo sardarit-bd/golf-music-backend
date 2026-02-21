@@ -2,6 +2,7 @@ import { stripe } from "../config/stripe.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import User from "../models/model.user.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import MarketItem from "../models/model.marketItem.js";
 
 /**
  * CHECK STRIPE CONNECT STATUS
@@ -17,11 +18,11 @@ export const getStripeConnectStatus = asyncHandler(async (req, res, next) => {
   let stripeAccount = null;
   let requirements = null;
 
-  
+
   if (user.stripeAccountId) {
     try {
       stripeAccount = await stripe.accounts.retrieve(user.stripeAccountId);
-      
+
       requirements = {
         currently_due: stripeAccount.requirements?.currently_due || [],
         eventually_due: stripeAccount.requirements?.eventually_due || [],
@@ -29,9 +30,9 @@ export const getStripeConnectStatus = asyncHandler(async (req, res, next) => {
         disabled_reason: stripeAccount.requirements?.disabled_reason || null
       };
 
-      
+
       let accountStatus = 'not_connected';
-      
+
       if (stripeAccount.charges_enabled && stripeAccount.payouts_enabled) {
         accountStatus = 'active';
       } else if (stripeAccount.requirements?.disabled_reason) {
@@ -40,12 +41,12 @@ export const getStripeConnectStatus = asyncHandler(async (req, res, next) => {
         accountStatus = 'pending';
       }
 
-      
+
       if (user.stripeAccountStatus !== accountStatus) {
         user.stripeAccountStatus = accountStatus;
         await user.save();
       }
-      
+
     } catch (error) {
       console.error("❌ Error fetching Stripe account:", error.message);
       if (error.code === 'resource_missing') {
@@ -68,8 +69,8 @@ export const getStripeConnectStatus = asyncHandler(async (req, res, next) => {
       isStripeConnected: user.stripeAccountId ? true : false,
       stripeAccountId: user.stripeAccountId || null,
       stripeAccountStatus: user.stripeAccountStatus || 'not_connected',
-      stripeStatusMessage: user.stripeAccountStatus === 'active' ? 'Active' : 
-                           user.stripeAccountStatus === 'pending' ? 'Pending Approval' : 'Not Connected',
+      stripeStatusMessage: user.stripeAccountStatus === 'active' ? 'Active' :
+        user.stripeAccountStatus === 'pending' ? 'Pending Approval' : 'Not Connected',
       userType: user.userType,
       isVerified: user.isVerified,
       canSellInMarket: canSellInMarket(),
@@ -95,7 +96,7 @@ export const createStripeConnectAccount = asyncHandler(async (req, res, next) =>
 
   // Allowed user types for Stripe Connect
   const allowedUserTypes = ["artist", "venue", "photographer", "studio", "journalist", "fan"];
-  
+
   if (!allowedUserTypes.includes(user.userType)) {
     return next(new ErrorResponse("You are not eligible to become a seller", 403));
   }
@@ -121,12 +122,12 @@ export const createStripeConnectAccount = asyncHandler(async (req, res, next) =>
   if (user.stripeAccountId) {
     try {
       const existingAccount = await stripe.accounts.retrieve(user.stripeAccountId);
-      
+
       // Check if account is fully onboarded
       if (existingAccount.charges_enabled && existingAccount.payouts_enabled) {
         user.stripeAccountStatus = 'active';
         await user.save();
-        
+
         return res.status(200).json({
           success: true,
           message: "Your Stripe account is now active",
@@ -136,7 +137,7 @@ export const createStripeConnectAccount = asyncHandler(async (req, res, next) =>
           }
         });
       }
-      
+
       // Create new onboarding link for existing account
       const accountLink = await stripe.accountLinks.create({
         account: user.stripeAccountId,
@@ -153,7 +154,7 @@ export const createStripeConnectAccount = asyncHandler(async (req, res, next) =>
         url: accountLink.url,
         message: "Please complete your Stripe onboarding"
       });
-      
+
     } catch (error) {
       // If account doesn't exist in Stripe, clean local record
       if (error.code === 'resource_missing') {
@@ -168,7 +169,7 @@ export const createStripeConnectAccount = asyncHandler(async (req, res, next) =>
 
   // ✅ FIX: Better business profile based on user type
   const getBusinessProfile = () => {
-    switch(user.userType) {
+    switch (user.userType) {
       case 'photographer':
         return {
           mcc: '7333', // Commercial Photography
@@ -258,16 +259,16 @@ export const createStripeDashboardLink = asyncHandler(async (req, res, next) => 
 
   try {
     const loginLink = await stripe.accounts.createLoginLink(user.stripeAccountId);
-    
+
     res.status(200).json({
       success: true,
       url: loginLink.url,
       message: "Redirecting to Stripe Dashboard"
     });
-    
+
   } catch (error) {
     console.error("❌ Error creating Stripe dashboard link:", error.message);
-    
+
     // If account is not fully onboarded
     if (error.code === 'account_onboarding_not_completed') {
       // Create new onboarding link
@@ -277,10 +278,10 @@ export const createStripeDashboardLink = asyncHandler(async (req, res, next) => 
         return_url: `${process.env.CLIENT_URL}/stripe/success?account_id=${user.stripeAccountId}`,
         type: "account_onboarding",
       });
-      
+
       user.stripeAccountStatus = 'pending';
       await user.save();
-      
+
       return res.status(200).json({
         success: true,
         url: accountLink.url,
@@ -288,7 +289,7 @@ export const createStripeDashboardLink = asyncHandler(async (req, res, next) => 
         requiresOnboarding: true
       });
     }
-    
+
     return next(new ErrorResponse("Failed to access Stripe dashboard", 500));
   }
 });
@@ -342,12 +343,18 @@ export const handleStripeOnboardingSuccess = asyncHandler(async (req, res, next)
 
   // Retrieve account to check status
   const account = await stripe.accounts.retrieve(account_id);
-  
+
   // Update user status
   if (account.charges_enabled && account.payouts_enabled) {
     user.stripeAccountStatus = 'active';
     await user.save();
-    
+
+    await MarketItem.updateMany(
+      { seller: user._id, status: "pending" },
+      { $set: { status: "active" } }
+    );
+
+
     return res.status(200).json({
       success: true,
       message: "Stripe onboarding completed successfully!",
@@ -361,7 +368,7 @@ export const handleStripeOnboardingSuccess = asyncHandler(async (req, res, next)
   } else {
     user.stripeAccountStatus = 'pending';
     await user.save();
-    
+
     return res.status(200).json({
       success: true,
       message: "Stripe onboarding is in progress",
@@ -395,25 +402,25 @@ export const disconnectStripeAccount = asyncHandler(async (req, res, next) => {
     // await stripe.accounts.update(user.stripeAccountId, {
     //   metadata: { status: 'disconnected' }
     // });
-    
+
     // Clear local Stripe Connect data
     user.stripeAccountId = null;
     user.stripeAccountStatus = 'not_connected';
     await user.save();
-    
+
     res.status(200).json({
       success: true,
       message: "Stripe account disconnected successfully"
     });
-    
+
   } catch (error) {
     console.error("❌ Error disconnecting Stripe account:", error.message);
-    
+
     // Still clear local data even if Stripe API fails
     user.stripeAccountId = null;
     user.stripeAccountStatus = 'not_connected';
     await user.save();
-    
+
     res.status(200).json({
       success: true,
       message: "Stripe account disconnected locally"
