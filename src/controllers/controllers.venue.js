@@ -40,27 +40,21 @@ const extractUploadedPhotos = (req) => {
 export const createOrUpdateProfile = async (req, res, next) => {
   try {
     const user = req.user;
-
-    // Centralized plan management
     let userPlan = user.subscriptionPlan || SUBSCRIPTION_CONFIG.SYSTEM_WIDE.DEFAULT_PLAN;
 
     if (SUBSCRIPTION_CONFIG.SYSTEM_WIDE.FORCE_FREE_FOR_ALL) {
       userPlan = "free";
-      // Optionally update user in database
       user.subscriptionPlan = "free";
       await user.save();
     }
 
-    // Get rules based on config
     const rules = getPlanRules("venue", userPlan);
-
     let venue = await Venue.findOne({ user: user._id });
 
     const { state, city } = req.body;
 
     if (state && city) {
       const stateCities = STATE_CITY_MAPPING[state];
-
       if (!stateCities) {
         return res.status(400).json({
           success: false,
@@ -69,7 +63,6 @@ export const createOrUpdateProfile = async (req, res, next) => {
       }
 
       const normalizedCity = city.toLowerCase().trim();
-
       if (!stateCities.includes(normalizedCity)) {
         return res.status(400).json({
           success: false,
@@ -78,20 +71,27 @@ export const createOrUpdateProfile = async (req, res, next) => {
       }
     }
 
-    // Photo handling
+    // Photo handling - MAX 5 PHOTOS
     const oldPhotos = venue?.photos || [];
     let mergedPhotos = oldPhotos;
 
-    if (rules.photos > 0 && req.files?.length > 0) {
+    if (req.files?.length > 0) {
+      // Check if adding new photos would exceed 5
+      if (oldPhotos.length + req.files.length > 5) {
+        return res.status(400).json({
+          success: false,
+          message: `Maximum 5 photos allowed. You already have ${oldPhotos.length} photos.`
+        });
+      }
+
       const newPhotos = req.files.map((file) => ({
         url: file.path,
         filename: file.filename,
       }));
 
-      mergedPhotos = [...oldPhotos, ...newPhotos].slice(0, rules.photos);
+      mergedPhotos = [...oldPhotos, ...newPhotos];
     }
 
-    // All fields (always enabled based on config)
     const venueData = {
       venueName: req.body.venueName,
       state: state || venue?.state || "Alabama",
@@ -106,7 +106,7 @@ export const createOrUpdateProfile = async (req, res, next) => {
       phone: req.body.phone || venue?.phone || "",
       website: req.body.website || venue?.website || "",
       photos: mergedPhotos,
-      photosLimit: rules.photos,
+      photosLimit: 5, // Hardcoded to 5
       showLimit: rules.shows,
       featuresLocked: false,
       updatedAt: Date.now(),
@@ -138,6 +138,7 @@ export const createOrUpdateProfile = async (req, res, next) => {
     });
   }
 };
+
 
 export const getCalendarByCity = asyncHandler(async (req, res, next) => {
   const { state, city } = req.query;
@@ -345,13 +346,11 @@ export const updateVenueProfile = asyncHandler(async (req, res, next) => {
   }
 
   const user = req.user;
-
   const rules = SUBSCRIPTION_RULES.venue.free;
-
   let venue = await Venue.findOne({ user: user.id });
   if (!venue) return next(new ErrorResponse("Venue profile not found", 404));
 
-  // NEW: State-City validation
+  // State-City validation
   const { state, city } = req.body;
 
   if (state || city) {
@@ -375,28 +374,57 @@ export const updateVenueProfile = asyncHandler(async (req, res, next) => {
   const existingPhotos = venue.photos || [];
   let removedPhotos = [];
 
+  // Handle removedPhotos - it can be string or array
   if (req.body.removedPhotos) {
-    removedPhotos = Array.isArray(req.body.removedPhotos)
-      ? req.body.removedPhotos
-      : [req.body.removedPhotos];
+    if (Array.isArray(req.body.removedPhotos)) {
+      removedPhotos = req.body.removedPhotos;
+    } else {
+      try {
+        // Try to parse if it's a JSON string
+        removedPhotos = JSON.parse(req.body.removedPhotos);
+      } catch {
+        // If not JSON, treat as single item
+        removedPhotos = [req.body.removedPhotos];
+      }
+    }
   }
+
+  console.log("Removed photos:", removedPhotos); // Debug log
 
   let mergedPhotos = existingPhotos;
 
-  if (rules.photos > 0) {
-    const newPhotos = extractUploadedPhotos(req);
+  // PHOTO HANDLING - MAX 5 PHOTOS
+  const newPhotos = extractUploadedPhotos(req);
+  const keptPhotos = existingPhotos.filter(
+    (photo) => !removedPhotos.includes(photo.filename)
+  );
 
-    const keptPhotos = existingPhotos.filter(
-      (photo) => !removedPhotos.includes(photo.filename)
-    );
+  // Check if total photos would exceed 5
+  if (keptPhotos.length + newPhotos.length > 5) {
+    return next(new ErrorResponse(
+      `Maximum 5 photos allowed. You can keep ${keptPhotos.length} existing photos and add ${5 - keptPhotos.length} new photos.`,
+      400
+    ));
+  }
 
-    mergedPhotos = [...keptPhotos, ...newPhotos].slice(0, rules.photos);
+  mergedPhotos = [...keptPhotos, ...newPhotos];
 
-    for (const filename of removedPhotos) {
+  // Delete removed photos from Cloudinary
+  if (removedPhotos.length > 0) {
+    console.log("Deleting from Cloudinary:", removedPhotos);
+    
+    for (const publicId of removedPhotos) {
       try {
-        await cloudinary.uploader.destroy(filename);
-      } catch {
-        console.log("Cloudinary delete failed:", filename);
+        // Try to delete from Cloudinary
+        const result = await cloudinary.uploader.destroy(publicId);
+        console.log(`Cloudinary delete result for ${publicId}:`, result);
+        
+        if (result.result !== 'ok') {
+          console.warn(`Failed to delete ${publicId}:`, result);
+        }
+      } catch (error) {
+        console.error(`Cloudinary delete error for ${publicId}:`, error);
+        // Don't throw error, continue with other operations
       }
     }
   }
@@ -408,13 +436,10 @@ export const updateVenueProfile = asyncHandler(async (req, res, next) => {
     biography,
     openHours,
     openDays,
-    // phone,
-    // website,
   } = req.body;
 
   const updateData = {
     venueName: venueName || venue.venueName,
-    // NEW: Update state and city
     state: state || venue.state,
     city: city ? city.toLowerCase() : venue.city,
     address: address || venue.address,
@@ -422,11 +447,8 @@ export const updateVenueProfile = asyncHandler(async (req, res, next) => {
     biography: biography || venue.biography,
     openHours: openHours || venue.openHours,
     openDays: openDays || venue.openDays,
-    // NEW: Phone and website
-    // phone: phone !== undefined ? phone : venue.phone,
-    // website: website !== undefined ? website : venue.website,
     photos: mergedPhotos,
-    photosLimit: rules.photos,
+    photosLimit: 5,
     showLimit: rules.shows,
     featuresLocked: false,
     updatedAt: Date.now(),
@@ -1173,3 +1195,263 @@ export const changeVenuePlanByAdmin = asyncHandler(async (req, res, next) => {
   });
 });
 */
+
+// ============================================
+// SHOW MANAGEMENT CONTROLLERS
+// ============================================
+
+// Get all shows for a venue
+export const getVenueShows = asyncHandler(async (req, res, next) => {
+  const venue = await Venue.findOne({ user: req.user.id });
+
+  if (!venue) {
+    return next(new ErrorResponse("Venue profile not found", 404));
+  }
+
+  // Get shows from Events collection (main source)
+  const events = await Event.find({ venue: venue._id })
+    .sort({ date: -1 })
+    .lean();
+
+  // Also get shows from venue.shows array (backup)
+  const venueShows = venue.shows || [];
+
+  res.status(200).json({
+    success: true,
+    data: {
+      events,
+      venueShows,
+      total: events.length
+    }
+  });
+});
+
+// Get single show by ID
+export const getVenueShowById = asyncHandler(async (req, res, next) => {
+  const { showId } = req.params;
+
+  const venue = await Venue.findOne({ user: req.user.id });
+  if (!venue) {
+    return next(new ErrorResponse("Venue profile not found", 404));
+  }
+
+  // Find in Events collection
+  const event = await Event.findOne({ 
+    _id: showId, 
+    venue: venue._id 
+  });
+
+  if (!event) {
+    return next(new ErrorResponse("Show not found", 404));
+  }
+
+  res.status(200).json({
+    success: true,
+    data: { show: event }
+  });
+});
+
+// Update show
+export const updateVenueShow = asyncHandler(async (req, res, next) => {
+  const { showId } = req.params;
+  const { artist, date, time, description } = req.body;
+
+  const venue = await Venue.findOne({ user: req.user.id });
+  if (!venue) {
+    return next(new ErrorResponse("Venue profile not found", 404));
+  }
+
+  // Find event in Events collection
+  const event = await Event.findOne({ 
+    _id: showId, 
+    venue: venue._id 
+  });
+
+  if (!event) {
+    return next(new ErrorResponse("Show not found", 404));
+  }
+
+  // Handle image update if new image uploaded
+  let imageData = event.image;
+  if (req.file) {
+    // Delete old image from Cloudinary
+    if (event.image?.filename) {
+      try {
+        await cloudinary.uploader.destroy(event.image.filename);
+      } catch (error) {
+        console.error("Error deleting old image:", error);
+      }
+    }
+    
+    // Add new image
+    imageData = {
+      url: req.file.path,
+      filename: req.file.filename,
+    };
+  }
+
+  // Parse new date if provided
+  let parsedDate = null;
+  if (date && time) {
+    parsedDate = parseEventDate(date, time);
+  }
+
+  // Update event
+  event.artistBandName = artist || event.artistBandName;
+  event.eventTime = time || event.eventTime;
+  if (parsedDate) {
+    event.date = parsedDate.fullDate;
+    event.dateOnly = parsedDate.dateOnly;
+  }
+  event.description = description !== undefined ? description : event.description;
+  event.image = imageData;
+  event.updatedAt = Date.now();
+
+  await event.save();
+
+  // Also update in venue.shows array (for backward compatibility)
+  const showIndex = venue.shows.findIndex(s => 
+    s._id && s._id.toString() === showId
+  );
+
+  if (showIndex !== -1) {
+    venue.shows[showIndex] = {
+      ...venue.shows[showIndex],
+      artist: artist || venue.shows[showIndex].artist,
+      date: parsedDate?.fullDate || venue.shows[showIndex].date,
+      time: time || venue.shows[showIndex].time,
+    };
+    await venue.save();
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "Show updated successfully",
+    data: { show: event }
+  });
+});
+
+// Delete show
+export const deleteVenueShow = asyncHandler(async (req, res, next) => {
+  const { showId } = req.params;
+
+  // 1️⃣ Find Venue
+  const venue = await Venue.findOne({ user: req.user.id });
+  if (!venue) {
+    return next(new ErrorResponse("Venue profile not found", 404));
+  }
+
+  // 2️⃣ Find Event (belongs to this venue)
+  const event = await Event.findOne({
+    _id: showId,
+    venue: venue._id
+  });
+
+  if (!event) {
+    return next(new ErrorResponse("Show not found", 404));
+  }
+
+  // 3️⃣ Delete image from Cloudinary (if exists)
+  if (event.image?.filename) {
+    try {
+      await cloudinary.uploader.destroy(event.image.filename);
+    } catch (error) {
+      console.error("Cloudinary delete error:", error);
+    }
+  }
+
+  // 4️⃣ Delete event from database
+  await event.deleteOne();
+
+  // ✅ NO MORE venue.shows manipulation
+  // ❌ Removed embedded array logic completely
+
+  res.status(200).json({
+    success: true,
+    message: "Show deleted successfully"
+  });
+});
+
+// Get shows count for current month
+export const getVenueShowsCount = asyncHandler(async (req, res, next) => {
+  const venue = await Venue.findOne({ user: req.user.id });
+
+  if (!venue) {
+    return next(new ErrorResponse("Venue profile not found", 404));
+  }
+
+  const now = new Date();
+  const startOfMonth = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
+  const endOfMonth = new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59));
+
+  const showsThisMonth = await Event.countDocuments({
+    venue: venue._id,
+    dateOnly: { $gte: startOfMonth, $lte: endOfMonth },
+    isActive: true,
+  });
+
+  const showLimit = req.user.subscriptionPlan === "free" ? 1 : 50;
+
+  res.status(200).json({
+    success: true,
+    data: {
+      count: showsThisMonth,
+      limit: showLimit,
+      remaining: Math.max(0, showLimit - showsThisMonth),
+      plan: req.user.subscriptionPlan
+    }
+  });
+});
+
+// Bulk delete shows
+export const bulkDeleteVenueShows = asyncHandler(async (req, res, next) => {
+  const { showIds } = req.body;
+
+  if (!showIds || !Array.isArray(showIds) || showIds.length === 0) {
+    return next(new ErrorResponse("Please provide an array of show IDs", 400));
+  }
+
+  const venue = await Venue.findOne({ user: req.user.id });
+  if (!venue) {
+    return next(new ErrorResponse("Venue profile not found", 404));
+  }
+
+  // Find all events
+  const events = await Event.find({ 
+    _id: { $in: showIds }, 
+    venue: venue._id 
+  });
+
+  if (events.length === 0) {
+    return next(new ErrorResponse("No valid shows found", 404));
+  }
+
+  // Delete images from Cloudinary
+  for (const event of events) {
+    if (event.image?.filename) {
+      try {
+        await cloudinary.uploader.destroy(event.image.filename);
+      } catch (error) {
+        console.error("Error deleting image from Cloudinary:", error);
+      }
+    }
+  }
+
+  // Delete from Events collection
+  await Event.deleteMany({ 
+    _id: { $in: showIds }, 
+    venue: venue._id 
+  });
+
+  // Remove from venue.shows array
+  venue.shows = venue.shows.filter(show => 
+    !(show._id && showIds.includes(show._id.toString()))
+  );
+  await venue.save();
+
+  res.status(200).json({
+    success: true,
+    message: `${events.length} shows deleted successfully`,
+    data: { deletedCount: events.length }
+  });
+});

@@ -56,24 +56,6 @@ const venueSchema = new mongoose.Schema({
   openHours: { type: String },
   openDays: { type: String },
 
-  // NEW: Contact fields
-  // phone: {
-  //   type: String,
-  //   default: ""
-  // },
-  
-  // website: {
-  //   type: String,
-  //   default: "",
-  //   validate: {
-  //     validator: function(v) {
-  //       if (!v) return true;
-  //       return /^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/.test(v);
-  //     },
-  //     message: props => `${props.value} is not a valid URL!`
-  //   }
-  // },
-
   photos: [
     {
       url: String,

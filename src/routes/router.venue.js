@@ -19,6 +19,12 @@ import {
   checkSubscriptionStatus,
   getSubscriptionStatus,
   getAvailableColorsForCity,
+  getVenueShows,
+  getVenueShowById,
+  updateVenueShow,
+  deleteVenueShow,
+  getVenueShowsCount,
+  bulkDeleteVenueShows
 } from "../controllers/controllers.venue.js";
 import { withEntitlements } from "../middleware/withEntitlements.js";
 
@@ -38,6 +44,58 @@ router.get("/subscription/status",
   getSubscriptionStatus
 );
 
+// ============================================
+// SHOW MANAGEMENT ROUTES (New)
+// ============================================
+
+// Get shows count for current month
+router.get("/shows/count", 
+  protect, 
+  authorize("venue"), 
+  getVenueShowsCount
+);
+
+// Get all shows for a venue
+router.get("/shows", 
+  protect, 
+  authorize("venue"), 
+  getVenueShows
+);
+
+// Get single show by ID
+router.get("/shows/:showId", 
+  protect, 
+  authorize("venue"), 
+  getVenueShowById
+);
+
+// Update show
+router.put("/shows/:showId",
+  protect,
+  authorize("venue"),
+  uploadEventImage,
+  handleUploadErrors,
+  updateVenueShow
+);
+
+// Delete show
+router.delete("/shows/:showId",
+  protect,
+  authorize("venue"),
+  deleteVenueShow
+);
+
+// Bulk delete shows
+router.delete("/shows/bulk",
+  protect,
+  authorize("venue"),
+  bulkDeleteVenueShows
+);
+
+// ============================================
+// VENUE PROFILE ROUTES
+// ============================================
+
 // Venue Self Routes
 router.get("/profile", 
   protect, 
@@ -49,7 +107,6 @@ router.get("/profile",
 router.get("/", getVenuesByCity);
 router.get("/:id", getVenue);
 
-// Add Show with subscription check
 router.post(
   "/add-show",
   protect,
@@ -109,7 +166,7 @@ router.get("/admin/venues",
   getVenuesForAdmin
 );
 
-//  Venue update with manual color support
+// Venue update with manual color support
 router.put("/admin/:id", 
   protect, 
   authorize("admin"), 
