@@ -57,28 +57,47 @@ export const getStripeConnectStatus = asyncHandler(async (req, res, next) => {
     }
   }
 
-  // ✅ FIX: Properly check if user can sell in market
+  // Check if user can sell in market
   const canSellInMarket = () => {
     const sellerTypes = ["artist", "venue", "photographer", "studio", "journalist", "fan"];
     return sellerTypes.includes(user.userType) && user.isVerified;
   };
 
+  // ✅ Check subscription status for market fee
+  const subscriptionActive = user.subscriptionPlan === "pro" && 
+                            ["active", "trialing"].includes(user.subscriptionStatus);
+
   res.status(200).json({
     success: true,
     data: {
+      // Stripe Connect info
       isStripeConnected: user.stripeAccountId ? true : false,
       stripeAccountId: user.stripeAccountId || null,
       stripeAccountStatus: user.stripeAccountStatus || 'not_connected',
       stripeStatusMessage: user.stripeAccountStatus === 'active' ? 'Active' :
         user.stripeAccountStatus === 'pending' ? 'Pending Approval' : 'Not Connected',
+      
+      // User info
       userType: user.userType,
       isVerified: user.isVerified,
       canSellInMarket: canSellInMarket(),
       canConnectStripe: ["artist", "venue", "photographer", "studio", "journalist", "fan"].includes(user.userType),
+      
+      // Stripe account details
       requirements: requirements,
       chargesEnabled: stripeAccount?.charges_enabled || false,
       payoutsEnabled: stripeAccount?.payouts_enabled || false,
-      detailsSubmitted: stripeAccount?.details_submitted || false
+      detailsSubmitted: stripeAccount?.details_submitted || false,
+      
+      // ✅ NEW: Subscription info for market fee
+      subscription: {
+        plan: user.subscriptionPlan,
+        status: user.subscriptionStatus,
+        isActive: subscriptionActive,
+        marketFeePercent: user.subscriptionPlan === "pro" ? 0 : 10,
+        cancelAtPeriodEnd: user.cancelAtPeriodEnd || false,
+        trialEndsAt: user.trialEndsAt,
+      }
     }
   });
 });
@@ -167,7 +186,7 @@ export const createStripeConnectAccount = asyncHandler(async (req, res, next) =>
     }
   }
 
-  // ✅ FIX: Better business profile based on user type
+  // Get business profile based on user type
   const getBusinessProfile = () => {
     switch (user.userType) {
       case 'photographer':

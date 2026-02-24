@@ -131,7 +131,7 @@ const userSchema = new mongoose.Schema({
     default: false,
   },
 
-  // ===== Stripe Payment =====
+  // ===== Stripe Payment (For Pro Plan Subscription) =====
   stripeCustomerId: {
     type: String,
     default: null,
@@ -142,7 +142,7 @@ const userSchema = new mongoose.Schema({
     default: null,
   },
 
-  // ===== Stripe Connect (Market sellers) =====
+  // ===== Stripe Connect (For Marketplace Sellers) =====
   stripeAccountId: {
     type: String,
     default: null,
@@ -211,6 +211,12 @@ userSchema.methods.canSellInMarket = function () {
          this.isStripeConnected();
 };
 
+// Check if user has active Pro subscription
+userSchema.methods.hasActiveProPlan = function () {
+  return this.subscriptionPlan === "pro" && 
+         (this.subscriptionStatus === "active" || this.subscriptionStatus === "trialing");
+};
+
 // Virtual for display location
 userSchema.virtual('displayLocation').get(function () {
   if (this.city && this.state) {
@@ -242,6 +248,7 @@ userSchema.index({ email: 1 });
 userSchema.index({ username: 1 });
 userSchema.index({ stripeAccountId: 1 });
 userSchema.index({ isVerified: 1 });
+userSchema.index({ subscriptionPlan: 1, subscriptionStatus: 1 }); // ✅ Added index for subscription
 
 // Ensure virtuals are included in JSON
 userSchema.set('toJSON', { virtuals: true });
