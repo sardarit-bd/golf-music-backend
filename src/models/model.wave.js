@@ -4,19 +4,23 @@ const WaveSchema = new mongoose.Schema(
   {
     title: {
       type: String,
-      required: function() {
-        return !this.isPageText;
-      },
+      required: true,
       trim: true,
       maxlength: [200, "Title cannot exceed 200 characters"],
     },
 
+    description: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: [1000, "Description cannot exceed 1000 characters"],
+    },
+
     youtubeUrl: {
       type: String,
-      required: function() { 
-        return !this.isPageText;
-      },
+      required: true,
       trim: true,
+      unique: true,
     },
 
     // Auto-generated from YouTube (or custom upload if provided)
@@ -25,30 +29,6 @@ const WaveSchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
-
-
-    isPageText: {
-      type: Boolean,
-      default: false,
-    },
-
-    sectionTitle: {
-      type: String,
-      default: "Waves",
-      trim: true,
-    },
-
-    sectionSubtitle: {
-      type: String,
-      default: "Explore the freshest waves and top audio experiences.",
-      trim: true,
-    },
-
-    yourWavesTitle: {
-      type: String,
-      default: "Your Waves",
-      trim: true,
-    },
   },
   {
     timestamps: true,
@@ -56,14 +36,6 @@ const WaveSchema = new mongoose.Schema(
 );
 
 WaveSchema.index({ title: 1 });
-
-WaveSchema.index({ 
-  youtubeUrl: 1 
-}, { 
-  unique: true,
-  partialFilterExpression: { isPageText: false }
-});
-
-WaveSchema.index({ isPageText: 1 }, { unique: true, sparse: true });
+WaveSchema.index({ title: "text", description: "text" });
 
 export default mongoose.model("Wave", WaveSchema);

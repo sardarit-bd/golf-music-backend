@@ -613,4 +613,8 @@ export const validateWave = [
     .withMessage("Title is required")
     .isLength({ max: 200 })
     .withMessage("Title cannot exceed 200 characters"),
+  body("description")
+    .optional()
+    .isLength({ max: 1000 }).withMessage("Description cannot exceed 1000 characters")
+    .trim(),
 ];
