@@ -209,14 +209,14 @@ export const getAllMarketItemsPublic = asyncHandler(async (req, res) => {
       .limit(limit)
       .populate(
         "seller",
-        "name userType subscriptionPlan isVerified stripeAccountStatus"
+        "username userType subscriptionPlan isVerified stripeAccountStatus"
       ),
     MarketItem.countDocuments(filter)
   ]);
 
   const itemsWithFees = items.map((item) => {
     const feeAmount = calculateMarketFee(item.price, item.subscriptionPlan);
-    
+
     return {
       ...item.toObject(),
       feeInfo: {
@@ -286,14 +286,14 @@ export const getMarketItemsByState = asyncHandler(async (req, res, next) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .populate("seller", "name userType subscriptionPlan isVerified"),
+      .populate("seller", "username userType subscriptionPlan isVerified"),
 
     MarketItem.countDocuments(filter),
   ]);
 
   const itemsWithFees = items.map(item => {
     const feeAmount = calculateMarketFee(item.price, item.subscriptionPlan);
-    
+
     return {
       ...item.toObject(),
       feeInfo: {
@@ -325,7 +325,7 @@ export const getMarketItemsByState = asyncHandler(async (req, res, next) => {
 export const getMarketItemByIdPublic = asyncHandler(async (req, res, next) => {
   const item = await MarketItem.findById(req.params.id).populate(
     "seller",
-    "_id name userType subscriptionPlan isVerified stripeAccountStatus stripeAccountId"
+    "_id username userType subscriptionPlan isVerified stripeAccountStatus stripeAccountId"
   );
 
   if (!item || item.status === "hidden") {
@@ -363,7 +363,11 @@ export const getMarketItemByIdPublic = asyncHandler(async (req, res, next) => {
  * GET: Get current user's market item
  */
 export const getMyMarketItem = asyncHandler(async (req, res) => {
-  const item = await MarketItem.findOne({ seller: req.user._id });
+  const item = await MarketItem.findOne({ seller: req.user._id })
+    .populate(
+      "seller",
+      "_id username userType subscriptionPlan isVerified stripeAccountStatus stripeAccountId"
+    );
 
   if (item) {
     const feeAmount = calculateMarketFee(item.price, req.user?.subscriptionPlan);
@@ -745,7 +749,7 @@ export const adminListMarketItems = asyncHandler(async (req, res) => {
   // Add fee info for admin
   const itemsWithFees = items.map(item => {
     const feeAmount = calculateMarketFee(item.price, item.subscriptionPlan);
-    
+
     return {
       ...item.toObject(),
       feeInfo: {
@@ -822,9 +826,9 @@ export const adminGetMarketItem = asyncHandler(async (req, res, next) => {
   );
 
   if (!item) return next(new ErrorResponse("Item not found", 404));
-  
+
   const feeAmount = calculateMarketFee(item.price, item.subscriptionPlan);
-  
+
   const itemWithFee = {
     ...item.toObject(),
     feeInfo: {
@@ -836,7 +840,7 @@ export const adminGetMarketItem = asyncHandler(async (req, res, next) => {
       plan: item.subscriptionPlan || "free"
     }
   };
-  
+
   res.status(200).json({ success: true, data: itemWithFee });
 });
 

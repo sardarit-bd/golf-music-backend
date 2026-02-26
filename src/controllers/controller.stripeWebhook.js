@@ -223,98 +223,191 @@ export const handleStripeWebhook = async (req, res) => {
   try {
     console.log("🔔 Stripe Event:", event.type);
 
-    // =============================
-    // CHECKOUT SESSION COMPLETED
-    // (Handles both one-time payments and subscriptions)
-    // =============================
+    /* =====================================================
+       CHECKOUT SESSION COMPLETED
+    ===================================================== */
     if (event.type === "checkout.session.completed") {
-      // Call both handlers - they check session.mode internally
-      await handleMerchWebhook(event);        // For regular purchases (mode: 'payment')
-      await handleSubscriptionWebhook(event); // For subscription purchases (mode: 'subscription')
+      const session = event.data.object;
+
+      // 🛍️ Market / Merch Payment
+      if (session.mode === "payment") {
+        const orderId = session.metadata?.orderId;
+        const orderType = session.metadata?.type;
+
+        if (orderId) {
+          await Order.findByIdAndUpdate(orderId, {
+            paymentStatus: "paid",
+            stripePaymentIntentId: session.payment_intent,
+            stripeSessionId: session.id,
+            paidAt: new Date(),
+          });
+
+          console.log(`✅ Order ${orderId} marked as paid`);
+
+          // If it's marketplace item → mark as sold
+          if (orderType === "market") {
+            const order = await Order.findById(orderId);
+            if (order?.marketItem) {
+              await MarketItem.findByIdAndUpdate(order.marketItem, {
+                status: "sold",
+              });
+
+              console.log(`✅ Market item ${order.marketItem} marked as sold`);
+            }
+          }
+        }
+      }
+
+      // 📦 Subscription Checkout
+      if (session.mode === "subscription") {
+        const subscription = await stripe.subscriptions.retrieve(
+          session.subscription
+        );
+
+        const userId =
+          subscription.metadata?.userId || session.metadata?.userId;
+
+        if (userId) {
+          await User.findByIdAndUpdate(userId, {
+            subscriptionPlan: "pro",
+            subscriptionStatus: subscription.status,
+            stripeSubscriptionId: subscription.id,
+            stripeCustomerId: session.customer,
+            cancelAtPeriodEnd: subscription.cancel_at_period_end || false,
+          });
+
+          console.log(`✅ Pro subscription activated for user ${userId}`);
+        }
+      }
     }
 
-    // =============================
-    // SUBSCRIPTION MANAGEMENT EVENTS
-    // =============================
+    /* =====================================================
+       SUBSCRIPTION UPDATED / DELETED
+    ===================================================== */
     if (
       event.type === "customer.subscription.updated" ||
       event.type === "customer.subscription.deleted"
     ) {
-      await handleSubscriptionWebhook(event);
+      const subscription = event.data.object;
+
+      const user =
+        (subscription.metadata?.userId &&
+          (await User.findById(subscription.metadata.userId))) ||
+        (await User.findOne({ stripeSubscriptionId: subscription.id }));
+
+      if (user) {
+        if (event.type === "customer.subscription.deleted") {
+          user.subscriptionPlan = "free";
+          user.subscriptionStatus = "expired";
+          user.stripeSubscriptionId = null;
+          user.cancelAtPeriodEnd = false;
+          await user.save();
+
+          console.log(`❌ Subscription cancelled for user ${user._id}`);
+        } else {
+          user.subscriptionStatus = subscription.status;
+          user.cancelAtPeriodEnd =
+            subscription.cancel_at_period_end || false;
+          await user.save();
+
+          console.log(`📝 Subscription updated for user ${user._id}`);
+        }
+      }
     }
 
-    // =============================
-    // INVOICE PAYMENT SUCCEEDED
-    // (Monthly subscription renewals)
-    // =============================
+    /* =====================================================
+       INVOICE EVENTS (Renewals)
+    ===================================================== */
     if (event.type === "invoice.payment_succeeded") {
       const invoice = event.data.object;
-      
-      // If this is a subscription invoice
+
       if (invoice.subscription) {
-        const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
-        
-        // Update user's subscription status to ensure it's active
-        const userId = subscription.metadata?.userId;
-        
-        if (userId) {
-          await User.findByIdAndUpdate(userId, {
-            subscriptionStatus: "active",
-            subscriptionPlan: "pro",
-          });
-          console.log(`💰 Subscription payment succeeded for user ${userId}`);
+        const subscription = await stripe.subscriptions.retrieve(
+          invoice.subscription
+        );
+
+        const user =
+          (subscription.metadata?.userId &&
+            (await User.findById(subscription.metadata.userId))) ||
+          (await User.findOne({
+            stripeSubscriptionId: subscription.id,
+          }));
+
+        if (user) {
+          user.subscriptionStatus = "active";
+          user.subscriptionPlan = "pro";
+          await user.save();
+
+          console.log(`💰 Renewal payment success for user ${user._id}`);
         }
       }
     }
 
-    // =============================
-    // INVOICE PAYMENT FAILED
-    // =============================
     if (event.type === "invoice.payment_failed") {
       const invoice = event.data.object;
-      
+
       if (invoice.subscription) {
-        const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
-        const userId = subscription.metadata?.userId;
-        
-        if (userId) {
-          await User.findByIdAndUpdate(userId, {
-            subscriptionStatus: "past_due",
-          });
-          console.log(`⚠️ Subscription payment failed for user ${userId}`);
+        const subscription = await stripe.subscriptions.retrieve(
+          invoice.subscription
+        );
+
+        const user =
+          (subscription.metadata?.userId &&
+            (await User.findById(subscription.metadata.userId))) ||
+          (await User.findOne({
+            stripeSubscriptionId: subscription.id,
+          }));
+
+        if (user) {
+          user.subscriptionStatus = "past_due";
+          await user.save();
+
+          console.log(`⚠️ Renewal failed for user ${user._id}`);
         }
       }
     }
 
-    // =============================
-    // CONNECT EVENTS (MARKETPLACE SELLERS)
-    // =============================
-    if (
-      event.type.startsWith("account.") ||
-      event.type.startsWith("capability.") ||
-      event.type.startsWith("person.")
-    ) {
-      console.log("🔵 Connect event received:", event.type);
-      
-      // Handle specific connect events if needed
-      if (event.type === "account.updated") {
-        const account = event.data.object;
-        const userId = account.metadata?.userId;
-        
-        if (userId) {
-          // Update user's Stripe Connect status based on account
-          let accountStatus = 'pending';
-          if (account.charges_enabled && account.payouts_enabled) {
-            accountStatus = 'active';
-          } else if (account.requirements?.disabled_reason) {
-            accountStatus = 'restricted';
-          }
-          
-          await User.findByIdAndUpdate(userId, {
-            stripeAccountStatus: accountStatus,
-          });
-          
-          console.log(`🔄 Stripe Connect account updated for user ${userId}: ${accountStatus}`);
+    /* =====================================================
+       STRIPE CONNECT ACCOUNT UPDATED
+    ===================================================== */
+    if (event.type === "account.updated") {
+      const account = event.data.object;
+      const userId = account.metadata?.userId;
+
+      if (userId) {
+        let accountStatus = "pending";
+
+        if (account.charges_enabled && account.payouts_enabled) {
+          accountStatus = "active";
+        } else if (account.requirements?.disabled_reason) {
+          accountStatus = "restricted";
+        }
+
+        await User.findByIdAndUpdate(userId, {
+          stripeAccountStatus: accountStatus,
+        });
+
+        console.log(
+          `🔄 Stripe Connect updated for ${userId}: ${accountStatus}`
+        );
+
+        /* 🔥 AUTO MARKET ACTIVATION */
+        if (accountStatus === "active") {
+          const result = await MarketItem.updateMany(
+            { seller: userId, status: "pending" },
+            { $set: { status: "active" } }
+          );
+
+          console.log(
+            `✅ Activated ${result.modifiedCount} market items`
+          );
+        } else {
+          await MarketItem.updateMany(
+            { seller: userId },
+            { $set: { status: "pending" } }
+          );
+
+          console.log(`⛔ Market items set to pending`);
         }
       }
     }
@@ -323,8 +416,6 @@ export const handleStripeWebhook = async (req, res) => {
 
   } catch (err) {
     console.error("❌ Webhook handler error:", err);
-    // ALWAYS return 200 to Stripe - even on error
-    // This prevents Stripe from retrying the same event
     res.status(200).json({ received: true });
   }
 };

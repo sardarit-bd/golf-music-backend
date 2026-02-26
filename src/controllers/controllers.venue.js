@@ -163,7 +163,7 @@ export const getCalendarByCity = asyncHandler(async (req, res, next) => {
     city: city.toLowerCase(),
     isActive: true
   })
-    .select("venueName state city colorCode shows");
+    .select("venueName state city colorCode");
 
   res.status(200).json({
     success: true,
@@ -188,30 +188,37 @@ export const addShow = asyncHandler(async (req, res, next) => {
     throw new ErrorResponse("Venue profile not found", 404);
   }
 
-  // MONTHLY SHOW LIMIT CHECK (based on config)
-  const now = new Date();
-  const startOfMonth = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
-  const endOfMonth = new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59));
+  /* =====================================================
+     MONTHLY SHOW LIMIT
+  ====================================================== */
+  const showLimit = rules?.shows;
 
-  const showsThisMonth = await Event.countDocuments({
-    venue: venue._id,
-    dateOnly: { $gte: startOfMonth, $lte: endOfMonth },
-    isActive: true,
-  });
+  if (typeof showLimit === "number" && showLimit > 0) {
+    const now = new Date();
+    const startOfMonth = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
+    const endOfMonth = new Date(
+      Date.UTC(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
+    );
 
-  // Dynamic limit from config
-  const showLimit = rules.shows;
+    const showsThisMonth = await Event.countDocuments({
+      venue: venue._id,
+      dateOnly: { $gte: startOfMonth, $lte: endOfMonth },
+      isActive: true,
+    });
 
-  if (showsThisMonth >= showLimit) {
-    const message = showLimit === 999
-      ? "Unexpected error occurred"
-      : `Monthly show limit reached (max ${showLimit} shows).`;
-
-    return next(new ErrorResponse(message, 403));
+    if (showsThisMonth >= showLimit) {
+      return next(
+        new ErrorResponse(
+          `Monthly show limit reached (max ${showLimit} shows).`,
+          403
+        )
+      );
+    }
   }
 
-  // Rest of the function remains same...
-  // Upload show image
+  /* ===============================
+     Upload show image
+  =============================== */
   const imageData = req.file
     ? { url: req.file.path, filename: req.file.filename }
     : null;
@@ -229,20 +236,14 @@ export const addShow = asyncHandler(async (req, res, next) => {
     state: venue.state,
     city: venue.city,
     color: venue.colorCode || "#000000",
+    isActive: true,
   });
 
-  venue.shows.push({
-    artist: req.body.artist,
-    date: parsedDate.fullDate,
-    time: req.body.time,
-  });
-
-  await venue.save();
 
   res.status(200).json({
     success: true,
     message: "Show added successfully",
-    data: { venue, event },
+    data: { event },
   });
 });
 
@@ -277,7 +278,7 @@ export const getVenuesByCity = asyncHandler(async (req, res, next) => {
 
   if (city && city !== "all") {
     query.city = city.toLowerCase();
-  } 
+  }
   else if (state) {
     const stateCities = STATE_CITY_MAPPING[state] || [];
     query.city = { $in: stateCities };
@@ -412,13 +413,13 @@ export const updateVenueProfile = asyncHandler(async (req, res, next) => {
   // Delete removed photos from Cloudinary
   if (removedPhotos.length > 0) {
     console.log("Deleting from Cloudinary:", removedPhotos);
-    
+
     for (const publicId of removedPhotos) {
       try {
         // Try to delete from Cloudinary
         const result = await cloudinary.uploader.destroy(publicId);
         console.log(`Cloudinary delete result for ${publicId}:`, result);
-        
+
         if (result.result !== 'ok') {
           console.warn(`Failed to delete ${publicId}:`, result);
         }
@@ -569,12 +570,12 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
   };
 
   if (colorCode !== undefined) {
-    
+
     const isValidColor = /^#[0-9A-F]{6}$/i.test(colorCode);
     if (!isValidColor) {
       return next(new ErrorResponse(`Invalid color format: ${colorCode}. Must be hex color like #FF0000`, 400));
     }
-    
+
     venue.colorCode = colorCode;
     changes.push(`Color updated from ${oldValues.colorCode || 'none'} to ${colorCode}`);
   }
@@ -587,7 +588,7 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
     try {
       if (colorCode) {
         const isValidColor = ColorAssigner.isValidColorForCity(colorCode, newCity);
-        
+
         if (!isValidColor) {
           return next(
             new ErrorResponse(
@@ -597,16 +598,16 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
             )
           );
         }
-        
+
         const isAvailable = await ColorAssigner.isColorAvailable(colorCode, newCity, id, venue.state);
-        
+
         if (!isAvailable) {
           const existingVenue = await Venue.findOne({
             city: newCity,
             colorCode: colorCode,
             _id: { $ne: id }
           });
-          
+
           return next(
             new ErrorResponse(
               `Color ${colorCode} is already taken by "${existingVenue?.venueName || 'another venue'}" ` +
@@ -615,7 +616,7 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
             )
           );
         }
-        
+
         venue.colorCode = colorCode;
         changes.push(`Color manually set to ${colorCode} for new city`);
       } else {
@@ -661,7 +662,7 @@ export const updateVenueByAdmin = asyncHandler(async (req, res, next) => {
         verifiedOrder: { $gt: 0 },
       });
       venue.verifiedOrder = verifiedCount + 1;
-      
+
       // Use fallback color
       const cityColors = ColorAssigner.getCityColors(venue.city);
       const colorIndex = (venue.verifiedOrder - 1) % cityColors.length;
@@ -833,7 +834,7 @@ export const deleteVenueByAdmin = asyncHandler(async (req, res, next) => {
 export const checkSubscriptionStatus = (req, res, next) => {
   try {
     const user = req.user;
-    
+
     const status = {
       systemWide: {
         subscriptionsEnabled: isSubscriptionEnabled(),
@@ -854,10 +855,10 @@ export const checkSubscriptionStatus = (req, res, next) => {
       },
       ui: SUBSCRIPTION_CONFIG.UI,
     };
-    
+
     // Attach to request for use in other middleware
     req.subscriptionStatus = status;
-    
+
     if (next) {
       next();
     } else {
@@ -950,7 +951,7 @@ export const getVenuesStatesSummary = asyncHandler(async (req, res, next) => {
     const formattedSummary = stateSummary.map(state => {
       const stateName = state._id;
       const availableCities = STATE_CITY_MAPPING[stateName] || [];
-      
+
       return {
         state: stateName,
         totalVenues: state.totalVenues,
@@ -965,14 +966,14 @@ export const getVenuesStatesSummary = asyncHandler(async (req, res, next) => {
     });
 
     // Filter only states that exist in STATE_CITY_MAPPING
-    const validStates = formattedSummary.filter(state => 
+    const validStates = formattedSummary.filter(state =>
       STATE_CITY_MAPPING[state.state]
     );
 
     // Add states with no venues but in mapping
     const allStates = Object.keys(STATE_CITY_MAPPING);
     const existingStates = validStates.map(state => state.state);
-    
+
     const statesWithNoVenues = allStates
       .filter(state => !existingStates.includes(state))
       .map(state => ({
@@ -1014,7 +1015,7 @@ export const getVenuesStatesSummary = asyncHandler(async (req, res, next) => {
 // Subscription status endpoint
 export const getSubscriptionStatus = asyncHandler(async (req, res, next) => {
   const status = checkSubscriptionStatus(req, res);
-  
+
   res.status(200).json({
     success: true,
     data: status
@@ -1025,16 +1026,16 @@ export const getSubscriptionStatus = asyncHandler(async (req, res, next) => {
 export const getAvailableColorsForCity = asyncHandler(async (req, res, next) => {
   try {
     const { city, state, excludeVenueId } = req.query;
-    
+
     if (!city) {
       return next(new ErrorResponse("City parameter is required", 400));
     }
-    
+
     // ভ্যালিডেট সিটি
     const normalizedCity = city.toLowerCase();
     let isValidCity = false;
     let cityState = state;
-    
+
     // যদি state দেওয়া থাকে, তাহলে সেই state-এ city আছে কিনা চেক করুন
     if (state) {
       isValidCity = ColorAssigner.isValidCityForState(state, normalizedCity);
@@ -1049,36 +1050,36 @@ export const getAvailableColorsForCity = asyncHandler(async (req, res, next) => 
         }
       }
     }
-    
+
     if (!isValidCity) {
       return next(new ErrorResponse(`Invalid city: ${city}`, 400));
     }
-    
+
     // কালার ইনফরমেশন পাওয়া
     const colorInfo = await ColorAssigner.getAvailableColorsForCity(
-      normalizedCity, 
+      normalizedCity,
       excludeVenueId || null,
       cityState
     );
-    
+
     // কনট্রাস্ট কালার বের করার ফাংশন
     const getContrastColor = (hexColor) => {
       if (!hexColor || hexColor.length < 7) return "#000000";
-      
+
       const r = parseInt(hexColor.substring(1, 3), 16);
       const g = parseInt(hexColor.substring(3, 5), 16);
       const b = parseInt(hexColor.substring(5, 7), 16);
-      
+
       const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
       return luminance > 0.5 ? "#000000" : "#FFFFFF";
     };
-    
+
     // প্রতিটি কালারের জন্য অতিরিক্ত তথ্য
     const colorsWithDetails = colorInfo.allColors.map(color => {
       const isUsed = colorInfo.usedColors.includes(color);
       const isAvailable = colorInfo.availableColors.includes(color);
       const usedByVenue = colorInfo.colorUsage[color] || null;
-      
+
       return {
         color,
         isUsed,
@@ -1087,7 +1088,7 @@ export const getAvailableColorsForCity = asyncHandler(async (req, res, next) => 
         textColor: getContrastColor(color)
       };
     });
-    
+
     res.status(200).json({
       success: true,
       data: {
@@ -1104,7 +1105,7 @@ export const getAvailableColorsForCity = asyncHandler(async (req, res, next) => 
         }
       }
     });
-    
+
   } catch (error) {
     console.error("Error in getAvailableColorsForCity:", error);
     next(new ErrorResponse("Failed to fetch colors: " + error.message, 500));
@@ -1208,19 +1209,14 @@ export const getVenueShows = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Venue profile not found", 404));
   }
 
-  // Get shows from Events collection (main source)
   const events = await Event.find({ venue: venue._id })
     .sort({ date: -1 })
     .lean();
-
-  // Also get shows from venue.shows array (backup)
-  const venueShows = venue.shows || [];
 
   res.status(200).json({
     success: true,
     data: {
       events,
-      venueShows,
       total: events.length
     }
   });
@@ -1235,10 +1231,9 @@ export const getVenueShowById = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Venue profile not found", 404));
   }
 
-  // Find in Events collection
-  const event = await Event.findOne({ 
-    _id: showId, 
-    venue: venue._id 
+  const event = await Event.findOne({
+    _id: showId,
+    venue: venue._id
   });
 
   if (!event) {
@@ -1262,9 +1257,9 @@ export const updateVenueShow = asyncHandler(async (req, res, next) => {
   }
 
   // Find event in Events collection
-  const event = await Event.findOne({ 
-    _id: showId, 
-    venue: venue._id 
+  const event = await Event.findOne({
+    _id: showId,
+    venue: venue._id
   });
 
   if (!event) {
@@ -1278,11 +1273,12 @@ export const updateVenueShow = asyncHandler(async (req, res, next) => {
     if (event.image?.filename) {
       try {
         await cloudinary.uploader.destroy(event.image.filename);
+        console.log("Old image deleted from Cloudinary");
       } catch (error) {
         console.error("Error deleting old image:", error);
       }
     }
-    
+
     // Add new image
     imageData = {
       url: req.file.path,
@@ -1296,7 +1292,6 @@ export const updateVenueShow = asyncHandler(async (req, res, next) => {
     parsedDate = parseEventDate(date, time);
   }
 
-  // Update event
   event.artistBandName = artist || event.artistBandName;
   event.eventTime = time || event.eventTime;
   if (parsedDate) {
@@ -1309,21 +1304,6 @@ export const updateVenueShow = asyncHandler(async (req, res, next) => {
 
   await event.save();
 
-  // Also update in venue.shows array (for backward compatibility)
-  const showIndex = venue.shows.findIndex(s => 
-    s._id && s._id.toString() === showId
-  );
-
-  if (showIndex !== -1) {
-    venue.shows[showIndex] = {
-      ...venue.shows[showIndex],
-      artist: artist || venue.shows[showIndex].artist,
-      date: parsedDate?.fullDate || venue.shows[showIndex].date,
-      time: time || venue.shows[showIndex].time,
-    };
-    await venue.save();
-  }
-
   res.status(200).json({
     success: true,
     message: "Show updated successfully",
@@ -1335,13 +1315,13 @@ export const updateVenueShow = asyncHandler(async (req, res, next) => {
 export const deleteVenueShow = asyncHandler(async (req, res, next) => {
   const { showId } = req.params;
 
-  // 1️⃣ Find Venue
+  //  Find Venue
   const venue = await Venue.findOne({ user: req.user.id });
   if (!venue) {
     return next(new ErrorResponse("Venue profile not found", 404));
   }
 
-  // 2️⃣ Find Event (belongs to this venue)
+  // Find Event (belongs to this venue)
   const event = await Event.findOne({
     _id: showId,
     venue: venue._id
@@ -1351,20 +1331,17 @@ export const deleteVenueShow = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Show not found", 404));
   }
 
-  // 3️⃣ Delete image from Cloudinary (if exists)
+  // Delete image from Cloudinary (if exists)
   if (event.image?.filename) {
     try {
-      await cloudinary.uploader.destroy(event.image.filename);
+      const result = await cloudinary.uploader.destroy(event.image.filename);
+      console.log("Cloudinary delete result:", result);
     } catch (error) {
       console.error("Cloudinary delete error:", error);
     }
   }
 
-  // 4️⃣ Delete event from database
   await event.deleteOne();
-
-  // ✅ NO MORE venue.shows manipulation
-  // ❌ Removed embedded array logic completely
 
   res.status(200).json({
     success: true,
@@ -1403,6 +1380,7 @@ export const getVenueShowsCount = asyncHandler(async (req, res, next) => {
   });
 });
 
+
 // Bulk delete shows
 export const bulkDeleteVenueShows = asyncHandler(async (req, res, next) => {
   const { showIds } = req.body;
@@ -1417,9 +1395,9 @@ export const bulkDeleteVenueShows = asyncHandler(async (req, res, next) => {
   }
 
   // Find all events
-  const events = await Event.find({ 
-    _id: { $in: showIds }, 
-    venue: venue._id 
+  const events = await Event.find({
+    _id: { $in: showIds },
+    venue: venue._id
   });
 
   if (events.length === 0) {
@@ -1437,17 +1415,11 @@ export const bulkDeleteVenueShows = asyncHandler(async (req, res, next) => {
     }
   }
 
-  // Delete from Events collection
-  await Event.deleteMany({ 
-    _id: { $in: showIds }, 
-    venue: venue._id 
+  await Event.deleteMany({
+    _id: { $in: showIds },
+    venue: venue._id
   });
 
-  // Remove from venue.shows array
-  venue.shows = venue.shows.filter(show => 
-    !(show._id && showIds.includes(show._id.toString()))
-  );
-  await venue.save();
 
   res.status(200).json({
     success: true,

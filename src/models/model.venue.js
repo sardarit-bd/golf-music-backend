@@ -1,12 +1,6 @@
 import mongoose from "mongoose";
 import { STATE_CITY_MAPPING } from "../utils/constants.js";
 
-const showSchema = new mongoose.Schema({
-  artist: { type: String, required: true },
-  date: { type: Date, required: true },
-  time: { type: String, required: true },
-});
-
 const venueSchema = new mongoose.Schema({
   user: {
     type: mongoose.Schema.Types.ObjectId,
@@ -22,7 +16,6 @@ const venueSchema = new mongoose.Schema({
     maxlength: [100, "Venue name cannot exceed 100 characters"],
   },
 
-  // NEW: STATE FIELD
   state: {
     type: String,
     required: [true, "State is required"],
@@ -30,7 +23,6 @@ const venueSchema = new mongoose.Schema({
     default: "Alabama"
   },
 
-  // UPDATED: City validation will be dynamic
   city: {
     type: String,
     required: [true, "City is required"],
@@ -94,8 +86,6 @@ const venueSchema = new mongoose.Schema({
     }
   },
 
-  shows: [showSchema],
-
   isActive: {
     type: Boolean,
     default: false,
@@ -109,10 +99,8 @@ const venueSchema = new mongoose.Schema({
 venueSchema.pre("save", async function (next) {
   this.updatedAt = Date.now();
   
-  // If city is being changed or state is being changed
   if (this.isModified('city') || this.isModified('state')) {
     try {
-      // Use STATE_CITY_MAPPING directly from constants
       const stateCities = STATE_CITY_MAPPING[this.state] || [];
       
       if (!stateCities.includes(this.city.toLowerCase())) {
