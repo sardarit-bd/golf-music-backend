@@ -6,10 +6,24 @@ import { extractYouTubeId, getYouTubeThumbnail } from "../utils/youtube.js";
 
 // GET all waves (public)
 export const getAllWaves = asyncHandler(async (req, res) => {
-  const waves = await Wave.find({ isPageText: { $ne: true } }).sort({ createdAt: -1 });
+  const waves = await Wave.find().sort({ createdAt: -1 });
   res.status(200).json({
     success: true,
     data: { waves },
+  });
+});
+
+// GET single wave (public)
+export const getWaveById = asyncHandler(async (req, res, next) => {
+  const wave = await Wave.findById(req.params.id);
+  
+  if (!wave) {
+    return next(new ErrorResponse("Wave not found", 404));
+  }
+  
+  res.status(200).json({
+    success: true,
+    data: { wave },
   });
 });
 
@@ -22,7 +36,7 @@ export const createWave = asyncHandler(async (req, res, next) => {
     );
   }
 
-  const { title, youtubeUrl } = req.body;
+  const { title, description, youtubeUrl } = req.body;
 
   const videoId = extractYouTubeId(youtubeUrl);
   if (!videoId) {
@@ -37,18 +51,15 @@ export const createWave = asyncHandler(async (req, res, next) => {
     thumbnailUrl = getYouTubeThumbnail(videoId);
   }
 
-  const [titleExists, videoExists] = await Promise.all([
-    Wave.findOne({ title: new RegExp(`^${title}$`, "i"), isPageText: { $ne: true } }),
-    Wave.findOne({ youtubeUrl, isPageText: { $ne: true } }),
-  ]);
-
-  if (titleExists)
-    return next(new ErrorResponse("Wave title already exists", 400));
-  if (videoExists)
+  // Check if wave exists
+  const existingWave = await Wave.findOne({ youtubeUrl });
+  if (existingWave) {
     return next(new ErrorResponse("This YouTube video already exists", 400));
+  }
 
   const newWave = await Wave.create({
     title,
+    description: description || "",
     youtubeUrl,
     thumbnail: thumbnailUrl,
   });
@@ -56,7 +67,7 @@ export const createWave = asyncHandler(async (req, res, next) => {
   res.status(201).json({
     success: true,
     message: "Wave added successfully!",
-    data: { newWave },
+    data: { wave: newWave },
   });
 });
 
@@ -69,34 +80,57 @@ export const updateWave = asyncHandler(async (req, res, next) => {
     );
   }
 
-  const updateData = { ...req.body };
-
-  if (req.file && req.file.path) {
-    updateData.thumbnail = req.file.path;
+  const wave = await Wave.findById(req.params.id);
+  if (!wave) {
+    return next(new ErrorResponse("Wave not found", 404));
   }
 
-  const updated = await Wave.findOneAndUpdate(
-    { _id: req.params.id, isPageText: { $ne: true } },
-    updateData,
-    {
-      new: true,
-      runValidators: true,
-    }
-  );
+  const { title, description, youtubeUrl } = req.body;
 
-  if (!updated) return next(new ErrorResponse("Wave not found", 404));
+  // Update fields
+  if (title) wave.title = title;
+  if (description !== undefined) wave.description = description;
+  
+  if (youtubeUrl && youtubeUrl !== wave.youtubeUrl) {
+    const videoId = extractYouTubeId(youtubeUrl);
+    if (!videoId) {
+      return next(new ErrorResponse("Invalid YouTube URL", 400));
+    }
+    
+    // Check if new URL already exists
+    const existingWave = await Wave.findOne({ youtubeUrl, _id: { $ne: wave._id } });
+    if (existingWave) {
+      return next(new ErrorResponse("This YouTube video already exists", 400));
+    }
+    
+    wave.youtubeUrl = youtubeUrl;
+    
+    // Update thumbnail if no custom upload
+    if (!req.file?.path) {
+      wave.thumbnail = getYouTubeThumbnail(videoId);
+    }
+  }
+
+  // Update thumbnail if new file uploaded
+  if (req.file?.path) {
+    wave.thumbnail = req.file.path;
+  }
+
+  await wave.save();
 
   res.status(200).json({
     success: true,
     message: "Wave updated successfully!",
-    data: { updated },
+    data: { wave },
   });
 });
 
 // DELETE wave (admin)
 export const deleteWave = asyncHandler(async (req, res, next) => {
-  const wave = await Wave.findOne({ _id: req.params.id, isPageText: { $ne: true } });
-  if (!wave) return next(new ErrorResponse("Wave not found", 404));
+  const wave = await Wave.findById(req.params.id);
+  if (!wave) {
+    return next(new ErrorResponse("Wave not found", 404));
+  }
 
   await wave.deleteOne();
 
@@ -106,73 +140,37 @@ export const deleteWave = asyncHandler(async (req, res, next) => {
   });
 });
 
-// GET SECTION TEXT (public)
-export const getWaveSectionText = asyncHandler(async (req, res) => {
-  let pageText = await Wave.findOne({ isPageText: true });
+// SEARCH waves (public) - Updated to use text search
+export const searchWaves = asyncHandler(async (req, res) => {
+  const { query } = req.query;
 
-  if (!pageText) {
-    // Create default page text if doesn't exist
-    pageText = await Wave.create({
-      isPageText: true,
-      sectionTitle: "Waves",
-      sectionSubtitle: "Explore the freshest waves and top audio experiences.",
-      yourWavesTitle: "Your Waves",
+  if (!query) {
+    return getAllWaves(req, res);
+  }
+
+  // Try text search first, fallback to regex if needed
+  try {
+    const waves = await Wave.find(
+      { $text: { $search: query } },
+      { score: { $meta: "textScore" } }
+    ).sort({ score: { $meta: "textScore" } });
+
+    res.status(200).json({
+      success: true,
+      data: { waves },
+    });
+  } catch (error) {
+    // Fallback to regex search if text search fails
+    const waves = await Wave.find({
+      $or: [
+        { title: { $regex: query, $options: "i" } },
+        { description: { $regex: query, $options: "i" } }
+      ]
+    }).sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      data: { waves },
     });
   }
-
-  res.status(200).json({
-    success: true,
-    data: {
-      sectionTitle: pageText.sectionTitle,
-      sectionSubtitle: pageText.sectionSubtitle,
-      yourWavesTitle: pageText.yourWavesTitle,
-    },
-  });
-});
-
-// UPDATE SECTION TEXT (admin)
-export const updateWaveSectionText = asyncHandler(async (req, res, next) => {
-  const { sectionTitle, sectionSubtitle, yourWavesTitle } = req.body;
-
-  // Check if at least one field is provided
-  if (!sectionTitle && !sectionSubtitle && !yourWavesTitle) {
-    return next(new ErrorResponse("At least one field is required to update", 400));
-  }
-
-  const updateData = {};
-  
-  // Optional fields - only update if provided
-  if (sectionTitle !== undefined) {
-    updateData.sectionTitle = sectionTitle.trim();
-  }
-  
-  if (sectionSubtitle !== undefined) {
-    updateData.sectionSubtitle = sectionSubtitle.trim();
-  }
-  
-  if (yourWavesTitle !== undefined) {
-    updateData.yourWavesTitle = yourWavesTitle.trim();
-  }
-
-  // Find or create the page text document
-  const pageText = await Wave.findOneAndUpdate(
-    { isPageText: true },
-    updateData,
-    {
-      new: true,
-      upsert: true,
-      runValidators: true,
-      setDefaultsOnInsert: true,
-    }
-  );
-
-  res.status(200).json({
-    success: true,
-    message: "Section text updated successfully!",
-    data: {
-      sectionTitle: pageText.sectionTitle,
-      sectionSubtitle: pageText.sectionSubtitle,
-      yourWavesTitle: pageText.yourWavesTitle,
-    },
-  });
 });

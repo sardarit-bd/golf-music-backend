@@ -1,6 +1,7 @@
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import MarketItem from "../models/model.marketItem.js";
+import Order from "../models/model.order.js";
 import { deleteFromCloudinary, extractPublicIdFromUrl } from "../config/cloudinary.js";
 
 const isSellerTypeAllowed = (userType) =>
@@ -10,16 +11,17 @@ const normalizeSellerType = (t) => String(t || "").toLowerCase();
 
 const validLocations = ["Louisiana", "Mississippi", "Alabama", "Florida", ""];
 
-// Client requirement: Subscription fee calculation
+/**
+ * Calculate market fee (only affects seller)
+ * Buyer pays full price, seller receives price - fee
+ */
 const calculateMarketFee = (price, subscriptionPlan = "free") => {
-  if (subscriptionPlan === "pro") {
-    return price * 0.05; // Pro Plan: 5% fee
-  }
-  return price * 0.10; // Free Plan: 10% fee
+  const rate = subscriptionPlan === "pro" ? 0 : 0.10;
+  return Math.round(price * rate * 100) / 100;
 };
 
 /**
- * FIXED: Helper function to delete file from Cloudinary
+ * Helper function to delete file from Cloudinary
  */
 const deleteCloudinaryFile = async (fileUrl) => {
   if (!fileUrl || !String(fileUrl).includes("res.cloudinary.com")) {
@@ -27,16 +29,15 @@ const deleteCloudinaryFile = async (fileUrl) => {
   }
 
   try {
-    // Use the fixed delete function from cloudinary.js
     const result = await deleteFromCloudinary(fileUrl, 'auto');
-    
+
     if (result.result === 'ok') {
       return { success: true, result };
     } else {
       console.warn('⚠️ Cloudinary delete may have failed:', result);
       return { success: false, result };
     }
-    
+
   } catch (error) {
     console.error("❌ Cloudinary delete failed:", error.message);
     return { success: false, error: error.message };
@@ -50,9 +51,9 @@ const deleteMultipleFiles = async (urls) => {
   if (!urls || !Array.isArray(urls) || urls.length === 0) {
     return { success: true, deleted: 0 };
   }
-  
+
   const results = [];
-  
+
   for (const url of urls) {
     try {
       const result = await deleteCloudinaryFile(url);
@@ -60,10 +61,10 @@ const deleteMultipleFiles = async (urls) => {
         url: url.substring(0, 50) + '...',
         success: result.success
       });
-      
+
       // Small delay to avoid rate limiting
       await new Promise(resolve => setTimeout(resolve, 50));
-      
+
     } catch (error) {
       results.push({
         url: url.substring(0, 50) + '...',
@@ -72,11 +73,10 @@ const deleteMultipleFiles = async (urls) => {
       });
     }
   }
-  
+
   const successful = results.filter(r => r.success).length;
   const failed = results.filter(r => !r.success).length;
-  
-  
+
   return {
     success: failed === 0,
     deleted: successful,
@@ -86,11 +86,11 @@ const deleteMultipleFiles = async (urls) => {
 };
 
 /**
- * FIXED: Parse photos to delete from request
+ * Parse photos to delete from request
  */
 const parsePhotosToDelete = (reqBody) => {
   const photosToDelete = [];
-  
+
   // Method 1: Check for photosToDelete array
   if (reqBody.photosToDelete) {
     try {
@@ -114,7 +114,7 @@ const parsePhotosToDelete = (reqBody) => {
       console.error("Error parsing photosToDelete:", error);
     }
   }
-  
+
   // Method 2: Check for photosToDelete[0], photosToDelete[1], etc.
   if (reqBody['photosToDelete[0]']) {
     let index = 0;
@@ -122,16 +122,14 @@ const parsePhotosToDelete = (reqBody) => {
       try {
         const photoData = reqBody[`photosToDelete[${index}]`];
         let photoUrl;
-        
+
         try {
-          // Try to parse as JSON
           const parsed = JSON.parse(photoData);
           photoUrl = parsed.url || parsed;
         } catch {
-          // If not JSON, use as string
           photoUrl = photoData;
         }
-        
+
         if (photoUrl && photoUrl.trim() && !photosToDelete.includes(photoUrl.trim())) {
           photosToDelete.push(photoUrl.trim());
         }
@@ -142,19 +140,18 @@ const parsePhotosToDelete = (reqBody) => {
       }
     }
   }
-  
+
   return photosToDelete;
 };
 
 /**
- * FIXED: Remove deleted photos from array
+ * Remove deleted photos from array
  */
 const removePhotosFromArray = (originalArray, urlsToRemove) => {
   if (!originalArray || !Array.isArray(originalArray) || urlsToRemove.length === 0) {
     return originalArray || [];
   }
-  
-  // Create a Set of public IDs to remove for faster lookup
+
   const publicIdsToRemove = new Set();
   urlsToRemove.forEach(url => {
     const publicId = extractPublicIdFromUrl(url);
@@ -162,38 +159,44 @@ const removePhotosFromArray = (originalArray, urlsToRemove) => {
       publicIdsToRemove.add(publicId);
     }
   });
-  
-  // Filter out photos whose public ID is in the remove set
+
   const filteredArray = originalArray.filter(photoUrl => {
     const photoPublicId = extractPublicIdFromUrl(photoUrl);
     const shouldKeep = !publicIdsToRemove.has(photoPublicId);
-    
-    // if (!shouldKeep) {
-    //   console.log(`❌ Removing photo: ${photoUrl.substring(0, 80)}...`);
-    // }
-    
     return shouldKeep;
   });
-  
+
   return filteredArray;
 };
+
+/* =========================
+   PUBLIC ROUTES
+========================= */
 
 /**
  * PUBLIC: Get all active items with fee calculation
  */
 export const getAllMarketItemsPublic = asyncHandler(async (req, res) => {
   const { search, sellerType, location } = req.query;
+
   const page = Math.max(parseInt(req.query.page || "1", 10), 1);
   const limit = Math.min(Math.max(parseInt(req.query.limit || "12", 10), 1), 50);
   const skip = (page - 1) * limit;
 
   const filter = { status: "active" };
 
-  // Client requirement: All user types
-  if (sellerType && ["artist", "venue", "photographer", "studio", "journalist", "fan"].includes(normalizeSellerType(sellerType))) {
+  if (
+    sellerType &&
+    ["artist", "venue", "photographer", "studio", "journalist", "fan"].includes(
+      normalizeSellerType(sellerType)
+    )
+  ) {
     filter.sellerType = normalizeSellerType(sellerType);
   }
-  if (location) filter.location = new RegExp(location, "i");
+
+  if (location) {
+    filter.location = new RegExp(location, "i");
+  }
 
   if (search) {
     filter.$text = { $search: search };
@@ -204,22 +207,25 @@ export const getAllMarketItemsPublic = asyncHandler(async (req, res) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .populate("seller", "name userType subscriptionPlan isVerified"),
-    MarketItem.countDocuments(filter),
+      .populate(
+        "seller",
+        "username userType subscriptionPlan isVerified stripeAccountStatus"
+      ),
+    MarketItem.countDocuments(filter)
   ]);
 
-  // Add fee info to response
-  const itemsWithFees = items.map(item => {
-    const feePercentage = item.seller?.subscriptionPlan === "pro" ? 5 : 10;
-    const feeAmount = calculateMarketFee(item.price, item.seller?.subscriptionPlan);
+  const itemsWithFees = items.map((item) => {
+    const feeAmount = calculateMarketFee(item.price, item.subscriptionPlan);
 
     return {
       ...item.toObject(),
       feeInfo: {
-        percentage: feePercentage,
+        percentage: item.subscriptionPlan === "pro" ? 5 : 10,
         amount: feeAmount,
-        total: item.price + feeAmount,
-        plan: item.seller?.subscriptionPlan || "free"
+        buyerPays: item.price,                 // ✅ Buyer pays full price
+        sellerReceives: item.price - feeAmount, // ✅ Seller gets price minus fee
+        adminCommission: feeAmount,              // ✅ Admin gets the fee
+        plan: item.subscriptionPlan || "free"
       }
     };
   });
@@ -230,9 +236,9 @@ export const getAllMarketItemsPublic = asyncHandler(async (req, res) => {
       page,
       limit,
       total,
-      pages: Math.ceil(total / limit),
+      pages: Math.ceil(total / limit)
     },
-    data: itemsWithFees,
+    data: itemsWithFees
   });
 });
 
@@ -256,6 +262,7 @@ export const getMarketItemsByState = asyncHandler(async (req, res, next) => {
     );
   }
 
+  // Only show active items
   const filter = {
     location: state,
     status: "active",
@@ -279,21 +286,23 @@ export const getMarketItemsByState = asyncHandler(async (req, res, next) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .populate("seller", "name userType subscriptionPlan isVerified"),
+      .populate("seller", "username userType subscriptionPlan isVerified"),
 
     MarketItem.countDocuments(filter),
   ]);
 
   const itemsWithFees = items.map(item => {
-    const feePercentage = item.seller?.subscriptionPlan === "pro" ? 5 : 10;
-    const feeAmount = calculateMarketFee(item.price, item.seller?.subscriptionPlan);
+    const feeAmount = calculateMarketFee(item.price, item.subscriptionPlan);
 
     return {
       ...item.toObject(),
       feeInfo: {
-        percentage: feePercentage,
+        percentage: item.subscriptionPlan === "pro" ? 5 : 10,
         amount: feeAmount,
-        total: item.price + feeAmount
+        buyerPays: item.price,                 // ✅ Buyer pays full price
+        sellerReceives: item.price - feeAmount, // ✅ Seller gets price minus fee
+        adminCommission: feeAmount,              // ✅ Admin gets the fee
+        plan: item.subscriptionPlan || "free"
       }
     };
   });
@@ -316,46 +325,66 @@ export const getMarketItemsByState = asyncHandler(async (req, res, next) => {
 export const getMarketItemByIdPublic = asyncHandler(async (req, res, next) => {
   const item = await MarketItem.findById(req.params.id).populate(
     "seller",
-    "name userType subscriptionPlan isVerified"
+    "_id username userType subscriptionPlan isVerified stripeAccountStatus stripeAccountId"
   );
 
   if (!item || item.status === "hidden") {
     return next(new ErrorResponse("Item not found", 404));
   }
 
-  // Add fee info
-  const feePercentage = item.seller?.subscriptionPlan === "pro" ? 5 : 10;
-  const feeAmount = calculateMarketFee(item.price, item.seller?.subscriptionPlan);
+  // Check if item is active (only active items should be viewable for purchase)
+  if (item.status !== "active") {
+    return next(new ErrorResponse("This item is not available for purchase", 404));
+  }
+
+  const feeAmount = calculateMarketFee(item.price, item.subscriptionPlan);
 
   const itemWithFee = {
     ...item.toObject(),
     feeInfo: {
-      percentage: feePercentage,
+      percentage: item.subscriptionPlan === "pro" ? 5 : 10,
       amount: feeAmount,
-      total: item.price + feeAmount,
-      plan: item.seller?.subscriptionPlan || "free"
-    }
+      buyerPays: item.price,                 // ✅ Buyer pays full price
+      sellerReceives: item.price - feeAmount, // ✅ Seller gets price minus fee
+      adminCommission: feeAmount,              // ✅ Admin gets the fee
+      plan: item.subscriptionPlan || "free"
+    },
+    sellerReady: !!(item.seller?.stripeAccountId && item.seller?.stripeAccountStatus === 'active')
   };
 
   res.status(200).json({ success: true, data: itemWithFee });
 });
 
+/* =========================
+   SELLER ROUTES
+========================= */
+
+/**
+ * GET: Get current user's market item
+ */
 export const getMyMarketItem = asyncHandler(async (req, res) => {
-  const item = await MarketItem.findOne({ seller: req.user._id });
+  const item = await MarketItem.findOne({ seller: req.user._id })
+    .populate(
+      "seller",
+      "_id username userType subscriptionPlan isVerified stripeAccountStatus stripeAccountId"
+    );
 
   if (item) {
-    // Add fee info for my item
-    const feePercentage = req.user?.subscriptionPlan === "pro" ? 5 : 10;
     const feeAmount = calculateMarketFee(item.price, req.user?.subscriptionPlan);
 
     const itemWithFee = {
       ...item.toObject(),
       feeInfo: {
-        percentage: feePercentage,
+        percentage: req.user?.subscriptionPlan === "pro" ? 5 : 10,
         amount: feeAmount,
-        total: item.price + feeAmount,
+        buyerPays: item.price,                 // ✅ Buyer pays full price
+        sellerReceives: item.price - feeAmount, // ✅ Seller gets price minus fee
+        adminCommission: feeAmount,              // ✅ Admin gets the fee
         plan: req.user?.subscriptionPlan || "free"
-      }
+      },
+      // Add Stripe requirement info for UI
+      requiresStripe: !req.user.stripeAccountId || req.user.stripeAccountStatus !== 'active',
+      canActivate: !!(req.user.stripeAccountId && req.user.stripeAccountStatus === 'active')
     };
 
     return res.status(200).json({ success: true, data: itemWithFee });
@@ -364,21 +393,31 @@ export const getMyMarketItem = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data: null });
 });
 
+/**
+ * CREATE: Create new market item
+ */
 export const createMyMarketItem = asyncHandler(async (req, res, next) => {
   const user = req.user;
   const userType = normalizeSellerType(user.userType);
 
-  // Client requirement: Only verified users
-  if (!user.isVerified)
-    return next(new ErrorResponse("Account must be verified. Please check your email for verification.", 403));
+  // Only verified users
+  if (!user.isVerified) {
+    return next(
+      new ErrorResponse(
+        "Account must be verified. Please check your email for verification.",
+        403
+      )
+    );
+  }
 
-  // Client requirement: All user types allowed
-  if (!isSellerTypeAllowed(userType))
+  if (!isSellerTypeAllowed(userType)) {
     return next(new ErrorResponse("Not allowed to create market items", 403));
+  }
 
   const existing = await MarketItem.findOne({ seller: user._id });
-  if (existing)
+  if (existing) {
     return next(new ErrorResponse("You can only list 1 item", 400));
+  }
 
   const { title, description, price, location } = req.body;
 
@@ -388,87 +427,119 @@ export const createMyMarketItem = asyncHandler(async (req, res, next) => {
     );
   }
 
+  const numericPrice = parseFloat(price);
+  if (isNaN(numericPrice) || numericPrice <= 0) {
+    return next(new ErrorResponse("Invalid price value", 400));
+  }
+
   if (location && !validLocations.includes(location)) {
-    return next(new ErrorResponse("Invalid location. Must be: Louisiana, Mississippi, Alabama, Florida", 400));
+    return next(
+      new ErrorResponse(
+        "Invalid location. Must be: Louisiana, Mississippi, Alabama, Florida",
+        400
+      )
+    );
   }
 
   const photos = req.files?.photos?.map((file) => file.path) || [];
+  const videos =
+    req.files?.video?.length ? [req.files.video[0].path] : [];
 
-  const videos = req.files?.video?.length
-    ? [req.files.video[0].path]
-    : [];
-
-  // Studio-specific fields (Client requirement)
+  // Studio specific
   let services = [];
   let audioFile = "";
 
   if (userType === "studio") {
-    // Parse services if provided
     if (req.body.services) {
       try {
         services = JSON.parse(req.body.services);
-      } catch (error) {
+      } catch {
         services = [];
       }
     }
 
-    // Get audio file for studio
     if (req.files?.audio?.length) {
       audioFile = req.files.audio[0].path;
     }
   }
 
-  // Calculate fee based on subscription plan
-  const marketplaceFee = calculateMarketFee(price, user.subscriptionPlan);
+  // Commission snapshot (only affects seller)
+  const commissionRate = user.subscriptionPlan === "pro" ? 0.05 : 0.10;
+  const stripeFee = Math.round(numericPrice * commissionRate * 100) / 100;
+
+  // Stripe connection check
+  const itemStatus =
+    user.stripeAccountId && user.stripeAccountStatus === "active"
+      ? "active"
+      : "pending";
 
   const item = await MarketItem.create({
     seller: user._id,
     sellerType: userType,
     title,
     description,
-    price,
+    price: numericPrice,
     location: location || "",
     photos,
     videos,
     services: userType === "studio" ? services : undefined,
     audioFile: userType === "studio" ? audioFile : undefined,
-    status: "active",
+    status: itemStatus,
     subscriptionPlan: user.subscriptionPlan || "free",
-    stripeFee: marketplaceFee,
-    paymentStatus: "pending"
+    stripeFee
   });
 
-  // Return with fee info
-  const feePercentage = user.subscriptionPlan === "pro" ? 5 : 10;
+  let message = "Item created successfully";
+
+  if (!user.stripeAccountId) {
+    message =
+      "Item saved as draft. Connect Stripe to activate your listing and start selling.";
+  } else if (user.stripeAccountStatus !== "active") {
+    message =
+      "Item saved. Please complete your Stripe onboarding to activate your listing.";
+  }
 
   res.status(201).json({
     success: true,
+    message,
     data: item,
+    requiresStripe:
+      !user.stripeAccountId ||
+      user.stripeAccountStatus !== "active",
     feeInfo: {
-      percentage: feePercentage,
-      amount: marketplaceFee,
-      total: price + marketplaceFee,
+      percentage: commissionRate * 100,
+      amount: stripeFee,
+      buyerPays: numericPrice,                 // ✅ Buyer pays full price
+      sellerReceives: numericPrice - stripeFee, // ✅ Seller gets price minus fee
+      adminCommission: stripeFee,                // ✅ Admin gets the fee
       plan: user.subscriptionPlan || "free"
     }
   });
 });
 
+/**
+ * UPDATE: Update current user's market item
+ */
 export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
   const item = await MarketItem.findOne({ seller: req.user._id });
   if (!item) return next(new ErrorResponse("Market item not found", 404));
 
-  const { title, description, price, location, status, services } = req.body;
+  const { title, description, price, location, status } = req.body;
 
   if (location !== undefined && !validLocations.includes(location)) {
-    return next(new ErrorResponse("Invalid location. Must be: Louisiana, Mississippi, Alabama, Florida", 400));
+    return next(
+      new ErrorResponse(
+        "Invalid location. Must be: Louisiana, Mississippi, Alabama, Florida",
+        400
+      )
+    );
   }
 
   /* =========================
-     FIXED: PHOTOS DELETE LOGIC
+     PHOTOS DELETE LOGIC
   ========================= */
   const photosToDelete = [];
-  
-  // Parse photosToDelete from request body
+
   if (req.body.photosToDelete) {
     try {
       const parsed = JSON.parse(req.body.photosToDelete);
@@ -480,49 +551,72 @@ export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
     }
   }
 
-
-  // Delete photos from Cloudinary
   if (photosToDelete.length > 0) {
-    const deleteResult = await deleteMultipleFiles(photosToDelete);
-    
-    // Remove deleted photos from database array
-    item.photos = item.photos.filter(photoUrl => {
-      const shouldKeep = !photosToDelete.includes(photoUrl);
-      // if (!shouldKeep) {
-      //   console.log(`❌ Removing photo: ${photoUrl.substring(0, 80)}...`);
-      // }
-      return shouldKeep;
-    });
+    await deleteMultipleFiles(photosToDelete);
+    item.photos = item.photos.filter(
+      (photoUrl) => !photosToDelete.includes(photoUrl)
+    );
   }
 
   /* =========================
-     FIXED: VIDEO DELETE LOGIC
+     VIDEO DELETE LOGIC
   ========================= */
-  const shouldDeleteVideo = req.body.deleteVideo === 'true' || req.body.deleteExistingVideo === 'true';
-
+  const shouldDeleteVideo =
+    req.body.deleteVideo === "true" ||
+    req.body.deleteExistingVideo === "true";
 
   if (shouldDeleteVideo && item.videos?.length > 0) {
-    const videoUrl = item.videos[0];
-    
-    // Delete from Cloudinary
-    await deleteCloudinaryFile(videoUrl);
-    
-    // Remove from database
+    await deleteCloudinaryFile(item.videos[0]);
     item.videos = [];
   }
 
   /* =========================
      UPDATE BASIC FIELDS
   ========================= */
+
   if (title !== undefined) item.title = title;
   if (description !== undefined) item.description = description;
-  if (price !== undefined) item.price = price;
   if (location !== undefined) item.location = location;
-  if (status !== undefined) item.status = status;
+
+  if (price !== undefined) {
+    const numericPrice = parseFloat(price);
+
+    if (isNaN(numericPrice) || numericPrice < 0) {
+      return next(new ErrorResponse("Invalid price value", 400));
+    }
+
+    item.price = numericPrice;
+
+    // Recalculate Stripe commission (only affects seller)
+    const rate = req.user.subscriptionPlan === "pro" ? 0.05 : 0.10;
+    item.stripeFee = Math.round(numericPrice * rate * 100) / 100;
+    item.subscriptionPlan = req.user.subscriptionPlan || "free";
+  }
+
+  /* =========================
+     STATUS UPDATE LOGIC
+  ========================= */
+
+  if (status !== undefined) {
+    if (
+      status === "active" &&
+      (!req.user.stripeAccountId ||
+        req.user.stripeAccountStatus !== "active")
+    ) {
+      return next(
+        new ErrorResponse(
+          "Cannot activate listing. Complete Stripe onboarding first.",
+          400
+        )
+      );
+    }
+    item.status = status;
+  }
 
   /* =========================
      ADD NEW PHOTOS
   ========================= */
+
   if (req.files?.photos?.length) {
     const newPhotos = req.files.photos.map((file) => file.path);
     const totalPhotos = (item.photos?.length || 0) + newPhotos.length;
@@ -537,29 +631,36 @@ export const updateMyMarketItem = asyncHandler(async (req, res, next) => {
   /* =========================
      ADD NEW VIDEO
   ========================= */
+
   if (req.files?.video?.length) {
-    // Delete old video if exists (and not already deleted)
     if (item.videos?.length > 0 && !shouldDeleteVideo) {
       await deleteCloudinaryFile(item.videos[0]);
     }
-    
     item.videos = [req.files.video[0].path];
   }
 
   await item.save();
 
-  // console.log("✅ Item updated successfully. Final state:", {
-  //   photos: item.photos?.length || 0,
-  //   videos: item.videos?.length || 0
-  // });
+  const feeAmount = calculateMarketFee(item.price, req.user.subscriptionPlan);
 
   res.status(200).json({
     success: true,
     message: "Market item updated successfully",
-    data: item
+    data: item,
+    feeInfo: {
+      percentage: req.user.subscriptionPlan === "pro" ? 5 : 10,
+      amount: feeAmount,
+      buyerPays: item.price,                 // ✅ Buyer pays full price
+      sellerReceives: item.price - feeAmount, // ✅ Seller gets price minus fee
+      adminCommission: feeAmount,              // ✅ Admin gets the fee
+      plan: req.user.subscriptionPlan || "free"
+    },
   });
 });
 
+/**
+ * DELETE: Delete a specific photo from user's item
+ */
 export const deletePhotoFromMyItem = asyncHandler(async (req, res, next) => {
   const item = await MarketItem.findOne({ seller: req.user._id });
   if (!item) return next(new ErrorResponse("Market item not found", 404));
@@ -572,10 +673,7 @@ export const deletePhotoFromMyItem = asyncHandler(async (req, res, next) => {
 
   const photoUrlToDelete = item.photos[photoIndex];
 
-  // Delete from Cloudinary
   await deleteCloudinaryFile(photoUrlToDelete);
-
-  // Remove from array
   item.photos.splice(photoIndex, 1);
   await item.save();
 
@@ -586,35 +684,38 @@ export const deletePhotoFromMyItem = asyncHandler(async (req, res, next) => {
   });
 });
 
+/**
+ * DELETE: Delete current user's market item
+ */
 export const deleteMyMarketItem = asyncHandler(async (req, res, next) => {
   const item = await MarketItem.findOne({ seller: req.user._id });
   if (!item) return next(new ErrorResponse("Market item not found", 404));
 
-  // Collect all media URLs to delete
   const urlsToDelete = [
     ...(item.photos || []),
     ...(item.videos || []),
     ...(item.audioFile ? [item.audioFile] : [])
   ];
 
-  
-  // Delete all media files
   if (urlsToDelete.length > 0) {
-    const deleteResult = await deleteMultipleFiles(urlsToDelete);
+    await deleteMultipleFiles(urlsToDelete);
   }
 
   await item.deleteOne();
-  res.status(200).json({ 
-    success: true, 
+  res.status(200).json({
+    success: true,
     message: "Market item deleted",
     deletedFiles: urlsToDelete.length
   });
 });
 
 /* =========================
-   ADMIN CONTROLLERS
+   ADMIN ROUTES
 ========================= */
 
+/**
+ * ADMIN: List all market items with filters
+ */
 export const adminListMarketItems = asyncHandler(async (req, res) => {
   const { status, sellerType, search, location } = req.query;
   const page = Math.max(parseInt(req.query.page || "1", 10), 1);
@@ -622,7 +723,11 @@ export const adminListMarketItems = asyncHandler(async (req, res) => {
   const skip = (page - 1) * limit;
 
   const filter = {};
-  if (status && ["active", "sold", "hidden"].includes(status)) filter.status = status;
+
+  // Include pending status for admin view
+  if (status && ["pending", "active", "sold", "hidden"].includes(status)) {
+    filter.status = status;
+  }
 
   if (sellerType && ["artist", "venue", "photographer", "studio", "journalist", "fan"].includes(normalizeSellerType(sellerType))) {
     filter.sellerType = normalizeSellerType(sellerType);
@@ -637,52 +742,111 @@ export const adminListMarketItems = asyncHandler(async (req, res) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .populate("seller", "name email userType subscriptionPlan isVerified"),
+      .populate("seller", "name email userType subscriptionPlan isVerified stripeAccountStatus"),
     MarketItem.countDocuments(filter),
   ]);
+
+  // Add fee info for admin
+  const itemsWithFees = items.map(item => {
+    const feeAmount = calculateMarketFee(item.price, item.subscriptionPlan);
+
+    return {
+      ...item.toObject(),
+      feeInfo: {
+        percentage: item.subscriptionPlan === "pro" ? 5 : 10,
+        amount: feeAmount,
+        buyerPays: item.price,
+        sellerReceives: item.price - feeAmount,
+        adminCommission: feeAmount,
+        plan: item.subscriptionPlan || "free"
+      }
+    };
+  });
 
   res.status(200).json({
     success: true,
     pagination: { page, limit, total, pages: Math.ceil(total / limit) },
-    data: items,
+    data: itemsWithFees,
   });
 });
 
+/**
+ * ADMIN: Get market statistics
+ */
 export const adminMarketStats = asyncHandler(async (req, res) => {
-  const [total, active, sold, hidden] = await Promise.all([
+  const [total, pending, active, sold, hidden] = await Promise.all([
     MarketItem.countDocuments({}),
+    MarketItem.countDocuments({ status: "pending" }),
     MarketItem.countDocuments({ status: "active" }),
     MarketItem.countDocuments({ status: "sold" }),
     MarketItem.countDocuments({ status: "hidden" }),
   ]);
 
-  // Add fee statistics
-  const totalFees = await MarketItem.aggregate([
-    { $group: { _id: null, totalFees: { $sum: "$stripeFee" } } }
+  // Revenue from actual paid orders
+  const revenueData = await Order.aggregate([
+    { $match: { orderType: "market", paymentStatus: "paid" } },
+    {
+      $group: {
+        _id: null,
+        totalFees: { $sum: "$platformFee" },
+        totalSales: { $sum: "$totalPrice" },
+        totalShipping: { $sum: "$shippingCost" },
+      },
+    },
   ]);
+
+  const stats = revenueData[0] || {
+    totalFees: 0,
+    totalSales: 0,
+    totalShipping: 0,
+  };
 
   res.status(200).json({
     success: true,
     data: {
       total,
+      pending,
       active,
       sold,
       hidden,
-      totalFees: totalFees[0]?.totalFees || 0
+      totalSales: stats.totalSales,
+      totalShipping: stats.totalShipping,
+      totalAdminCommission: stats.totalFees,
     },
   });
 });
 
+/**
+ * ADMIN: Get single market item by ID
+ */
 export const adminGetMarketItem = asyncHandler(async (req, res, next) => {
   const item = await MarketItem.findById(req.params.id).populate(
     "seller",
-    "name email userType subscriptionPlan isVerified"
+    "name email userType subscriptionPlan isVerified stripeAccountStatus"
   );
 
   if (!item) return next(new ErrorResponse("Item not found", 404));
-  res.status(200).json({ success: true, data: item });
+
+  const feeAmount = calculateMarketFee(item.price, item.subscriptionPlan);
+
+  const itemWithFee = {
+    ...item.toObject(),
+    feeInfo: {
+      percentage: item.subscriptionPlan === "pro" ? 5 : 10,
+      amount: feeAmount,
+      buyerPays: item.price,
+      sellerReceives: item.price - feeAmount,
+      adminCommission: feeAmount,
+      plan: item.subscriptionPlan || "free"
+    }
+  };
+
+  res.status(200).json({ success: true, data: itemWithFee });
 });
 
+/**
+ * ADMIN: Update market item
+ */
 export const adminUpdateMarketItem = asyncHandler(async (req, res, next) => {
   const item = await MarketItem.findById(req.params.id);
   if (!item) return next(new ErrorResponse("Item not found", 404));
@@ -700,70 +864,111 @@ export const adminUpdateMarketItem = asyncHandler(async (req, res, next) => {
     "audioFile"
   ];
 
+  // Remove disallowed fields
   for (const key of Object.keys(req.body || {})) {
     if (!allowed.includes(key)) delete req.body[key];
   }
 
-  if (req.body.photos && Array.isArray(req.body.photos) && req.body.photos.length > 5) {
+  // Validate photo limit
+  if (
+    req.body.photos &&
+    Array.isArray(req.body.photos) &&
+    req.body.photos.length > 5
+  ) {
     return next(new ErrorResponse("Maximum 5 photos allowed", 400));
   }
 
-  // Client requirement: All user types
-  if (req.body.sellerType && !["artist", "venue", "photographer", "studio", "journalist", "fan"].includes(normalizeSellerType(req.body.sellerType))) {
+  // Validate sellerType
+  if (
+    req.body.sellerType &&
+    !["artist", "venue", "photographer", "studio", "journalist", "fan"].includes(
+      normalizeSellerType(req.body.sellerType)
+    )
+  ) {
     return next(new ErrorResponse("Invalid sellerType", 400));
   }
 
+  // If price changes → recalculate commission
+  if (req.body.price !== undefined) {
+    const numericPrice = parseFloat(req.body.price);
+
+    if (isNaN(numericPrice) || numericPrice < 0) {
+      return next(new ErrorResponse("Invalid price value", 400));
+    }
+
+    item.price = numericPrice;
+
+    const rate = item.subscriptionPlan === "pro" ? 0.05 : 0.10;
+    item.stripeFee = Math.round(numericPrice * rate * 100) / 100;
+  }
+
+  // Assign other fields
   Object.assign(item, req.body);
+
   await item.save();
 
-  res.status(200).json({ success: true, data: item });
+  const feeAmount = calculateMarketFee(item.price, item.subscriptionPlan);
+
+  res.status(200).json({
+    success: true,
+    message: "Market item updated successfully by admin",
+    data: item,
+    feeInfo: {
+      percentage: item.subscriptionPlan === "pro" ? 5 : 10,
+      amount: feeAmount,
+      buyerPays: item.price,
+      sellerReceives: item.price - feeAmount,
+      adminCommission: feeAmount,
+      plan: item.subscriptionPlan || "free"
+    }
+  });
 });
 
+/**
+ * ADMIN: Delete market item
+ */
 export const adminDeleteMarketItem = asyncHandler(async (req, res, next) => {
   const item = await MarketItem.findById(req.params.id);
   if (!item) return next(new ErrorResponse("Item not found", 404));
 
-  // Collect all media URLs to delete
   const urlsToDelete = [
     ...(item.photos || []),
     ...(item.videos || []),
     ...(item.audioFile ? [item.audioFile] : [])
   ];
 
-  
-  // Delete all media files
   if (urlsToDelete.length > 0) {
-    const deleteResult = await deleteMultipleFiles(urlsToDelete);
+    await deleteMultipleFiles(urlsToDelete);
   }
 
   await item.deleteOne();
-  res.status(200).json({ 
-    success: true, 
+  res.status(200).json({
+    success: true,
     message: "Item deleted",
     deletedFiles: urlsToDelete.length
   });
 });
 
+/**
+ * ADMIN: Delete item by seller ID
+ */
 export const adminDeleteBySeller = asyncHandler(async (req, res, next) => {
   const item = await MarketItem.findOne({ seller: req.params.sellerId });
   if (!item) return next(new ErrorResponse("Seller has no item", 404));
 
-  // Collect all media URLs to delete
   const urlsToDelete = [
     ...(item.photos || []),
     ...(item.videos || []),
     ...(item.audioFile ? [item.audioFile] : [])
   ];
 
-  
-  // Delete all media files
   if (urlsToDelete.length > 0) {
-    const deleteResult = await deleteMultipleFiles(urlsToDelete);
+    await deleteMultipleFiles(urlsToDelete);
   }
 
   await item.deleteOne();
-  res.status(200).json({ 
-    success: true, 
+  res.status(200).json({
+    success: true,
     message: "Seller item deleted",
     deletedFiles: urlsToDelete.length
   });

@@ -6,16 +6,39 @@ const marketItemSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-      unique: true,
+      unique: true, // one listing per seller
     },
 
     sellerType: {
       type: String,
-      enum: ["artist", "venue", "photographer"],
+      enum: ["artist", "venue", "photographer", "studio", "journalist", "fan"],
       required: true,
     },
 
-    title: { type: String, required: true, trim: true, maxlength: 120 },
+    title: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 120,
+    },
+
+    description: {
+      type: String,
+      required: true,
+      maxlength: 2000,
+    },
+
+    price: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+
+    location: {
+      type: String,
+      default: "",
+      enum: ["Louisiana", "Mississippi", "Alabama", "Florida", ""],
+    },
 
     photos: {
       type: [String],
@@ -25,29 +48,55 @@ const marketItemSchema = new mongoose.Schema(
         "Maximum 5 photos allowed",
       ],
     },
+
     videos: {
       type: [String],
-      default: []
+      default: [],
     },
-    description: { type: String, required: true, maxlength: 2000 },
 
-    price: { type: Number, required: true, min: 0 },
+    // Studio-specific fields
+    services: {
+      type: Array,
+      default: [],
+    },
 
-    location: { 
-      type: String, 
+    audioFile: {
+      type: String,
       default: "",
-      enum: ["Louisiana", "Mississippi", "Alabama", "Florida", ""]
+    },
+
+    // Subscription snapshot (important for commission stability)
+    subscriptionPlan: {
+      type: String,
+      enum: ["free", "pro"],
+      default: "free",
+    },
+
+    // Commission snapshot (pre-calculated at creation/update time)
+    stripeFee: {
+      type: Number,
+      default: 0,
     },
 
     status: {
       type: String,
-      enum: ["active", "sold", "hidden"],
-      default: "active",
+      enum: ["pending", "active", "sold", "hidden"],
+      default: "pending",
+    },
+
+    stripeConnectRequired: {
+      type: Boolean,
+      default: true,
     },
   },
   { timestamps: true }
 );
 
-marketItemSchema.index({ title: "text", description: "text", location: "text" });
+// Full-text search index
+marketItemSchema.index({
+  title: "text",
+  description: "text",
+  location: "text",
+});
 
 export default mongoose.model("MarketItem", marketItemSchema);

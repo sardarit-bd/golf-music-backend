@@ -37,25 +37,25 @@ export const createPhotographerProfile = asyncHandler(async (req, res, next) => 
     return next(new ErrorResponse("City is required", 400));
   }
 
-  // Validate state
-  const validStates = ["louisiana", "mississippi", "alabama", "florida"];
-  const normalizedState = state.toLowerCase();
+  // Validate state (now using acronyms)
+  const validStates = ["LA", "MS", "AL", "FL"];
+  const normalizedState = state.toUpperCase().trim();
   if (!validStates.includes(normalizedState)) {
     return next(new ErrorResponse(
-      "State must be one of: Louisiana, Mississippi, Alabama, Florida",
+      "State must be one of: LA, MS, AL, FL",
       400
     ));
   }
 
-  // Validate city based on state (PDF requirement)
+  // Validate city based on state
   const stateCityMapping = {
-    louisiana: ["new orleans"],
-    mississippi: ["biloxi"],
-    alabama: ["mobile"],
-    florida: ["pensacola"]
+    LA: ["mobile"],
+    MS: ["biloxi"],
+    AL: ["mobile"],
+    FL: ["pensacola"]
   };
 
-  const normalizedCity = city.toLowerCase();
+  const normalizedCity = city.toLowerCase().trim();
   const validCities = stateCityMapping[normalizedState];
 
   if (!validCities.includes(normalizedCity)) {
@@ -79,7 +79,7 @@ export const createPhotographerProfile = asyncHandler(async (req, res, next) => 
     biography: biography || "",
     photosLimit: rules.photos,
     videosLimit: rules.videos,
-    featuresLocked: false, // All features unlocked per PDF
+    featuresLocked: false,
     isActive: true,
     isVerified: false
   });
@@ -135,7 +135,7 @@ export const updatePhotographerProfile = asyncHandler(async (req, res, next) => 
     SUBSCRIPTION_RULES.photographer[user.subscriptionPlan] ||
     SUBSCRIPTION_RULES.photographer.free;
 
-  const { name, state, city, biography } = req.body;
+  const { name, state, biography } = req.body; // Removed city from destructuring
 
   let photographer = await Photographer.findOne({ user: user.id });
   if (!photographer) return next(new ErrorResponse("Photographer profile not found", 404));
@@ -145,37 +145,52 @@ export const updatePhotographerProfile = asyncHandler(async (req, res, next) => 
 
   // Update state if provided
   if (state !== undefined) {
-    const validStates = ["louisiana", "mississippi", "alabama", "florida"];
-    if (!validStates.includes(state.toLowerCase())) {
+    const validStates = ["LA", "MS", "AL", "FL"];
+    const normalizedState = state.toUpperCase().trim();
+
+    if (!validStates.includes(normalizedState)) {
       return next(new ErrorResponse(
-        "State must be one of: Louisiana, Mississippi, Alabama, Florida",
+        "State must be one of: LA, MS, AL, FL",
         400
       ));
     }
-    photographer.state = state.toLowerCase();
-  }
 
-  // Update city if provided
-  if (city !== undefined) {
-    const validCities = ["new orleans", "biloxi", "mobile", "pensacola"];
-    if (!validCities.includes(city.toLowerCase())) {
+    // Validate that the city is still valid for the new state
+    const stateCityMapping = {
+      LA: ["mobile"],
+      MS: ["biloxi"],
+      AL: ["mobile"],
+      FL: ["pensacola"]
+    };
+
+    const validCities = stateCityMapping[normalizedState];
+    if (!validCities.includes(photographer.city)) {
       return next(new ErrorResponse(
-        "City must be one of: New Orleans, Biloxi, Mobile, Pensacola",
+        `Cannot change state to ${normalizedState} because current city "${photographer.city}" is not valid for this state`,
         400
       ));
     }
-    photographer.city = city.toLowerCase();
+
+    photographer.state = normalizedState;
+
+    // FIX: Update locationTags when state changes
+    photographer.locationTags = [normalizedState];
   }
 
-  // Biography always allowed (PDF: All features for free)
+  // City update is NOT allowed - silently ignore
+  // if (req.body.city !== undefined) {
+  //   console.log("City update ignored - immutable after creation");
+  // }
+
+  // Biography always allowed
   if (biography !== undefined) {
     photographer.biography = biography;
   }
 
-  // Sync meta (PDF: All features for free accounts)
+  // Sync limits
   photographer.photosLimit = rules.photos;
   photographer.videosLimit = rules.videos;
-  photographer.featuresLocked = false; // All features unlocked per PDF
+  photographer.featuresLocked = false;
 
   await photographer.save();
 
@@ -197,14 +212,20 @@ export const addService = asyncHandler(async (req, res, next) => {
     SUBSCRIPTION_RULES.photographer[user.subscriptionPlan] ||
     SUBSCRIPTION_RULES.photographer.free;
 
-  // PDF: All features for free accounts
-  // So services are always allowed
-  if (!rules.services) {
-    // Even if rules don't have services, allow it per PDF
-    console.log("Services feature check bypassed per PDF requirement");
+  let { service, price, description, category, contact } = req.body;
+
+  // Trim service
+  service = service?.trim();
+
+  // Remove $ and spaces from price
+  price = price?.toString().replace("$", "").trim();
+
+  // Validate numeric price
+  if (isNaN(price) || Number(price) <= 0) {
+    return next(new ErrorResponse("Price must be a valid positive number", 400));
   }
 
-  const { service, price, description, duration, category, contact } = req.body;
+
   if (!service || !price) {
     return next(new ErrorResponse("Service and price are required", 400));
   }
@@ -223,9 +244,9 @@ export const addService = asyncHandler(async (req, res, next) => {
 
   photographer.services.push({
     service,
-    price,
+    price: Number(price),
     description: description || "",
-    duration: duration || "",
+    // duration removed
     category: category || "photography",
     contact: {
       email: contact?.email || photographer.user.email,
@@ -244,7 +265,6 @@ export const addService = asyncHandler(async (req, res, next) => {
       service: photographer.services.at(-1),
     },
   });
-
 });
 
 /* ========================================================
@@ -256,15 +276,22 @@ export const updateService = asyncHandler(async (req, res, next) => {
     SUBSCRIPTION_RULES.photographer[user.subscriptionPlan] ||
     SUBSCRIPTION_RULES.photographer.free;
 
-  // PDF: All features for free accounts
-  // So services are always allowed
   if (!rules.services) {
     // Allow anyway per PDF
     console.log("Services update allowed per PDF requirement");
   }
 
   const { serviceId } = req.params;
-  const { service, price, description, duration, category, contact } = req.body;
+  let { service, price, description, category, contact } = req.body;
+
+  if (price !== undefined) {
+    price = price.toString().replace("$", "").trim();
+
+    if (isNaN(price) || Number(price) <= 0) {
+      return next(new ErrorResponse("Price must be a valid positive number", 400));
+    }
+  }
+
 
   if (!service && !price) {
     return next(
@@ -286,9 +313,9 @@ export const updateService = asyncHandler(async (req, res, next) => {
   }
 
   if (service !== undefined) serviceToUpdate.service = service;
-  if (price !== undefined) serviceToUpdate.price = price;
+  if (price !== undefined) serviceToUpdate.price = Number(price);
   if (description !== undefined) serviceToUpdate.description = description;
-  if (duration !== undefined) serviceToUpdate.duration = duration;
+  // if (duration !== undefined) serviceToUpdate.duration = duration;
   if (category !== undefined) serviceToUpdate.category = category;
 
   if (contact !== undefined) {
@@ -592,7 +619,7 @@ export const deleteVideo = asyncHandler(async (req, res, next) => {
 ======================================================== */
 export const getAllPhotographers = asyncHandler(async (req, res, next) => {
   const {
-    state, // PDF: Louisiana, Mississippi, Alabama, Florida
+    state,
     city,
     page = 1,
     limit = 10
@@ -600,10 +627,10 @@ export const getAllPhotographers = asyncHandler(async (req, res, next) => {
 
   let query = { isActive: true, isVerified: true };
 
-  // STATE FILTERING (PDF REQUIREMENT)
+  // STATE FILTERING with acronyms
   if (state) {
-    const validStates = ["louisiana", "mississippi", "alabama", "florida"];
-    const normalizedState = state.toLowerCase().trim();
+    const validStates = ["LA", "MS", "AL", "FL"];
+    const normalizedState = state.toUpperCase().trim();
 
     if (validStates.includes(normalizedState)) {
       query.state = normalizedState;
@@ -635,12 +662,19 @@ export const getAllPhotographers = asyncHandler(async (req, res, next) => {
     }
   ]);
 
-  // Create state dropdown data
+  // Create state dropdown data with full names for display
+  const stateFullNames = {
+    LA: "Louisiana",
+    MS: "Mississippi",
+    AL: "Alabama",
+    FL: "Florida"
+  };
+
   const stateDropdown = [
-    { value: "louisiana", label: "Louisiana", count: stateCounts.find(s => s._id === "louisiana")?.count || 0 },
-    { value: "mississippi", label: "Mississippi", count: stateCounts.find(s => s._id === "mississippi")?.count || 0 },
-    { value: "alabama", label: "Alabama", count: stateCounts.find(s => s._id === "alabama")?.count || 0 },
-    { value: "florida", label: "Florida", count: stateCounts.find(s => s._id === "florida")?.count || 0 }
+    { value: "LA", label: "Louisiana", code: "LA", count: stateCounts.find(s => s._id === "LA")?.count || 0 },
+    { value: "MS", label: "Mississippi", code: "MS", count: stateCounts.find(s => s._id === "MS")?.count || 0 },
+    { value: "AL", label: "Alabama", code: "AL", count: stateCounts.find(s => s._id === "AL")?.count || 0 },
+    { value: "FL", label: "Florida", code: "FL", count: stateCounts.find(s => s._id === "FL")?.count || 0 }
   ];
 
   res.status(200).json({
@@ -651,10 +685,9 @@ export const getAllPhotographers = asyncHandler(async (req, res, next) => {
       totalPages: Math.ceil(total / limit),
       currentPage: parseInt(page),
       total,
-      // PDF: State-based dropdown data
       filters: {
         states: stateDropdown,
-        cities: ["New Orleans", "Biloxi", "Mobile", "Pensacola"]
+        cities: ["Mobile", "Biloxi", "Pensacola"] // Note: Mobile appears for both AL and LA
       }
     },
   });
@@ -754,13 +787,21 @@ export const getStateDistribution = asyncHandler(async (req, res, next) => {
     { $sort: { total: -1 } }
   ]);
 
-  // Format for dropdown
-  const allStates = ["louisiana", "mississippi", "alabama", "florida"];
+  // Format for dropdown with full names
+  const allStates = ["LA", "MS", "AL", "FL"];
+  const stateFullNames = {
+    LA: "Louisiana",
+    MS: "Mississippi",
+    AL: "Alabama",
+    FL: "Florida"
+  };
+
   const formattedStats = allStates.map(state => {
     const stat = stateStats.find(s => s.state === state);
     return {
       state,
-      label: state.charAt(0).toUpperCase() + state.slice(1),
+      code: state,
+      label: stateFullNames[state],
       total: stat?.total || 0
     };
   });

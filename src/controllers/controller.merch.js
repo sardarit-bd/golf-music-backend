@@ -481,41 +481,41 @@ export const createOrder = asyncHandler(async (req, res, next) => {
   });
 });
 
-export const handleStripeWebhook = asyncHandler(async (req, res, next) => {
-  const sig = req.headers["stripe-signature"];
-  let event;
+// export const handleStripeWebhook = asyncHandler(async (req, res, next) => {
+//   const sig = req.headers["stripe-signature"];
+//   let event;
 
-  try {
-    event = stripe.webhooks.constructEvent(
-      req.body,
-      sig,
-      process.env.STRIPE_WEBHOOK_SECRET
-    );
-  } catch (err) {
-    // console.log("❌ Webhook signature failed:", err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
-  }
+//   try {
+//     event = stripe.webhooks.constructEvent(
+//       req.body,
+//       sig,
+//       process.env.STRIPE_WEBHOOK_SECRET
+//     );
+//   } catch (err) {
+//     // console.log("❌ Webhook signature failed:", err.message);
+//     return res.status(400).send(`Webhook Error: ${err.message}`);
+//   }
 
-  if (event.type === "checkout.session.completed") {
-    const session = event.data.object;
-    const orderId = session.metadata.orderId;
+//   if (event.type === "checkout.session.completed") {
+//     const session = event.data.object;
+//     const orderId = session.metadata.orderId;
 
-    const order = await Order.findById(orderId).populate("buyer");
+//     const order = await Order.findById(orderId).populate("buyer");
 
-    if (order) {
-      order.paymentStatus = "paid";
-      await order.save();
+//     if (order) {
+//       order.paymentStatus = "paid";
+//       await order.save();
 
-      // Send email to buyer
-      await sendOrderConfirmationEmail(order.buyer.email, order);
+//       // Send email to buyer
+//       await sendOrderConfirmationEmail(order.buyer.email, order);
 
-      // Notify admin
-      await sendAdminNewOrderEmail(order);
-    }
-  }
+//       // Notify admin
+//       await sendAdminNewOrderEmail(order);
+//     }
+//   }
 
-  res.json({ received: true });
-});
+//   res.json({ received: true });
+// });
 
 
 

@@ -1,11 +1,11 @@
 import express from "express";
 import {
   getAllWaves,
+  getWaveById,
   createWave,
   updateWave,
   deleteWave,
-  getWaveSectionText,
-  updateWaveSectionText,
+  searchWaves,
 } from "../controllers/controller.wave.js";
 import { protect, authorize } from "../middleware/auth.js";
 import { validateWave } from "../middleware/validation.js";
@@ -15,12 +15,12 @@ const router = express.Router();
 
 // Public Routes
 router.get("/", getAllWaves);
-router.get("/section-text", getWaveSectionText);
+router.get("/search", searchWaves);
+router.get("/:id", getWaveById);
 
 // Admin Routes (Protected)
 router.post("/", protect, authorize("admin"), uploadWaveThumbnail, validateWave, createWave);
 router.put("/:id", protect, authorize("admin"), uploadWaveThumbnail, validateWave, updateWave);
 router.delete("/:id", protect, authorize("admin"), deleteWave);
-router.put("/section-text/update", protect, authorize("admin"), updateWaveSectionText);
 
 export default router;

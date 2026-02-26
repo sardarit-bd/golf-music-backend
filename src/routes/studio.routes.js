@@ -54,7 +54,7 @@ router.post("/photos", (req, res, next) => {
     });
 }, uploadPhotos);
 
-// 🔥 FIXED: Audio upload with better error handling
+// Audio upload with better error handling
 router.post("/audio", (req, res, next) => {
     uploadStudioAudio(req, res, (err) => {
         if (err instanceof multer.MulterError) {

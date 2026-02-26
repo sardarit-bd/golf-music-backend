@@ -117,3 +117,30 @@ export const sendAdminNewOrderEmail = async (order) => {
   }
 };
 
+export const sendContactNotificationEmail = async (email, subject, message) => {
+  try {
+    await transporter.sendMail({
+      from: `"Gulf Coast Website Contact" <${EMAIL_USERNAME}>`,
+      to: "thegulfcoastmusic@gmail.com",
+      subject: `📩 New Contact Message: ${subject}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color:#333;">New Contact Form Submission</h2>
+          
+          <p><strong>From:</strong> ${email}</p>
+          <p><strong>Subject:</strong> ${subject}</p>
+          
+          <h3>Message:</h3>
+          <p>${message}</p>
+
+          <hr/>
+          <p style="font-size:12px;color:#888;">
+            This message was sent from Gulf Coast Music website contact form.
+          </p>
+        </div>
+      `
+    });
+  } catch (error) {
+    console.error("❌ Contact email send error:", error);
+  }
+};

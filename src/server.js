@@ -32,6 +32,8 @@ import marketCheckoutRoutes from './routes/marketCheckout.routes.js';
 import stripeConnectRoutes from './routes/stripe.routes.js';
 import sponsorSectionRoutes from './routes/routes.sponsorSection.js';
 import studioRoutes from './routes/studio.routes.js';
+import castPageSettingsRoutes from './routes/route.castPageSettings.js';
+import wavePageSettingsRoutes from './routes/routes.waveSettingsRoutes.js';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -132,7 +134,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // ===============================
 // API Routes
 // ===============================
-app.use("/api/hero-video", heroVideoRoutes);
+app.use("/api/hero", heroVideoRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/featured-section", featuredSectionRoutes);
 app.use("/api/artists", artistRoutes);
@@ -155,6 +157,8 @@ app.use("/api/subscription", subscriptionRoutes);
 app.use("/api/market-checkout", marketCheckoutRoutes);
 app.use("/api/stripe", stripeConnectRoutes);
 app.use("/api/studios", studioRoutes);
+app.use("/api/cast-settings", castPageSettingsRoutes);
+app.use("/api/wave-settings", wavePageSettingsRoutes);
 
 
 // ===============================

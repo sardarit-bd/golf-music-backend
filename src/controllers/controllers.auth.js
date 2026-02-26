@@ -10,9 +10,10 @@ import { ErrorResponse } from "../middleware/errorHandler.js";
 import Photographer from "../models/model.photographer.js";
 import { STATE_CITY_MAPPING } from "../utils/constants.js";
 import Studio from "../models/model.studio.js";
+import { stripe } from "../config/stripe.js"; // ✅ Import Stripe
 
 /* ========================================================
-   REGISTER - UPDATED WITH STATE & CITY
+   REGISTER - UPDATED WITH PRO PLAN PAYMENT
 ======================================================== */
 export const register = asyncHandler(async (req, res, next) => {
   const {
@@ -23,17 +24,18 @@ export const register = asyncHandler(async (req, res, next) => {
     genre,
     state,
     city,
-    plan,
+    plan, // "free" or "pro"
   } = req.body;
 
   let subscriptionPlan = "free";
   let subscriptionStatus = "none";
 
-  if (["artist", "venue", "photographer", "studio"].includes(userType)) {
-    if (plan === "pro") {
-      subscriptionPlan = "pro";
-      subscriptionStatus = "active";
-    }
+  // ✅ Check if user is eligible for pro plan
+  const eligibleForPaidPlans = ["artist", "venue", "photographer", "studio"];
+  
+  if (eligibleForPaidPlans.includes(userType) && plan === "pro") {
+    subscriptionPlan = "pro";
+    subscriptionStatus = "incomplete"; // Will be updated after payment
   }
 
   // Check if user exists
@@ -69,7 +71,7 @@ export const register = asyncHandler(async (req, res, next) => {
     }
   }
 
-  // Create user with state and city
+  // Create user
   const user = await User.create({
     username,
     email,
@@ -143,7 +145,6 @@ export const register = asyncHandler(async (req, res, next) => {
     });
   }
 
-  // ========== ADD STUDIO REGISTRATION ==========
   if (userType === "studio") {
     await Studio.create({
       user: user._id,
@@ -160,30 +161,100 @@ export const register = asyncHandler(async (req, res, next) => {
     });
   }
 
+  // Generate token
+  const token = generateToken(user._id);
+
+  // ✅ If Pro plan selected, create Stripe checkout session
+  let stripeCheckoutUrl = null;
+  
+  if (subscriptionPlan === "pro" && eligibleForPaidPlans.includes(userType)) {
+    try {
+      // Create Stripe customer
+      const customer = await stripe.customers.create({
+        email: user.email,
+        metadata: {
+          userId: user._id.toString(),
+          username: user.username,
+        },
+      });
+
+      user.stripeCustomerId = customer.id;
+      await user.save();
+
+      // Create checkout session
+      const session = await stripe.checkout.sessions.create({
+        mode: "subscription",
+        payment_method_types: ["card"],
+        customer: customer.id,
+        line_items: [
+          {
+            price_data: {
+              currency: "usd",
+              product_data: {
+                name: "Pro Plan - Monthly Subscription",
+                description: "0% marketplace fee for all sales",
+              },
+              unit_amount: 1000, // $10.00
+              recurring: {
+                interval: "month",
+              },
+            },
+            quantity: 1,
+          },
+        ],
+        metadata: {
+          userId: user._id.toString(),
+          plan: "pro",
+        },
+        success_url: `${process.env.CLIENT_URL}/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.CLIENT_URL}/subscription/cancel`,
+      });
+
+      stripeCheckoutUrl = session.url;
+    } catch (stripeError) {
+      console.error("Stripe checkout creation failed:", stripeError);
+      // Continue with registration but log error
+    }
+  }
+
   // Send verification email for non-fan users
   if (userType !== "fan") {
     await sendVerificationEmail(user.email, userType);
   }
 
-  const token = generateToken(user._id);
-
-  res.status(201).json({
-    success: true,
-    message: "Registration successful!",
-    data: {
-      token,
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        userType: user.userType,
-        state: user.state,
-        city: user.city,
-        subscriptionPlan,
-        genre: user.genre,
-      },
+  // Prepare response
+  const responseData = {
+    token,
+    user: {
+      id: user._id,
+      username: user.username,
+      email: user.email,
+      userType: user.userType,
+      state: user.state,
+      city: user.city,
+      subscriptionPlan,
+      subscriptionStatus: user.subscriptionStatus,
+      genre: user.genre,
     },
-  });
+  };
+
+  // ✅ If pro plan, include checkout URL
+  if (stripeCheckoutUrl) {
+    responseData.stripeCheckoutUrl = stripeCheckoutUrl;
+    
+    res.status(201).json({
+      success: true,
+      message: "Registration successful! Please complete payment to activate your Pro plan.",
+      data: responseData,
+      requiresPayment: true,
+    });
+  } else {
+    res.status(201).json({
+      success: true,
+      message: "Registration successful!",
+      data: responseData,
+    });
+  }
 });
 
 /* ========================================================
@@ -241,6 +312,21 @@ export const login = asyncHandler(async (req, res, next) => {
     );
   }
 
+  // Check if subscription is active (for pro users)
+  if (user.subscriptionPlan === "pro" && 
+      !["active", "trialing"].includes(user.subscriptionStatus)) {
+    return next(
+      new ErrorResponse("Your Pro subscription is not active", 403, {
+        details: [
+          {
+            field: "subscription",
+            message: "Please renew your subscription to access Pro features"
+          }
+        ]
+      })
+    );
+  }
+
   // Check password
   const isMatch = await userWithPassword.matchPassword(password);
   if (!isMatch) {
@@ -274,6 +360,7 @@ export const login = asyncHandler(async (req, res, next) => {
     isActive: user.isActive,
     trialEndsAt: user.trialEndsAt,
     trialUsed: user.trialUsed,
+    stripeCustomerId: user.stripeCustomerId,
   };
 
   res.status(200).json({
@@ -286,7 +373,7 @@ export const login = asyncHandler(async (req, res, next) => {
   });
 });
 
-/*========================================================
+/* ========================================================
    GET CURRENT USER - UPDATED
 ======================================================== */
 export const getMe = asyncHandler(async (req, res, next) => {
@@ -300,7 +387,7 @@ export const getMe = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("User not found or account deleted.", 404));
   }
 
-  // Prepare user data with state and city
+  // Prepare user data with subscription info
   const userData = {
     id: user._id,
     username: user.username,
@@ -316,8 +403,15 @@ export const getMe = asyncHandler(async (req, res, next) => {
     trialEndsAt: user.trialEndsAt,
     trialUsed: user.trialUsed,
     stripeAccountId: user.stripeAccountId,
+    stripeCustomerId: user.stripeCustomerId,
+    stripeSubscriptionId: user.stripeSubscriptionId,
+    cancelAtPeriodEnd: user.cancelAtPeriodEnd,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
+    // ✅ Helper for frontend
+    hasActivePro: user.subscriptionPlan === "pro" && 
+                  ["active", "trialing"].includes(user.subscriptionStatus),
+    marketFeePercent: user.subscriptionPlan === "pro" ? 0 : 10,
   };
 
   res.status(200).json({
@@ -386,7 +480,7 @@ export const resetPassword = asyncHandler(async (req, res, next) => {
 });
 
 /* ========================================================
-   UPDATE USER PROFILE (Optional - if needed)
+   UPDATE USER PROFILE
 ======================================================== */
 export const updateProfile = asyncHandler(async (req, res, next) => {
   const { state, city, genre } = req.body;
@@ -436,13 +530,14 @@ export const updateProfile = asyncHandler(async (req, res, next) => {
         state: user.state,
         city: user.city,
         genre: user.genre,
+        subscriptionPlan: user.subscriptionPlan,
       },
     },
   });
 });
 
 /* ========================================================
-   GET USER BY TYPE AND LOCATION (For filtering)
+   GET USER BY TYPE AND LOCATION
 ======================================================== */
 export const getUsersByLocation = asyncHandler(async (req, res, next) => {
   const { state, city, userType } = req.query;
@@ -458,7 +553,7 @@ export const getUsersByLocation = asyncHandler(async (req, res, next) => {
   if (userType) query.userType = userType;
 
   const users = await User.find(query)
-    .select("username email userType state city genre subscriptionPlan createdAt")
+    .select("username email userType state city genre subscriptionPlan subscriptionStatus createdAt")
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(limit);

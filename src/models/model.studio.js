@@ -104,12 +104,10 @@ const studioSchema = new mongoose.Schema({
     }
 });
 
-// 🔥 FIXED: Virtual for photo count
 studioSchema.virtual('photoCount').get(function() {
     return this.photos?.length || 0;
 });
 
-// 🔥 FIXED: Virtual for hasAudio
 studioSchema.virtual('hasAudio').get(function() {
     return !!(this.audioFile && this.audioFile.url);
 });

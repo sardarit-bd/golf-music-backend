@@ -27,7 +27,15 @@ export const getHeroSection = async (req, res) => {
 // Update hero section
 export const updateHeroSection = async (req, res) => {
   try {
-    const { title, subtitle, buttonText, videoUrl } = req.body;
+    const { 
+      title, 
+      subtitlePrefix, 
+      flashWords, 
+      buttonText, 
+      videoUrl,
+      bottomText,
+      animationSettings 
+    } = req.body;
 
     let heroData = await HeroSection.findOne();
 
@@ -38,22 +46,57 @@ export const updateHeroSection = async (req, res) => {
     // Delete OLD video if a NEW video is uploaded
     if (videoUrl && heroData.videoUrl && videoUrl !== heroData.videoUrl) {
       try {
-        await cloudinary.uploader.destroy(heroData.videoUrl, {
+        await cloudinary.uploader.destroy(heroData.videoPublicId, {
           resource_type: "video"
         });
-        // console.log("Old video deleted:", heroData.videoUrl);
+        console.log("Old video deleted:", heroData.videoPublicId);
       } catch (deleteErr) {
         console.error("Failed to delete old video:", deleteErr);
       }
     }
 
-    // Update fields
+    // Update basic fields
     if (title !== undefined) heroData.title = title;
-    if (subtitle !== undefined) heroData.subtitle = subtitle;
+    if (subtitlePrefix !== undefined) heroData.subtitlePrefix = subtitlePrefix;
     if (buttonText !== undefined) heroData.buttonText = buttonText;
 
+    // Update flash words (if provided)
+    if (flashWords !== undefined) {
+      if (Array.isArray(flashWords) && flashWords.length > 0) {
+        heroData.flashWords = flashWords;
+      }
+    }
+
     // Update video
-    if (videoUrl !== undefined) heroData.videoUrl = videoUrl;
+    if (videoUrl !== undefined) {
+      heroData.videoUrl = videoUrl;
+      // If new video URL doesn't have publicId, set it to null
+      if (!videoUrl) {
+        heroData.videoPublicId = null;
+      }
+    }
+
+    // Update bottom text
+    if (bottomText !== undefined) {
+      if (bottomText.artistName !== undefined) 
+        heroData.bottomText.artistName = bottomText.artistName;
+      if (bottomText.songName !== undefined) 
+        heroData.bottomText.songName = bottomText.songName;
+      if (bottomText.separator !== undefined) 
+        heroData.bottomText.separator = bottomText.separator;
+      if (bottomText.isVisible !== undefined) 
+        heroData.bottomText.isVisible = bottomText.isVisible;
+    }
+
+    // Update animation settings
+    if (animationSettings !== undefined) {
+      if (animationSettings.interval !== undefined) 
+        heroData.animationSettings.interval = animationSettings.interval;
+      if (animationSettings.textColor !== undefined) 
+        heroData.animationSettings.textColor = animationSettings.textColor;
+      if (animationSettings.isEnabled !== undefined) 
+        heroData.animationSettings.isEnabled = animationSettings.isEnabled;
+    }
 
     await heroData.save();
 
@@ -91,7 +134,7 @@ export const getUploadSignature = async (req, res) => {
       data: {
         signature,
         timestamp,
-        cloudName: process.env.CLOUDINARY_NAME,
+        cloudName: process.env.CLOUDINARY_CLOUD_NAME,
         apiKey: process.env.CLOUDINARY_API_KEY
       }
     });
@@ -100,6 +143,41 @@ export const getUploadSignature = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to generate upload signature',
+      error: error.message
+    });
+  }
+};
+
+// Get specific field (optional - for partial updates)
+export const getHeroField = async (req, res) => {
+  try {
+    const { field } = req.params;
+    const heroData = await HeroSection.findOne();
+    
+    if (!heroData) {
+      return res.status(404).json({
+        success: false,
+        message: 'Hero section not found'
+      });
+    }
+
+    // Split nested fields (e.g., "bottomText.artistName")
+    const fields = field.split('.');
+    let value = heroData;
+    for (const f of fields) {
+      value = value[f];
+      if (value === undefined) break;
+    }
+
+    res.status(200).json({
+      success: true,
+      data: { [field]: value }
+    });
+  } catch (error) {
+    console.error('Get hero field error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch hero field',
       error: error.message
     });
   }

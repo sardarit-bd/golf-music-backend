@@ -5,26 +5,24 @@ import {
     deleteOrder, 
     getAllOrders, 
     getUserOrders, 
-    handleStripeWebhook, 
     markOrderDelivered,
     updateOrderStatus,
     updatePaymentStatus
+    //  handleStripeWebhook
 } from "../controllers/controller.merch.js";
 import { authorize, protect } from "../middleware/auth.js";
 
 const router = express.Router();
 
-
-
+// User routes
 router.get("/user", protect, getUserOrders);
-// Create order (Stripe / COD)
 router.post("/", protect, createOrder);
 
-router.post(
-  "/stripe/webhook",
-  express.raw({ type: "application/json" }),
-  handleStripeWebhook
-);
+// router.post(
+//   "/stripe/webhook",
+//   express.raw({ type: "application/json" }),
+//   handleStripeWebhook
+// );
 
 // ================================
 // ADMIN ROUTES
