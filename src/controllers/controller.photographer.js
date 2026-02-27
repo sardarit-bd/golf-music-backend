@@ -135,52 +135,28 @@ export const updatePhotographerProfile = asyncHandler(async (req, res, next) => 
     SUBSCRIPTION_RULES.photographer[user.subscriptionPlan] ||
     SUBSCRIPTION_RULES.photographer.free;
 
-  const { name, state, biography } = req.body; // Removed city from destructuring
+  const { name, biography } = req.body;
 
   let photographer = await Photographer.findOne({ user: user.id });
   if (!photographer) return next(new ErrorResponse("Photographer profile not found", 404));
 
-  // Update name
-  if (name !== undefined) photographer.name = name;
-
-  // Update state if provided
-  if (state !== undefined) {
-    const validStates = ["LA", "MS", "AL", "FL"];
-    const normalizedState = state.toUpperCase().trim();
-
-    if (!validStates.includes(normalizedState)) {
-      return next(new ErrorResponse(
-        "State must be one of: LA, MS, AL, FL",
-        400
-      ));
+  // Update name only
+  if (name !== undefined) {
+    if (name.trim().length < 2) {
+      return next(new ErrorResponse("Name must be at least 2 characters", 400));
     }
-
-    // Validate that the city is still valid for the new state
-    const stateCityMapping = {
-      LA: ["mobile"],
-      MS: ["biloxi"],
-      AL: ["mobile"],
-      FL: ["pensacola"]
-    };
-
-    const validCities = stateCityMapping[normalizedState];
-    if (!validCities.includes(photographer.city)) {
-      return next(new ErrorResponse(
-        `Cannot change state to ${normalizedState} because current city "${photographer.city}" is not valid for this state`,
-        400
-      ));
-    }
-
-    photographer.state = normalizedState;
-
-    // FIX: Update locationTags when state changes
-    photographer.locationTags = [normalizedState];
+    photographer.name = name.trim();
   }
 
-  // City update is NOT allowed - silently ignore
-  // if (req.body.city !== undefined) {
-  //   console.log("City update ignored - immutable after creation");
-  // }
+  if (req.body.state !== undefined && req.body.state !== photographer.state) {
+    console.log("State update ignored - immutable after creation");
+    // Do nothing - state cannot be changed
+  }
+
+  if (req.body.city !== undefined && req.body.city !== photographer.city) {
+    console.log("City update ignored - immutable after creation");
+    // Do nothing - city cannot be changed
+  }
 
   // Biography always allowed
   if (biography !== undefined) {
@@ -192,7 +168,70 @@ export const updatePhotographerProfile = asyncHandler(async (req, res, next) => 
   photographer.videosLimit = rules.videos;
   photographer.featuresLocked = false;
 
-  await photographer.save();
+  // FIX: Ensure state is valid before saving
+  const validStates = ["LA", "MS", "AL", "FL"];
+  
+  // Fix state if it's invalid
+  if (photographer.state && !validStates.includes(photographer.state)) {
+    const stateMapping = {
+      "louisiana": "LA",
+      "mississippi": "MS",
+      "alabama": "AL",
+      "florida": "FL"
+    };
+    
+    const lowerState = photographer.state.toLowerCase();
+    if (stateMapping[lowerState]) {
+      photographer.state = stateMapping[lowerState];
+      console.log(`Fixed state from ${lowerState} to ${photographer.state}`);
+    } else {
+      // If state is completely invalid, set a default
+      photographer.state = "LA";
+      console.log(`Invalid state reset to LA`);
+    }
+  }
+
+  // Fix locationTags
+  if (photographer.locationTags && photographer.locationTags.length > 0) {
+    const stateMapping = {
+      "louisiana": "LA",
+      "mississippi": "MS",
+      "alabama": "AL",
+      "florida": "FL"
+    };
+    
+    photographer.locationTags = photographer.locationTags.map(tag => {
+      if (tag && tag.toLowerCase() in stateMapping) {
+        return stateMapping[tag.toLowerCase()];
+      }
+      return tag;
+    });
+  } else if (photographer.state) {
+    // Ensure locationTags has at least the state
+    photographer.locationTags = [photographer.state];
+  }
+
+  try {
+    await photographer.save();
+  } catch (error) {
+    console.error("Save error details:", error);
+    
+    if (error.name === 'ValidationError') {
+      photographer = await Photographer.findOne({ user: user.id });
+      
+      if (name !== undefined) photographer.name = name.trim();
+      if (biography !== undefined) photographer.biography = biography;
+      
+      try {
+        await photographer.save();
+      } catch (innerError) {
+        console.error("Inner save error:", innerError);
+        return next(new ErrorResponse("Profile validation failed. Please contact support.", 400));
+      }
+    } else {
+      throw error;
+    }
+  }
 
   const safe = sanitizePhotographerForPlan(photographer, rules);
 

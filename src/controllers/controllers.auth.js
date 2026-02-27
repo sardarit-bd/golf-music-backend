@@ -31,7 +31,7 @@ export const register = asyncHandler(async (req, res, next) => {
   let subscriptionStatus = "none";
 
   // ✅ Check if user is eligible for pro plan
-  const eligibleForPaidPlans = ["artist", "venue", "photographer", "studio"];
+  const eligibleForPaidPlans = ["artist", "venue", "journalist", "photographer", "studio"];
   
   if (eligibleForPaidPlans.includes(userType) && plan === "pro") {
     subscriptionPlan = "pro";
