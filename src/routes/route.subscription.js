@@ -6,6 +6,7 @@ import {
   getBillingStatus,
   createBillingPortalSession,
   resumeSubscription,
+  getUserInvoices,
 } from "../controllers/controller.subscription.js";
 
 const router = express.Router();
@@ -15,6 +16,7 @@ router.post("/cancel", protect, cancelSubscription);
 router.get("/status", protect, getBillingStatus);
 router.post("/portal", protect, createBillingPortalSession);
 router.post("/resume", protect, resumeSubscription);
+router.get("/invoices", protect, getUserInvoices);
 
 
 export default router;
