@@ -42,6 +42,8 @@ const artistSchema = new mongoose.Schema({
       "reggae",
       "edm",
       "classical",
+      "rnb_soul",
+      "metal",
       "other",
     ],
   },
@@ -114,11 +116,11 @@ const artistSchema = new mongoose.Schema({
 // Middleware to auto-calculate state from city before saving
 artistSchema.pre("save", function (next) {
   this.updatedAt = Date.now();
-  
+
   // Auto-determine state based on city if not set
   if (this.city && !this.state) {
     const cityLower = this.city.toLowerCase();
-    
+
     // Map cities to states based on client requirement
     const stateMap = {
       // Louisiana cities
@@ -128,20 +130,20 @@ artistSchema.pre("save", function (next) {
       'shreveport': 'Louisiana',
       'lake charles': 'Louisiana',
       'monroe': 'Louisiana',
-      
+
       // Mississippi cities
       'jackson': 'Mississippi',
       'biloxi': 'Mississippi',
       'gulfport': 'Mississippi',
       'oxford': 'Mississippi',
       'hattiesburg': 'Mississippi',
-      
+
       // Alabama cities
       'birmingham': 'Alabama',
       'mobile': 'Alabama',
       'huntsville': 'Alabama',
       'tuscaloosa': 'Alabama',
-      
+
       // Florida cities
       'tampa': 'Florida',
       'st. petersburg': 'Florida',
@@ -150,12 +152,12 @@ artistSchema.pre("save", function (next) {
       'panama city': 'Florida',
       'fort myers': 'Florida',
     };
-    
+
     if (stateMap[cityLower]) {
       this.state = stateMap[cityLower];
     }
   }
-  
+
   next();
 });
 
@@ -166,29 +168,29 @@ artistSchema.index({ isActive: 1 });
 artistSchema.index({ subscriptionPlan: 1 });
 
 // Virtual for getting current photo count
-artistSchema.virtual('photoCount').get(function() {
+artistSchema.virtual('photoCount').get(function () {
   return this.photos ? this.photos.length : 0;
 });
 
 // Virtual for getting current audio count
-artistSchema.virtual('audioCount').get(function() {
+artistSchema.virtual('audioCount').get(function () {
   return this.mp3Files ? this.mp3Files.length : 0;
 });
 
 // Method to check if can add more photos
-artistSchema.methods.canAddPhoto = function() {
+artistSchema.methods.canAddPhoto = function () {
   // All users can upload up to 5 photos (client requirement)
   return this.photoCount < 5;
 };
 
 // Method to check if can add more audio
-artistSchema.methods.canAddAudio = function() {
+artistSchema.methods.canAddAudio = function () {
   // All users can upload up to 1 audio file (client requirement)
   return this.audioCount < 1;
 };
 
 // Method to get location for categorization
-artistSchema.methods.getLocationForCategorization = function() {
+artistSchema.methods.getLocationForCategorization = function () {
   if (this.state && this.city) {
     return `${this.state}/${this.city}`;
   }

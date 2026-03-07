@@ -36,6 +36,8 @@ export const validateRegistration = [
         "reggae",
         "edm",
         "classical",
+        "rnb_soul",
+        "metal",
         "other",
       ];
       if (!validGenres.includes(value)) {
@@ -162,6 +164,8 @@ export const validateArtistProfile = [
         "reggae",
         "edm",
         "classical",
+        "rnb_soul",
+        "metal",
         "other",
       ];
       if (!validGenres.includes(value?.toLowerCase())) {

@@ -4,7 +4,7 @@ import { SUBSCRIPTION_RULES } from "../config/subscriptionRules.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 
-const ALLOWED_SUBSCRIBERS = ["artist", "venue", "photographer"];
+const ALLOWED_SUBSCRIBERS = ["artist", "venue", "photographer", "studio", "journalist"];
 
 /* =====================================================
    CREATE STRIPE CHECKOUT SESSION (ONLY ENTRY POINT)
@@ -178,3 +178,38 @@ export const resumeSubscription = asyncHandler(async (req, res, next) => {
   });
 });
 
+
+export const getUserInvoices = asyncHandler(async (req, res, next) => {
+  const user = await User.findById(req.user.id);
+
+  if (!user) {
+    return next(new ErrorResponse("User not found", 404));
+  }
+
+  if (!user.stripeCustomerId) {
+    return res.json({
+      success: true,
+      data: [],
+    });
+  }
+
+  const invoices = await stripe.invoices.list({
+    customer: user.stripeCustomerId,
+    limit: 10,
+  });
+
+  const formattedInvoices = invoices.data.map((invoice) => ({
+    id: invoice.id,
+    amount: invoice.amount_paid / 100,
+    currency: invoice.currency,
+    status: invoice.status,
+    invoicePdf: invoice.invoice_pdf,
+    hostedInvoiceUrl: invoice.hosted_invoice_url,
+    created: new Date(invoice.created * 1000),
+  }));
+
+  res.json({
+    success: true,
+    data: formattedInvoices,
+  });
+});

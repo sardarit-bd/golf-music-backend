@@ -221,7 +221,21 @@ export const deleteOrder = asyncHandler(async (req, res, next) => {
 export const cancelOrder = asyncHandler(async (req, res, next) => {
   const order = await Order.findById(req.params.id);
 
-  if (!order) return next(new ErrorResponse("Order not found", 404));
+  if (!order) {
+    return next(new ErrorResponse("Order not found", 404));
+  }
+
+  // 🔒 Only allow cancellation within 24 hours
+  const orderTime = new Date(order.createdAt).getTime();
+  const now = Date.now();
+
+  const hoursPassed = (now - orderTime) / (1000 * 60 * 60);
+
+  if (hoursPassed > 24) {
+    return next(
+      new ErrorResponse("Order can only be cancelled within 24 hours", 400)
+    );
+  }
 
   if (order.deliveryStatus === "delivered") {
     return next(new ErrorResponse("Delivered order cannot be cancelled", 400));
@@ -231,12 +245,15 @@ export const cancelOrder = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Order already cancelled", 400));
   }
 
+  // Cancel order
   order.deliveryStatus = "cancelled";
 
+  // Refund if paid with Stripe
   if (order.paymentStatus === "paid" && order.paymentMethod === "stripe") {
     order.paymentStatus = "refunded";
   }
 
+  // Restore stock
   const merch = await Merch.findById(order.merch);
   if (merch) {
     merch.stock += parseInt(order.quantity);
@@ -406,7 +423,7 @@ export const createOrder = asyncHandler(async (req, res, next) => {
   const { merchId, quantity, paymentMethod, shippingInfo } = req.body;
   const userId = req.user._id;
 
-  const allowedRoles = ["fan", "user", "artist", "venue", "journalist", "photographer", "admin"];
+  const allowedRoles = ["fan", "user", "artist", "venue", "journalist", "photographer", "studio", "admin"];
 
 
   if (!allowedRoles.includes(req.user.userType)) {
