@@ -49,12 +49,11 @@ export const createPhotographerProfile = asyncHandler(async (req, res, next) => 
 
   // Validate city based on state
   const stateCityMapping = {
-    LA: ["mobile"],
-    MS: ["biloxi"],
+    LA: ["new orleans"],
+    MS: ["biloxi", "gulfport"],
     AL: ["mobile"],
     FL: ["pensacola"]
   };
-
   const normalizedCity = city.toLowerCase().trim();
   const validCities = stateCityMapping[normalizedState];
 
@@ -170,7 +169,7 @@ export const updatePhotographerProfile = asyncHandler(async (req, res, next) => 
 
   // FIX: Ensure state is valid before saving
   const validStates = ["LA", "MS", "AL", "FL"];
-  
+
   // Fix state if it's invalid
   if (photographer.state && !validStates.includes(photographer.state)) {
     const stateMapping = {
@@ -179,7 +178,7 @@ export const updatePhotographerProfile = asyncHandler(async (req, res, next) => 
       "alabama": "AL",
       "florida": "FL"
     };
-    
+
     const lowerState = photographer.state.toLowerCase();
     if (stateMapping[lowerState]) {
       photographer.state = stateMapping[lowerState];
@@ -199,7 +198,7 @@ export const updatePhotographerProfile = asyncHandler(async (req, res, next) => 
       "alabama": "AL",
       "florida": "FL"
     };
-    
+
     photographer.locationTags = photographer.locationTags.map(tag => {
       if (tag && tag.toLowerCase() in stateMapping) {
         return stateMapping[tag.toLowerCase()];
@@ -215,13 +214,13 @@ export const updatePhotographerProfile = asyncHandler(async (req, res, next) => 
     await photographer.save();
   } catch (error) {
     console.error("Save error details:", error);
-    
+
     if (error.name === 'ValidationError') {
       photographer = await Photographer.findOne({ user: user.id });
-      
+
       if (name !== undefined) photographer.name = name.trim();
       if (biography !== undefined) photographer.biography = biography;
-      
+
       try {
         await photographer.save();
       } catch (innerError) {
@@ -738,7 +737,8 @@ export const getAllPhotographers = asyncHandler(async (req, res, next) => {
 export const getPhotographersByState = asyncHandler(async (req, res, next) => {
   const { state } = req.params;
 
-  const validStates = ["louisiana", "mississippi", "alabama", "florida"];
+  // const validStates = ["louisiana", "mississippi", "alabama", "florida"];
+  const validStates = ["LA", "MS", "AL", "FL"];
   if (!validStates.includes(state.toLowerCase())) {
     return next(new ErrorResponse(
       "Invalid state. Must be: louisiana, mississippi, alabama, or florida",

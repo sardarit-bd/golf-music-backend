@@ -5,11 +5,6 @@ import { createStripeConnectAccount, createStripeDashboardLink, disconnectStripe
 
 const router = express.Router();
 
-// ===== PUBLIC ROUTES (No auth required for webhooks) =====
-// (Add webhook handlers here if any)
-
-// ===== PROTECTED ROUTES (Require authentication) =====
-
 // Check Stripe connection status
 router.get("/connect/status", protect, getStripeConnectStatus);
 

@@ -1,10 +1,10 @@
 import mongoose from "mongoose";
 
 const STATE_CITY_MAPPING = {
-  LA: ["mobile"],
-  MS: ["biloxi"],
-  AL: ["mobile"],
-  FL: ["pensacola"]
+  LA: ["new orleans", "baton rouge", "lafayette", "shreveport", "lake charles", "monroe"],
+  MS: ["jackson", "biloxi", "gulfport", "oxford", "hattiesburg"],
+  AL: ["birmingham", "mobile", "huntsville", "tuscaloosa"],
+  FL: ["tampa", "st. petersburg", "clearwater", "pensacola", "panama city", "fort myers"]
 };
 
 const photographerSchema = new mongoose.Schema({

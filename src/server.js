@@ -34,6 +34,7 @@ import sponsorSectionRoutes from './routes/routes.sponsorSection.js';
 import studioRoutes from './routes/studio.routes.js';
 import castPageSettingsRoutes from './routes/route.castPageSettings.js';
 import wavePageSettingsRoutes from './routes/routes.waveSettingsRoutes.js';
+import marketAnalyticsRoutes from './routes/route.marketAnalytics.js';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -159,6 +160,7 @@ app.use("/api/stripe", stripeConnectRoutes);
 app.use("/api/studios", studioRoutes);
 app.use("/api/cast-settings", castPageSettingsRoutes);
 app.use("/api/wave-settings", wavePageSettingsRoutes);
+app.use("/api/market-analytics", marketAnalyticsRoutes);
 
 
 // ===============================
