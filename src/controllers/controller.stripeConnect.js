@@ -4,10 +4,6 @@ import User from "../models/model.user.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import MarketItem from "../models/model.marketItem.js";
 
-/**
- * CHECK STRIPE CONNECT STATUS
- * GET /api/stripe/connect/status
- */
 export const getStripeConnectStatus = asyncHandler(async (req, res, next) => {
   const user = await User.findById(req.user.id);
 

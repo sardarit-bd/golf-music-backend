@@ -225,16 +225,10 @@ export const cancelOrder = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Order not found", 404));
   }
 
-  // 🔒 Only allow cancellation within 24 hours
-  const orderTime = new Date(order.createdAt).getTime();
-  const now = Date.now();
-
-  const hoursPassed = (now - orderTime) / (1000 * 60 * 60);
-
-  if (hoursPassed > 24) {
-    return next(
-      new ErrorResponse("Order can only be cancelled within 24 hours", 400)
-    );
+  const isAdmin = req.user.userType === "admin";
+  
+  if (!isAdmin && order.buyer.toString() !== req.user._id.toString()) {
+    return next(new ErrorResponse("You are not authorized to cancel this order", 403));
   }
 
   if (order.deliveryStatus === "delivered") {
@@ -245,26 +239,43 @@ export const cancelOrder = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Order already cancelled", 400));
   }
 
-  // Cancel order
-  order.deliveryStatus = "cancelled";
-
-  // Refund if paid with Stripe
-  if (order.paymentStatus === "paid" && order.paymentMethod === "stripe") {
-    order.paymentStatus = "refunded";
+  if (!isAdmin) {
+    if (order.paymentStatus === "paid") {
+      return next(new ErrorResponse("Paid orders cannot be cancelled. Please contact support.", 400));
+    }
+    
+    if (order.paymentStatus !== "pending") {
+      return next(new ErrorResponse("Only pending orders can be cancelled", 400));
+    }
   }
 
-  // Restore stock
-  const merch = await Merch.findById(order.merch);
-  if (merch) {
-    merch.stock += parseInt(order.quantity);
-    await merch.save();
+  order.deliveryStatus = "cancelled";
+
+  if (order.paymentStatus === "paid" && order.paymentMethod === "stripe") {
+    if (isAdmin) {
+      order.paymentStatus = "refunded";
+    }
+  } else if (order.paymentStatus === "pending") {
+    order.paymentStatus = "cancelled";
+  }
+
+  if (order.orderType === "merch" && order.merch) {
+    const merch = await Merch.findById(order.merch);
+    if (merch) {
+      merch.stock += parseInt(order.quantity);
+      await merch.save();
+    }
   }
 
   await order.save();
 
+  const message = isAdmin 
+    ? "Order cancelled successfully by admin" 
+    : "Order cancelled successfully";
+
   res.status(200).json({
     success: true,
-    message: "Order cancelled successfully",
+    message,
     data: order,
   });
 });
@@ -471,7 +482,7 @@ export const createOrder = asyncHandler(async (req, res, next) => {
           price_data: {
             currency: "usd",
             product_data: { name: merch.name },
-            unit_amount: Math.round(totalPrice * 100),
+            unit_amount: Math.round(merch.price * 100),
           },
           quantity: parseInt(quantity),
         },
@@ -495,6 +506,109 @@ export const createOrder = asyncHandler(async (req, res, next) => {
       order,
       ...(stripeSession && { stripeSession }),
     },
+  });
+});
+
+
+export const createOrderPayment = asyncHandler(async (req, res, next) => {
+  const { orderId, merchId, quantity } = req.body;
+  const userId = req.user._id;
+
+  // Find the order
+  const order = await Order.findOne({
+    _id: orderId,
+    buyer: userId,
+    orderType: "merch"
+  });
+
+  if (!order) {
+    return next(new ErrorResponse("Order not found", 404));
+  }
+
+  // Check if order can be paid
+  if (order.paymentStatus !== "pending") {
+    return next(new ErrorResponse("Order is already paid or refunded", 400));
+  }
+
+  if (order.deliveryStatus === "cancelled") {
+    return next(new ErrorResponse("Cancelled order cannot be paid", 400));
+  }
+
+  if (order.deliveryStatus === "delivered") {
+    return next(new ErrorResponse("Delivered order cannot be paid", 400));
+  }
+
+  // Find the product
+  const merch = await Merch.findById(merchId);
+  if (!merch) {
+    return next(new ErrorResponse("Product not found", 404));
+  }
+
+  // Check stock again (in case stock changed)
+  if (merch.stock < parseInt(quantity)) {
+    return next(new ErrorResponse("Insufficient stock", 400));
+  }
+
+  // Create Stripe checkout session
+  const stripeSession = await stripe.checkout.sessions.create({
+    payment_method_types: ["card"],
+    line_items: [
+      {
+        price_data: {
+          currency: "usd",
+          product_data: {
+            name: merch.name,
+            description: merch.description,
+            images: [merch.image]
+          },
+          unit_amount: Math.round(merch.price * 100),
+        },
+        quantity: parseInt(quantity),
+      },
+    ],
+    mode: "payment",
+    metadata: {
+      orderId: order._id.toString(),
+      type: "merch",
+      userId: userId.toString()
+    },
+    success_url: `${process.env.CLIENT_URL}/order-success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${process.env.CLIENT_URL}/order-failed`,
+    customer_email: req.user.email,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Payment session created successfully",
+    data: {
+      stripeSession,
+      order
+    },
+  });
+});
+
+// Also update your existing getUserOrders function to include pagination
+export const getUserOrders = asyncHandler(async (req, res) => {
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  const query = { buyer: req.user._id };
+
+  const total = await Order.countDocuments(query);
+
+  const orders = await Order.find(query)
+    .populate("merch", "name price image description")
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit);
+
+  return res.json({
+    success: true,
+    data: orders,
+    total,
+    page,
+    pages: Math.ceil(total / limit)
   });
 });
 
@@ -536,12 +650,12 @@ export const createOrder = asyncHandler(async (req, res, next) => {
 
 
 
-export const getUserOrders = asyncHandler(async (req, res) => {
-  const orders = await Order.find({ buyer: req.user._id })
-    .populate("merch", "name price image description");
+// export const getUserOrders = asyncHandler(async (req, res) => {
+//   const orders = await Order.find({ buyer: req.user._id })
+//     .populate("merch", "name price image description");
 
-  return res.json({
-    success: true,
-    data: orders
-  });
-});
+//   return res.json({
+//     success: true,
+//     data: orders
+//   });
+// });

@@ -102,12 +102,22 @@ const OrderSchema = new mongoose.Schema(
 
     paymentStatus: {
       type: String,
-      enum: ["pending", "paid", "failed", "refunded"],
+      enum: ["pending", "paid", "failed", "refunded", "cancelled"], // 👈 "cancelled" যোগ করা হয়েছে
       default: "pending",
     },
 
     stripePaymentIntentId: {
       type: String,
+      default: null,
+    },
+
+    stripeSessionId: {
+      type: String,
+      default: null,
+    },
+
+    paidAt: {
+      type: Date,
       default: null,
     },
   },

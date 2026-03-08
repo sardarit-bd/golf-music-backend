@@ -10,7 +10,15 @@ import { ErrorResponse } from "../middleware/errorHandler.js";
 import Photographer from "../models/model.photographer.js";
 import { STATE_CITY_MAPPING } from "../utils/constants.js";
 import Studio from "../models/model.studio.js";
-import { stripe } from "../config/stripe.js"; // ✅ Import Stripe
+import { stripe } from "../config/stripe.js";
+
+
+const STATE_CODE_MAP = {
+  Louisiana: "LA",
+  Mississippi: "MS",
+  Alabama: "AL",
+  Florida: "FL",
+};
 
 /* ========================================================
    REGISTER - UPDATED WITH PRO PLAN PAYMENT
@@ -32,7 +40,7 @@ export const register = asyncHandler(async (req, res, next) => {
 
   // ✅ Check if user is eligible for pro plan
   const eligibleForPaidPlans = ["artist", "venue", "journalist", "photographer", "studio"];
-  
+
   if (eligibleForPaidPlans.includes(userType) && plan === "pro") {
     subscriptionPlan = "pro";
     subscriptionStatus = "incomplete"; // Will be updated after payment
@@ -135,7 +143,7 @@ export const register = asyncHandler(async (req, res, next) => {
     await Photographer.create({
       user: user._id,
       name: username,
-      state: state || "Alabama",
+      state: STATE_CODE_MAP[state] || "AL",
       city: city ? city.toLowerCase() : "mobile",
       biography: "",
       services: [],
@@ -166,7 +174,7 @@ export const register = asyncHandler(async (req, res, next) => {
 
   // ✅ If Pro plan selected, create Stripe checkout session
   let stripeCheckoutUrl = null;
-  
+
   if (subscriptionPlan === "pro" && eligibleForPaidPlans.includes(userType)) {
     try {
       // Create Stripe customer
@@ -241,7 +249,7 @@ export const register = asyncHandler(async (req, res, next) => {
   // ✅ If pro plan, include checkout URL
   if (stripeCheckoutUrl) {
     responseData.stripeCheckoutUrl = stripeCheckoutUrl;
-    
+
     res.status(201).json({
       success: true,
       message: "Registration successful! Please complete payment to activate your Pro plan.",
@@ -313,8 +321,8 @@ export const login = asyncHandler(async (req, res, next) => {
   }
 
   // Check if subscription is active (for pro users)
-  if (user.subscriptionPlan === "pro" && 
-      !["active", "trialing"].includes(user.subscriptionStatus)) {
+  if (user.subscriptionPlan === "pro" &&
+    !["active", "trialing"].includes(user.subscriptionStatus)) {
     return next(
       new ErrorResponse("Your Pro subscription is not active", 403, {
         details: [
@@ -409,8 +417,8 @@ export const getMe = asyncHandler(async (req, res, next) => {
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
     // ✅ Helper for frontend
-    hasActivePro: user.subscriptionPlan === "pro" && 
-                  ["active", "trialing"].includes(user.subscriptionStatus),
+    hasActivePro: user.subscriptionPlan === "pro" &&
+      ["active", "trialing"].includes(user.subscriptionStatus),
     marketFeePercent: user.subscriptionPlan === "pro" ? 0 : 10,
   };
 
