@@ -41,11 +41,11 @@ const newsSchema = new mongoose.Schema({
   },
 
   credit: {
-    type: String,
-    required: [true, 'Credit is required'],
-    trim: true,
-    maxlength: [200, 'Credit cannot exceed 200 characters']
-  },
+  type: String,
+  trim: true,
+  maxlength: [200, 'Credit cannot exceed 200 characters'],
+  default: ""
+},
 
   photos: [
     {
