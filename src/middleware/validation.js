@@ -20,8 +20,18 @@ export const validateRegistration = [
 
   body("userType")
     .customSanitizer((value) => value?.toLowerCase())
-    .isIn(["artist", "venue", "journalist", "fan", "photographer", "admin", "studio"])
-    .withMessage("User type must be artist, venue, journalist, photographer, studio, fan, or admin"),
+    .isIn([
+      "artist",
+      "venue",
+      "journalist",
+      "fan",
+      "photographer",
+      "admin",
+      "studio",
+    ])
+    .withMessage(
+      "User type must be artist, venue, journalist, photographer, studio, fan, or admin",
+    ),
 
   body("genre")
     .if(body("userType").equals("artist"))
@@ -50,7 +60,13 @@ export const validateRegistration = [
   body("state")
     .custom((value, { req }) => {
       const userType = req.body.userType;
-      const requiresState = ["artist", "venue", "journalist", "photographer", "studio"].includes(userType);
+      const requiresState = [
+        "artist",
+        "venue",
+        "journalist",
+        "photographer",
+        "studio",
+      ].includes(userType);
 
       if (requiresState) {
         if (!value) {
@@ -59,7 +75,9 @@ export const validateRegistration = [
 
         const validStates = Object.keys(STATE_CITY_MAPPING);
         if (!validStates.includes(value)) {
-          throw new Error(`Invalid state. Must be one of: ${validStates.join(", ")}`);
+          throw new Error(
+            `Invalid state. Must be one of: ${validStates.join(", ")}`,
+          );
         }
       }
       return true;
@@ -74,7 +92,13 @@ export const validateRegistration = [
   body("city")
     .custom((value, { req }) => {
       const userType = req.body.userType;
-      const requiresCity = ["artist", "venue", "journalist", "photographer", "studio"].includes(userType);
+      const requiresCity = [
+        "artist",
+        "venue",
+        "journalist",
+        "photographer",
+        "studio",
+      ].includes(userType);
 
       if (requiresCity) {
         if (!value) {
@@ -85,7 +109,9 @@ export const validateRegistration = [
         if (state) {
           const stateCities = STATE_CITY_MAPPING[state] || [];
           if (!stateCities.includes(value.toLowerCase())) {
-            throw new Error(`City "${value}" is not valid for state "${state}"`);
+            throw new Error(
+              `City "${value}" is not valid for state "${state}"`,
+            );
           }
         }
       }
@@ -117,7 +143,6 @@ export const validateResetPassword = [
 ];
 
 export const validateArtistProfile = [
-
   body("name")
     .optional()
     .isLength({ max: 100 })
@@ -129,7 +154,7 @@ export const validateArtistProfile = [
       const validStates = Object.keys(STATE_CITY_MAPPING);
       if (!validStates.includes(value)) {
         throw new Error(
-          `Invalid state. Must be one of: ${validStates.join(", ")}`
+          `Invalid state. Must be one of: ${validStates.join(", ")}`,
         );
       }
       return true;
@@ -144,9 +169,7 @@ export const validateArtistProfile = [
       if (state) {
         const stateCities = STATE_CITY_MAPPING[state] || [];
         if (!stateCities.includes(value.toLowerCase())) {
-          throw new Error(
-            `City "${value}" is not valid for state "${state}"`
-          );
+          throw new Error(`City "${value}" is not valid for state "${state}"`);
         }
       }
       return true;
@@ -180,7 +203,6 @@ export const validateArtistProfile = [
     .withMessage("Biography cannot exceed 2000 characters"),
 ];
 
-
 export const validateVenueProfile = [
   body("venueName")
     .notEmpty()
@@ -194,12 +216,11 @@ export const validateVenueProfile = [
       const validStates = Object.keys(STATE_CITY_MAPPING);
       if (!validStates.includes(value)) {
         throw new Error(
-          `Invalid state. Must be one of: ${validStates.join(", ")}`
+          `Invalid state. Must be one of: ${validStates.join(", ")}`,
         );
       }
       return true;
     }),
-
 
   body("city")
     .optional()
@@ -213,7 +234,6 @@ export const validateVenueProfile = [
       }
       return true;
     }),
-
 
   body("address")
     .optional({ checkFalsy: true })
@@ -237,81 +257,137 @@ export const validateVenueProfile = [
 ];
 
 export const validateNews = [
-  body('title')
+  body("title")
     .trim()
-    .notEmpty().withMessage('Title is required')
-    .isLength({ min: 3, max: 200 }).withMessage('Title must be between 5 and 200 characters'),
+    .notEmpty()
+    .withMessage("Title is required")
+    .isLength({ min: 1, max: 200 })
+    .withMessage("Title must be between 5 and 200 characters"),
 
-  body('description')
+  body("description")
     .trim()
-    .notEmpty().withMessage('Description is required')
-    .isLength({ min: 50, max: 5000 }).withMessage('Description must be between 50 and 5000 characters'),
+    .notEmpty()
+    .withMessage("Description is required")
+    .isLength({ min: 50, max: 5000 })
+    .withMessage("Description must be between 50 and 5000 characters"),
 
-  body('location')
+  body("location")
     .trim()
-    .notEmpty().withMessage('Location is required')
+    .notEmpty()
+    .withMessage("Location is required")
     .isIn([
-      'new orleans', 'baton rouge', 'lafayette', 'shreveport', 'lake charles', 'monroe',
-      'jackson', 'biloxi', 'gulfport', 'oxford', 'hattiesburg',
-      'birmingham', 'mobile', 'huntsville', 'tuscaloosa',
-      'tampa', 'st. petersburg', 'clearwater', 'pensacola', 'panama city', 'fort myers'
-    ]).withMessage('Please select a valid Gulf Coast city'),
+      "new orleans",
+      "baton rouge",
+      "lafayette",
+      "shreveport",
+      "lake charles",
+      "monroe",
+      "jackson",
+      "biloxi",
+      "gulfport",
+      "oxford",
+      "hattiesburg",
+      "birmingham",
+      "mobile",
+      "huntsville",
+      "tuscaloosa",
+      "tampa",
+      "st. petersburg",
+      "clearwater",
+      "pensacola",
+      "panama city",
+      "fort myers",
+    ])
+    .withMessage("Please select a valid Gulf Coast city"),
 
-  body('credit')
+  body("credit")
+    .optional()
     .trim()
-    .notEmpty().withMessage('Credit is required')
-    .isLength({ max: 200 }).withMessage('Credit cannot exceed 200 characters'),
+    .isLength({ max: 200 })
+    .withMessage("Credit cannot exceed 200 characters"),
 
   // Custom validation for photos
   (req, res, next) => {
     if (req.files && req.files.length > 5) {
-      return next(new ErrorResponse('Maximum 5 photos allowed per news article', 400));
+      return next(
+        new ErrorResponse("Maximum 5 photos allowed per news article", 400),
+      );
     }
 
     // Check file types
     if (req.files) {
-      const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
-      const invalidFiles = req.files.filter(file => !allowedTypes.includes(file.mimetype));
+      const allowedTypes = [
+        "image/jpeg",
+        "image/png",
+        "image/jpg",
+        "image/webp",
+      ];
+      const invalidFiles = req.files.filter(
+        (file) => !allowedTypes.includes(file.mimetype),
+      );
 
       if (invalidFiles.length > 0) {
-        return next(new ErrorResponse(
-          'Only JPEG, PNG, JPG, and WebP image formats are allowed',
-          400
-        ));
+        return next(
+          new ErrorResponse(
+            "Only JPEG, PNG, JPG, and WebP image formats are allowed",
+            400,
+          ),
+        );
       }
     }
 
     next();
-  }
+  },
 ];
 
 export const validateNewsUpdate = [
-  body('title')
+  body("title")
     .optional()
     .trim()
-    .isLength({ min: 5, max: 200 }).withMessage('Title must be between 5 and 200 characters'),
+    .isLength({ min: 1, max: 200 })
+    .withMessage("Title must be between 5 and 200 characters"),
 
-  body('description')
+  body("description")
     .optional()
     .trim()
-    .isLength({ min: 50, max: 5000 }).withMessage('Description must be between 50 and 5000 characters'),
+    .isLength({ min: 50, max: 5000 })
+    .withMessage("Description must be between 50 and 5000 characters"),
 
-  body('location')
+  body("location")
     .optional()
     .trim()
     .isIn([
-      'new orleans', 'baton rouge', 'lafayette', 'shreveport', 'lake charles', 'monroe',
-      'jackson', 'biloxi', 'gulfport', 'oxford', 'hattiesburg',
-      'birmingham', 'mobile', 'huntsville', 'tuscaloosa',
-      'tampa', 'st. petersburg', 'clearwater', 'pensacola', 'panama city', 'fort myers'
-    ]).withMessage('Please select a valid Gulf Coast city'),
+      "new orleans",
+      "baton rouge",
+      "lafayette",
+      "shreveport",
+      "lake charles",
+      "monroe",
+      "jackson",
+      "biloxi",
+      "gulfport",
+      "oxford",
+      "hattiesburg",
+      "birmingham",
+      "mobile",
+      "huntsville",
+      "tuscaloosa",
+      "tampa",
+      "st. petersburg",
+      "clearwater",
+      "pensacola",
+      "panama city",
+      "fort myers",
+    ])
+    .withMessage("Please select a valid Gulf Coast city"),
 
-  body('credit')
+  body("credit")
     .optional()
     .trim()
-    .isLength({ max: 200 }).withMessage('Credit cannot exceed 200 characters'),
+    .isLength({ max: 200 })
+    .withMessage("Credit cannot exceed 200 characters"),
 
-  body('deletedPhotos')
+  body("deletedPhotos")
     .optional()
     .custom((value) => {
       if (value) {
@@ -323,46 +399,61 @@ export const validateNewsUpdate = [
         }
       }
       return true;
-    }).withMessage('deletedPhotos must be a valid JSON array'),
+    })
+    .withMessage("deletedPhotos must be a valid JSON array"),
 
   (req, res, next) => {
     if (req.files && req.files.length > 5) {
-      return next(new ErrorResponse('Maximum 5 photos allowed per news article', 400));
+      return next(
+        new ErrorResponse("Maximum 5 photos allowed per news article", 400),
+      );
     }
 
     if (req.files) {
-      const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
-      const invalidFiles = req.files.filter(file => !allowedTypes.includes(file.mimetype));
+      const allowedTypes = [
+        "image/jpeg",
+        "image/png",
+        "image/jpg",
+        "image/webp",
+      ];
+      const invalidFiles = req.files.filter(
+        (file) => !allowedTypes.includes(file.mimetype),
+      );
 
       if (invalidFiles.length > 0) {
-        return next(new ErrorResponse(
-          'Only JPEG, PNG, JPG, and WebP image formats are allowed',
-          400
-        ));
+        return next(
+          new ErrorResponse(
+            "Only JPEG, PNG, JPG, and WebP image formats are allowed",
+            400,
+          ),
+        );
       }
     }
 
     next();
-  }
+  },
 ];
 
 // Validate Event Creation
 export const validateEvent = [
-  body('artistBandName')
+  body("artistBandName")
     .trim()
-    .notEmpty().withMessage('Artist/Band name is required')
-    .isLength({ min: 2, max: 100 }).withMessage('Artist/Band name must be between 2-100 characters'),
+    .notEmpty()
+    .withMessage("Artist/Band name is required")
+    .isLength({ min: 2, max: 100 })
+    .withMessage("Artist/Band name must be between 2-100 characters"),
 
-  body('date')
-    .notEmpty().withMessage('Date is required')
+  body("date")
+    .notEmpty()
+    .withMessage("Date is required")
     .custom((value) => {
       // Validate MM/DD/YYYY format
       const regex = /^(0?[1-9]|1[0-2])\/(0?[1-9]|[12][0-9]|3[01])\/\d{4}$/;
       if (!regex.test(value)) {
-        throw new Error('Date must be in MM/DD/YYYY format (e.g., 01/21/2024)');
+        throw new Error("Date must be in MM/DD/YYYY format (e.g., 01/21/2024)");
       }
 
-      const [month, day, year] = value.split('/').map(Number);
+      const [month, day, year] = value.split("/").map(Number);
       const date = new Date(year, month - 1, day);
 
       // Check if date is valid
@@ -371,7 +462,7 @@ export const validateEvent = [
         date.getMonth() + 1 !== month ||
         date.getDate() !== day
       ) {
-        throw new Error('Invalid date (e.g., February 30th)');
+        throw new Error("Invalid date (e.g., February 30th)");
       }
 
       // Check if date is not in past
@@ -380,43 +471,46 @@ export const validateEvent = [
       date.setHours(0, 0, 0, 0);
 
       if (date < today) {
-        throw new Error('Event date cannot be in the past');
+        throw new Error("Event date cannot be in the past");
       }
 
       return true;
     }),
 
-  body('time')
-    .notEmpty().withMessage('Time is required')
+  body("time")
+    .notEmpty()
+    .withMessage("Time is required")
     .matches(/^(0?[1-9]|1[0-2]):[0-5][0-9]\s?(am|pm|AM|PM)$/)
-    .withMessage('Time must be in HH:MM AM/PM format (e.g., 08:30 PM)'),
+    .withMessage("Time must be in HH:MM AM/PM format (e.g., 08:30 PM)"),
 
-  body('description')
+  body("description")
     .optional()
     .trim()
-    .isLength({ max: 1000 }).withMessage('Description cannot exceed 1000 characters'),
+    .isLength({ max: 1000 })
+    .withMessage("Description cannot exceed 1000 characters"),
 
   // Note: state and city will be automatically taken from venue profile
 ];
 
 // Validate Event Update
 export const validateEventUpdate = [
-  body('artistBandName')
+  body("artistBandName")
     .optional()
     .trim()
-    .isLength({ min: 2, max: 100 }).withMessage('Artist/Band name must be between 2-100 characters'),
+    .isLength({ min: 2, max: 100 })
+    .withMessage("Artist/Band name must be between 2-100 characters"),
 
-  body('date')
+  body("date")
     .optional()
     .custom((value) => {
       if (!value) return true;
 
       const regex = /^(0?[1-9]|1[0-2])\/(0?[1-9]|[12][0-9]|3[01])\/\d{4}$/;
       if (!regex.test(value)) {
-        throw new Error('Date must be in MM/DD/YYYY format');
+        throw new Error("Date must be in MM/DD/YYYY format");
       }
 
-      const [month, day, year] = value.split('/').map(Number);
+      const [month, day, year] = value.split("/").map(Number);
       const date = new Date(year, month - 1, day);
 
       if (
@@ -424,7 +518,7 @@ export const validateEventUpdate = [
         date.getMonth() + 1 !== month ||
         date.getDate() !== day
       ) {
-        throw new Error('Invalid date');
+        throw new Error("Invalid date");
       }
 
       const today = new Date();
@@ -432,27 +526,29 @@ export const validateEventUpdate = [
       date.setHours(0, 0, 0, 0);
 
       if (date < today) {
-        throw new Error('Event date cannot be in the past');
+        throw new Error("Event date cannot be in the past");
       }
 
       return true;
     }),
 
-  body('time')
+  body("time")
     .optional()
     .matches(/^(0?[1-9]|1[0-2]):[0-5][0-9]\s?(am|pm|AM|PM)$/)
-    .withMessage('Time must be in HH:MM AM/PM format'),
+    .withMessage("Time must be in HH:MM AM/PM format"),
 
-  body('description')
+  body("description")
     .optional()
     .trim()
-    .isLength({ max: 1000 }).withMessage('Description cannot exceed 1000 characters'),
+    .isLength({ max: 1000 })
+    .withMessage("Description cannot exceed 1000 characters"),
 
-  body('state')
+  body("state")
     .optional()
-    .isIn(Object.keys(STATE_CITY_MAPPING)).withMessage('Invalid state'),
+    .isIn(Object.keys(STATE_CITY_MAPPING))
+    .withMessage("Invalid state"),
 
-  body('city')
+  body("city")
     .optional()
     .custom((value, { req }) => {
       if (!value) return true;
@@ -460,7 +556,9 @@ export const validateEventUpdate = [
       if (req.body.state) {
         const stateCities = STATE_CITY_MAPPING[req.body.state] || [];
         if (!stateCities.includes(value.toLowerCase())) {
-          throw new Error(`City "${value}" is not valid for state "${req.body.state}"`);
+          throw new Error(
+            `City "${value}" is not valid for state "${req.body.state}"`,
+          );
         }
       }
       return true;
@@ -498,7 +596,9 @@ export const validateJournalistProfile = [
       if (!value) return true;
       const validStates = Object.keys(STATE_CITY_MAPPING);
       if (!validStates.includes(value)) {
-        throw new Error(`Invalid state. Must be one of: ${validStates.join(", ")}`);
+        throw new Error(
+          `Invalid state. Must be one of: ${validStates.join(", ")}`,
+        );
       }
       return true;
     }),
@@ -619,6 +719,7 @@ export const validateWave = [
     .withMessage("Title cannot exceed 200 characters"),
   body("description")
     .optional()
-    .isLength({ max: 1000 }).withMessage("Description cannot exceed 1000 characters")
+    .isLength({ max: 1000 })
+    .withMessage("Description cannot exceed 1000 characters")
     .trim(),
 ];
