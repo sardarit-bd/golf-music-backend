@@ -6,6 +6,7 @@ import Artist from "../models/model.artist.js";
 import Journalist from "../models/model.journalist.js";
 import News from "../models/model.news.js";
 import Photographer from "../models/model.photographer.js";
+import Studio from "../models/model.studio.js";
 import User from "../models/model.user.js";
 import Venue from "../models/model.venue.js";
 import Contact from "../models/models.contact.js";
@@ -409,26 +410,38 @@ export const verifyUser = async (req, res, next) => {
 export const deleteUser = async (req, res, next) => {
   try {
     const user = await User.findById(req.params.id);
-    if (!user) return next(new ErrorResponse("User not found", 404));
 
-    await User.findByIdAndUpdate(req.params.id, { isActive: false });
+    if (!user) {
+      return next(new ErrorResponse("User not found", 404));
+    }
 
+    // Delete related profile
     const modelMap = {
       artist: Artist,
       venue: Venue,
       journalist: Journalist,
       photographer: Photographer,
+      studio: Studio,
+      // fan: Fan
     };
 
     const ProfileModel = modelMap[user.userType];
+
     if (ProfileModel) {
-      await ProfileModel.findOneAndUpdate({ user: req.params.id }, { isActive: false });
+      await ProfileModel.findOneAndDelete({ user: user._id });
     }
+
+    // Delete admin record if exists
+    await Admin.findOneAndDelete({ user: user._id });
+
+    // Delete user
+    await User.findByIdAndDelete(user._id);
 
     res.status(200).json({
       success: true,
-      message: "User and associated profile deactivated successfully",
+      message: "User permanently deleted successfully",
     });
+
   } catch (error) {
     next(new ErrorResponse("Error deleting user", 500));
   }
