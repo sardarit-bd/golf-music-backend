@@ -45,7 +45,19 @@ const userSchema = new mongoose.Schema({
 
   genre: {
     type: String,
-    enum: ["rap", "country", "pop", "rock", "jazz", "reggae", "edm", "classical", "other"],
+    enum: [
+      "rap",
+      "country",
+      "pop",
+      "rock",
+      "jazz",
+      "reggae",
+      "edm",
+      "classical",
+      "rnb_soul",
+      "metal",
+      "other"
+    ],
     set: (val) => (val ? val.toLowerCase() : val),
     required: function () {
       return this.userType === "artist";
@@ -206,15 +218,15 @@ userSchema.methods.isStripeConnected = function () {
 // Check if user can sell in market
 userSchema.methods.canSellInMarket = function () {
   const allowedSellerTypes = ["artist", "venue", "photographer", "studio", "journalist", "fan"];
-  return this.isVerified && 
-         allowedSellerTypes.includes(this.userType) &&
-         this.isStripeConnected();
+  return this.isVerified &&
+    allowedSellerTypes.includes(this.userType) &&
+    this.isStripeConnected();
 };
 
 // Check if user has active Pro subscription
 userSchema.methods.hasActiveProPlan = function () {
-  return this.subscriptionPlan === "pro" && 
-         (this.subscriptionStatus === "active" || this.subscriptionStatus === "trialing");
+  return this.subscriptionPlan === "pro" &&
+    (this.subscriptionStatus === "active" || this.subscriptionStatus === "trialing");
 };
 
 // Virtual for display location
@@ -228,7 +240,7 @@ userSchema.virtual('displayLocation').get(function () {
 // Virtual for Stripe status message
 userSchema.virtual('stripeStatusMessage').get(function () {
   if (!this.stripeAccountId) return 'Not Connected';
-  
+
   switch (this.stripeAccountStatus) {
     case 'active':
       return 'Connected';
