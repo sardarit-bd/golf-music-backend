@@ -1047,6 +1047,49 @@ export const updateAdminProfile = async (req, res, next) => {
   }
 };
 
+export const changeAdminPassword = async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword, confirmPassword } = req.body;
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      return next(new ErrorResponse("All password fields are required", 400));
+    }
+
+    if (newPassword.length < 6) {
+      return next(new ErrorResponse("New password must be at least 6 characters", 400));
+    }
+
+    if (newPassword !== confirmPassword) {
+      return next(new ErrorResponse("New password and confirm password do not match", 400));
+    }
+
+    const user = await User.findById(req.user.id).select("+password");
+
+    if (!user) {
+      return next(new ErrorResponse("User not found", 404));
+    }
+
+    if (user.userType !== "admin") {
+      return next(new ErrorResponse("Only admin can change password here", 403));
+    }
+
+    const isMatch = await user.matchPassword(currentPassword);
+
+    if (!isMatch) {
+      return next(new ErrorResponse("Current password is incorrect", 400));
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Password changed successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
 
 // NEW: Get color management for admin
