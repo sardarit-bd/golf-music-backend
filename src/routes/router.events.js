@@ -1,28 +1,37 @@
 import express from 'express';
 import { authorize, protect } from '../middleware/auth.js';
 import { validateEvent, validateEventUpdate } from '../middleware/validation.js';
-import { 
+import {
   bulkUpdateEventColors,
-  createEvent, 
-  deleteEvent, 
-  deleteEventByAdmin, 
-  getCalendarEvents, 
-  getEvent, 
-  getEventsByCity, 
-  getEventsByStateCity, 
-  getEventsByVenueId, 
-  getEventsForAdmin, 
-  getMyEvents, 
-  getUpcomingEvents, 
-  toggleEventStatus, 
-  updateEvent, 
+  createEvent,
+  createEventByAdmin,
+  deleteEvent,
+  deleteEventByAdmin,
+  getCalendarEvents,
+  getEvent,
+  getEventsByCity,
+  getEventsByStateCity,
+  getEventsByVenueId,
+  getEventsForAdmin,
+  getMyEvents,
+  getUpcomingEvents,
+  toggleEventStatus,
+  updateEvent,
   updateEventByAdmin,
 } from '../controllers/controller.event.js';
+import { uploadEventImage } from '../middleware/upload.js';
 
 const router = express.Router();
 
 // Create a new event (Venue only)
 router.post('/', protect, authorize('venue'), validateEvent, createEvent);
+router.post(
+  "/admin",
+  protect,
+  authorize("admin"),
+  uploadEventImage,
+  createEventByAdmin
+);
 
 // Get all events by city (Public)
 router.get('/', getEventsByCity);
@@ -50,7 +59,13 @@ router.delete('/:id', protect, authorize('venue'), deleteEvent);
 
 // Admin routes for event management
 router.get('/admin/events', protect, authorize('admin'), getEventsForAdmin);
-router.put('/admin/:id', protect, authorize('admin'), updateEventByAdmin);
+router.put(
+  "/admin/:id",
+  protect,
+  authorize("admin"),
+  uploadEventImage,
+  updateEventByAdmin
+);
 router.put('/admin/:id/toggle', protect, authorize('admin'), toggleEventStatus);
 router.delete('/admin/:id', protect, authorize('admin'), deleteEventByAdmin);
 
