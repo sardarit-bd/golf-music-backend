@@ -206,8 +206,6 @@ export const createEvent = async (req, res, next) => {
       color: venue.colorCode || "#000000",
     };
 
-    // console.log("Creating event with data:", eventData);
-
     // Create event
     const event = await Event.create(eventData);
 
@@ -327,14 +325,14 @@ export const getEventsByCity = async (req, res, next) => {
   }
 };
 
-// GET CALENDAR EVENTS - UPDATED WITH STATE SUPPORT
+// GET CALENDAR EVENTS - UPDATED WITH CUSTOM VENUE SUPPORT
 export const getCalendarEvents = async (req, res, next) => {
   try {
     const { state = DEFAULT_STATE, city = DEFAULT_CITY } = req.query;
 
     const query = {
       isActive: true,
-      dateOnly: { $gte: new Date().setHours(0, 0, 0, 0) }
+      dateOnly: { $gte: new Date().setHours(0, 0, 0, 0) },
     };
 
     // Validate state and city
@@ -342,19 +340,17 @@ export const getCalendarEvents = async (req, res, next) => {
       query.state = state;
 
       const stateCities = STATE_CITY_MAPPING[state];
-      if (city && city !== 'all') {
+
+      if (city && city !== "all") {
         if (stateCities.includes(city.toLowerCase())) {
           query.city = city.toLowerCase();
         } else {
-          // Fallback to first city in state
           query.city = stateCities[0];
         }
       } else {
-        // Get all cities in the state
         query.city = { $in: stateCities };
       }
     } else {
-      // Default to Alabama, Mobile
       query.state = DEFAULT_STATE;
       query.city = DEFAULT_CITY;
     }
@@ -362,12 +358,13 @@ export const getCalendarEvents = async (req, res, next) => {
     const events = await Event.find(query)
       .populate("venue", "venueName colorCode verifiedOrder state city")
       .sort({ dateOnly: 1, eventTime: 1 })
-      .select("artistBandName date dateOnly eventTime venue state city image color");
+      .select(
+        "artistBandName date dateOnly eventTime venue customVenueName state city image color description"
+      );
 
-    // Format events for calendar
     const calendarEvents = events.map((event) => {
       const eventDate = new Date(event.date);
-      // Convert to local time for display
+
       const localDate = new Date(
         eventDate.getUTCFullYear(),
         eventDate.getUTCMonth(),
@@ -376,19 +373,33 @@ export const getCalendarEvents = async (req, res, next) => {
         eventDate.getUTCMinutes()
       );
 
+      const venueName =
+        event.venue?.venueName ||
+        event.customVenueName ||
+        "Unknown Venue";
+
+      const isCustomVenue = !event.venue && !!event.customVenueName;
+
       return {
         id: event._id,
         title: event.artistBandName,
-        date: localDate, // Corrected date
+        date: localDate,
         time: event.eventTime,
-        venue: event.venue?.venueName || "Unknown Venue",
+
+        venue: venueName,
+        venueId: event.venue?._id || null,
+
+        customVenueName: event.customVenueName || "",
+        isCustomVenue,
+
         color: event.venue?.colorCode || event.color || "#000000",
         state: event.state,
         city: event.city,
         image: event.image,
-        venueId: event.venue?._id,
+        description: event.description || "",
+
         verified: event.venue?.verifiedOrder > 0,
-        // For debugging
+
         rawDate: event.date,
         dateOnly: event.dateOnly,
       };
@@ -676,6 +687,81 @@ export const updateEventByAdmin = async (req, res, next) => {
     });
   } catch (error) {
     next(error);
+  }
+};
+
+export const createEventByAdmin = async (req, res, next) => {
+  try {
+    const {
+      artistBandName,
+      time,
+      date,
+      description,
+      venueId,
+      customVenueName,
+      state,
+      city,
+    } = req.body;
+
+    if (!artistBandName || !time || !date) {
+      return next(new ErrorResponse("Artist/Band name, date and time are required", 400));
+    }
+
+    if (!venueId && !customVenueName) {
+      return next(new ErrorResponse("Select existing venue or enter custom venue name", 400));
+    }
+
+    let venue = null;
+    let eventState = state;
+    let eventCity = city?.toLowerCase();
+    let eventColor = "#000000";
+
+    if (venueId) {
+      venue = await Venue.findById(venueId);
+
+      if (!venue) {
+        return next(new ErrorResponse("Venue not found", 404));
+      }
+
+      eventState = venue.state;
+      eventCity = venue.city;
+      eventColor = venue.colorCode || "#000000";
+    } else {
+      if (!state || !city) {
+        return next(new ErrorResponse("State and city are required for custom venue", 400));
+      }
+    }
+
+    const parsedDate = parseEventDate(date, time);
+
+    const imageData = req.file
+      ? { url: req.file.path, filename: req.file.filename }
+      : null;
+
+    const event = await Event.create({
+      artistBandName,
+      eventTime: time,
+      date: parsedDate.fullDate,
+      dateOnly: parsedDate.dateOnly,
+      description: description || "",
+      image: imageData,
+
+      venue: venue?._id || null,
+      customVenueName: customVenueName || "",
+
+      state: eventState,
+      city: eventCity,
+      color: eventColor,
+      isActive: true,
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Event added to live calendar successfully",
+      data: { event },
+    });
+  } catch (error) {
+    next(new ErrorResponse(error.message || "Failed to create event", 500));
   }
 };
 

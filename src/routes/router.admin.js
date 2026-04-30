@@ -17,7 +17,8 @@ import {
     getNewsForAdmin,
     updateNewsByAdmin,
     toggleNewsStatus,
-    deleteNewsByAdmin
+    deleteNewsByAdmin,
+    changeAdminPassword
 } from '../controllers/controller.admin.js';
 import { validateAdminActions } from '../middleware/validation.js';
 import { authorize, protect } from '../middleware/auth.js';
@@ -33,6 +34,12 @@ router.use(protect, authorize('admin'));
 // ============================
 router.get("/profile", getAdminProfile);
 router.put("/profile", uploadAdminProfilePhoto, updateAdminProfile);
+router.put(
+  "/profile/change-password",
+  protect,
+  authorize("admin"),
+  changeAdminPassword
+);
 
 // Dashboard
 router.get('/dashboard', getDashboardStats);
