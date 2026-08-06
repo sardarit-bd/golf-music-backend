@@ -1,3 +1,4 @@
+import jwt from "jsonwebtoken";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import MarketItem from "../models/model.marketItem.js";
@@ -332,9 +333,39 @@ export const getMarketItemByIdPublic = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Item not found", 404));
   }
 
-  // Check if item is active (only active items should be viewable for purchase)
-  if (item.status !== "active") {
-    return next(new ErrorResponse("This item is not available for purchase", 404));
+  // ----------------------------------------------------
+  // Check if the requesting user is the owner
+  // (Optional auth - does not block anonymous users)
+  // ----------------------------------------------------
+  let requestingUserId = null;
+
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (authHeader?.startsWith("Bearer ")) {
+      const token = authHeader.split(" ")[1];
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+      requestingUserId = decoded.id;
+    }
+  } catch (err) {
+    // Ignore invalid or expired token
+  }
+
+  const isOwner =
+    requestingUserId &&
+    item.seller &&
+    item.seller._id.toString() === requestingUserId;
+
+  // ----------------------------------------------------
+  // Only public users are blocked from viewing
+  // pending / inactive items.
+  // Owners can always view their own listings.
+  // ----------------------------------------------------
+  if (!isOwner && item.status !== "active") {
+    return next(
+      new ErrorResponse("This item is not available for purchase", 404)
+    );
   }
 
   const feeAmount = calculateMarketFee(item.price, item.subscriptionPlan);
@@ -344,15 +375,22 @@ export const getMarketItemByIdPublic = asyncHandler(async (req, res, next) => {
     feeInfo: {
       percentage: item.subscriptionPlan === "pro" ? 5 : 10,
       amount: feeAmount,
-      buyerPays: item.price,                 // ✅ Buyer pays full price
-      sellerReceives: item.price - feeAmount, // ✅ Seller gets price minus fee
-      adminCommission: feeAmount,              // ✅ Admin gets the fee
-      plan: item.subscriptionPlan || "free"
+      buyerPays: item.price,
+      sellerReceives: item.price - feeAmount,
+      adminCommission: feeAmount,
+      plan: item.subscriptionPlan || "free",
     },
-    sellerReady: !!(item.seller?.stripeAccountId && item.seller?.stripeAccountStatus === 'active')
+    sellerReady: !!(
+      item.seller?.stripeAccountId &&
+      item.seller?.stripeAccountStatus === "active"
+    ),
+    isOwner,
   };
 
-  res.status(200).json({ success: true, data: itemWithFee });
+  res.status(200).json({
+    success: true,
+    data: itemWithFee,
+  });
 });
 
 /* =========================
