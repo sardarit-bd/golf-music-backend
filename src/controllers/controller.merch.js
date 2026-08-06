@@ -226,7 +226,7 @@ export const cancelOrder = asyncHandler(async (req, res, next) => {
   }
 
   const isAdmin = req.user.userType === "admin";
-  
+
   if (!isAdmin && order.buyer.toString() !== req.user._id.toString()) {
     return next(new ErrorResponse("You are not authorized to cancel this order", 403));
   }
@@ -243,7 +243,7 @@ export const cancelOrder = asyncHandler(async (req, res, next) => {
     if (order.paymentStatus === "paid") {
       return next(new ErrorResponse("Paid orders cannot be cancelled. Please contact support.", 400));
     }
-    
+
     if (order.paymentStatus !== "pending") {
       return next(new ErrorResponse("Only pending orders can be cancelled", 400));
     }
@@ -269,8 +269,8 @@ export const cancelOrder = asyncHandler(async (req, res, next) => {
 
   await order.save();
 
-  const message = isAdmin 
-    ? "Order cancelled successfully by admin" 
+  const message = isAdmin
+    ? "Order cancelled successfully by admin"
     : "Order cancelled successfully";
 
   res.status(200).json({
@@ -293,6 +293,10 @@ export const getAllMerch = asyncHandler(async (req, res, next) => {
   } = req.query;
 
   const query = {};
+
+  if (showAll !== "true") {
+    query.isActive = true;
+  }
 
   if (search) {
     query.$or = [
