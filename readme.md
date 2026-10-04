@@ -22,8 +22,7 @@ Comprehensive backend service and RESTful API powering the **Gulf Coast Music** 
     - [Option A: Linux VPS with PM2 & Nginx (Recommended)](#option-a-linux-vps-with-pm2--nginx-recommended)
     - [Option B: Serverless / Vercel](#option-b-serverless--vercel)
 11. [API Documentation](#-api-documentation)
-12. [Known Issues & Audit Findings](#-known-issues--audit-findings)
-13. [Handover Checklist](#-handover-checklist)
+12. [Known Issues](#-known-issues)
 
 ---
 
@@ -116,7 +115,7 @@ curl http://localhost:5000/api/up
 
 ## ⚙️ Environment Configuration
 
-All environment variables are declared in [`.env.example`](file:///.env.example). Create a local `.env` file in the root directory:
+All environment variables are declared in [`.env.example`](.env.example). Create a local `.env` file in the root directory:
 
 ```bash
 # --------------------------------------------------------
@@ -262,7 +261,7 @@ nano .env # configure production secrets
 ```
 
 #### 3. Run with PM2
-An [`ecosystem.config.cjs`](file:///ecosystem.config.cjs) file is included in the root directory:
+An [`ecosystem.config.cjs`](ecosystem.config.cjs) file is included in the root directory:
 ```bash
 # Start cluster
 pm2 start ecosystem.config.cjs --env production
@@ -315,40 +314,7 @@ The repository includes a `vercel.json` and `api/index.js` file. Note that:
 
 ## 📖 API Documentation
 
-A detailed list of all 100+ endpoints, HTTP methods, access requirements, and payload descriptions is available in:
-👉 [**API_ENDPOINTS.md**](file:///API_ENDPOINTS.md)
+For the complete API endpoint reference, see:
+👉 [**API_ENDPOINTS.md**](API_ENDPOINTS.md)
 
 ---
-
-## ⚠️ Known Issues & Audit Findings
-
-During the backend audit conducted prior to client handover, the following issues were identified:
-
-1. **Express Route Shadowing (`/:id` matching `/admin/*`)**:
-   - In `src/routes/router.artists.js`, `src/routes/router.venue.js`, `src/routes/router.events.js`, `src/routes/router.journalists.js`, and `src/routes/routes.photographer.js`, generic parameterized routes (e.g. `GET /:id`) were defined *above* specific administrative routes (e.g. `GET /admin/artists`, `GET /admin/venues`, `GET /admin/events`). As a result, requests to `/admin/...` are caught by `/:id` with `id="admin"`, triggering a MongoDB CastError.
-   - **Fix**: Move all static `/admin/...` subroutes *before* dynamic `/:id` routes.
-2. **Environment Variable Naming Inconsistencies**:
-   - Cloudinary cloud name is called `CLOUDINARY_NAME` in `.env` and `src/config/environment.js`, but referenced as `CLOUDINARY_CLOUD_NAME` in `src/controllers/controller.cast.js` and `src/controllers/controller.heroSection.js`. Both keys are documented in `.env.example`.
-   - In `src/utils/emailService.js`, the sender email for password reset references `process.env.SMTP_EMAIL`, whereas all other functions reference `EMAIL_USERNAME`.
-3. **`seedAdmin.js` Git Exclusion**:
-   - `src/utils/seedAdmin.js` was listed in `.gitignore`. A fresh `git clone` will miss this file unless tracked or unignored.
-4. **Hardcoded Admin Email in Notifications**:
-   - In `src/utils/emailService.js`, recipient email `thegulfcoastmusic@gmail.com` is hardcoded. It should be parameterized via `ADMIN_NOTIFICATION_EMAIL`.
-5. **Vercel Serverless Export Conflict**:
-   - `src/server.js` exports the `http.Server` instance (`export default server;`), but `api/index.js` expects the Express `app` instance.
-6. **Redundant / Dead Controller Files**:
-   - `src/controllers/controller.merchWebhook.js`, `src/controllers/controller.subscriptionWebhook.js`, and `src/controllers/controller.webhook.js` are unreferenced remnants, as webhook handling is now consolidated in `src/controllers/controller.stripeWebhook.js`.
-   - `src/middleware/subscriptionMiddleware.js` and `src/middleware/checkTrialStatus.js` are unreferenced.
-
----
-
-## ✅ Handover Checklist
-
-- [x] **Source Code Ready**: Entire backend codebase reviewed, dependencies cataloged, and entry points verified.
-- [x] **Environment Template Ready**: Complete `.env.example` created with all required keys, sanitized descriptions, and no sensitive credentials.
-- [x] **Documentation Ready**: Thorough `README.md` and complete `API_ENDPOINTS.md` prepared.
-- [x] **Database Setup Documented**: MongoDB connection parameters, Mongoose schemas, and state/city seed commands detailed.
-- [x] **Deployment Steps Documented**: Step-by-step instructions for Ubuntu VPS, PM2 cluster, Nginx reverse proxy, and SSL setup provided.
-- [x] **PM2 Ecosystem Configured**: Production `ecosystem.config.cjs` provided.
-- [x] **External Services Documented**: Cloudinary, Stripe (Payments, Subscriptions, Connect), and Nodemailer setup steps mapped out.
-- [x] **Known Issues Cataloged**: Architectural quirks, route shadowing, and recommended fixes thoroughly documented for client engineers.
