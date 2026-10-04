@@ -1,0 +1,39 @@
+{
+  "default_branch": "main",
+  "branches": [
+    "deploy",
+    "dev-v7",
+    "main",
+    "new-workspace",
+    "origin",
+    "sardarit-bd-patch-1",
+    "workspace-v3",
+    "workspace-v4",
+    "workspace-v5",
+    "workspace-v6"
+  ],
+  "parent": {
+    "deploy": "main",
+    "dev-v7": "main",
+    "main": null,
+    "new-workspace": "main",
+    "origin": "main",
+    "sardarit-bd-patch-1": "main",
+    "workspace-v3": "main",
+    "workspace-v4": "main",
+    "workspace-v5": "main",
+    "workspace-v6": "main"
+  },
+  "order": [
+    "main",
+    "deploy",
+    "dev-v7",
+    "new-workspace",
+    "origin",
+    "sardarit-bd-patch-1",
+    "workspace-v3",
+    "workspace-v4",
+    "workspace-v5",
+    "workspace-v6"
+  ]
+}
