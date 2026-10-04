@@ -1,8 +1,6 @@
 node_modules/
 uploads/
-.env
-.env.local
-.env.development
 .DS_Store
 *.log
 src/utils/seedAdmin.js
+config.bat
